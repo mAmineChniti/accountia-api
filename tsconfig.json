@@ -23,7 +23,6 @@
     "noFallthroughCasesInSwitch": false
   },
   "include": [
-    "src",
-    "prettier.config.ts"
-  ]
+      "src"
+    ]
 }
