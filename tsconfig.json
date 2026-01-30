@@ -3,6 +3,7 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "resolvePackageJsonExports": true,
+    "allowJs": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "declaration": true,
@@ -22,7 +23,5 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "include": [
-      "src"
-    ]
+  "include": ["src", "test", "eslint.config.mjs"]
 }
