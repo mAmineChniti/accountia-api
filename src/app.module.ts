@@ -2,8 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { AuthModule } from '@/auth/auth.module';
 
 @Module({
   imports: [
@@ -11,6 +10,12 @@ import { AppService } from './app.service';
       isGlobal: true,
       validationSchema: Joi.object({
         MONGO_URI: Joi.string().uri().required(),
+        JWT_SECRET: Joi.string().required(),
+        GMAIL_USERNAME: Joi.string().required(),
+        GMAIL_APP_PASSWORD: Joi.string().required(),
+        SMTP_HOST: Joi.string().required(),
+        SMTP_PORT: Joi.number().required(),
+        FRONTEND_URL: Joi.string().uri().required(),
       }),
     }),
 
@@ -20,8 +25,10 @@ import { AppService } from './app.service';
         uri: config.getOrThrow<string>('MONGO_URI'),
       }),
     }),
+
+    AuthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}
