@@ -203,9 +203,9 @@ async function login(email: string, password: string) {
 }
 
 login('john.doe@example.com', 'SecurePass123!')
-  .then(data => console.log(data))
-  .catch(error => console.error(error));
-````
+  .then((data) => console.log(data))
+  .catch((error) => console.error(error));
+```
 
 **PUT/PATCH** `/update` - Update user details
 Updates a user's details. Returns updated user info or validation errors.
@@ -284,7 +284,7 @@ async function updateUser(accessToken: string, user: User) {
     method: 'PUT', // or 'PATCH'
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(user),
   });
@@ -298,9 +298,9 @@ async function updateUser(accessToken: string, user: User) {
 }
 
 updateUser('your_access_token_here', UpdatedUser)
-  .then(data => console.log(data))
-  .catch(error => console.error(error));
-````
+  .then((data) => console.log(data))
+  .catch((error) => console.error(error));
+```
 
 **DELETE** `/delete` - Deletes a user
 Deletes a user from the system. Requires authentication.
