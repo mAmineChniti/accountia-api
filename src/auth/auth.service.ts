@@ -21,6 +21,7 @@ import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
+import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
   PublicUserDto,
   UserResponseDto,
@@ -44,7 +45,7 @@ export class AuthService {
     private rateLimitingService: RateLimitingService
   ) {}
 
-  async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
+  async register(registerDto: RegisterDto): Promise<RegistrationResponseDto> {
     const {
       username,
       email,
@@ -66,7 +67,19 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Username or email is already registered');
+      const error = existingUser.emailConfirmed
+        ? new ConflictException({
+            type: 'ACCOUNT_EXISTS',
+            message: 'Username or email is already registered',
+          })
+        : new ConflictException({
+            type: 'EMAIL_NOT_CONFIRMED',
+            message:
+              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
+            email: existingUser.email,
+            userId: existingUser._id.toString(),
+          });
+      throw error;
     }
 
     const passwordHash = await hash(password, 10);
@@ -95,36 +108,10 @@ export class AuthService {
 
       await this.emailService.sendConfirmationEmail(email, emailToken);
 
-      const tokens = this.generateTokens(user);
-
-      await this.userModel.updateOne(
-        { _id: user._id },
-        {
-          $push: {
-            refreshTokens: {
-              $each: [
-                {
-                  token: tokens.refreshToken,
-                  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                },
-              ],
-              $slice: -10,
-            },
-          },
-        }
-      );
-
       return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        user: {
-          id: user._id.toString(),
-          username: user.username,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phoneNumber: user.phoneNumber,
-        },
+        message:
+          'Registration successful! Please check your email to confirm your account.',
+        email: user.email,
       };
     } catch (error: unknown) {
       if (
@@ -353,18 +340,20 @@ export class AuthService {
     }
   }
 
-  async resendConfirmationEmail(userId: string): Promise<MessageResponseDto> {
-    const user = await this.userModel.findById(userId);
+  async resendConfirmationEmail(email: string): Promise<MessageResponseDto> {
+    const user = await this.userModel.findOne({ email });
 
     if (!user) {
-      throw new NotFoundException('User profile not found');
+      throw new NotFoundException('User not found');
     }
 
     if (user.emailConfirmed) {
       throw new ConflictException('Email is already confirmed');
     }
 
-    const rateLimitResult = this.rateLimitingService.checkEmailAttempts(userId);
+    const rateLimitResult = this.rateLimitingService.checkEmailAttempts(
+      user._id.toString()
+    );
     if (!rateLimitResult.allowed) {
       const waitMinutes = Math.ceil((rateLimitResult.waitTime ?? 0) / 60_000);
       throw new HttpException(
@@ -379,7 +368,7 @@ export class AuthService {
 
     try {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
-      this.rateLimitingService.recordEmailAttempt(userId);
+      this.rateLimitingService.recordEmailAttempt(user._id.toString());
       return { message: 'Confirmation email sent successfully' };
     } catch {
       throw new BadRequestException('Unable to resend confirmation email');
