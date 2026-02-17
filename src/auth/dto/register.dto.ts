@@ -61,5 +61,8 @@ export class RegisterDto {
   @ApiPropertyOptional({ example: 'data:image/png;base64,iVBORw0...' })
   @IsOptional()
   @IsString()
+  @MaxLength(9_333_334, {
+    message: 'Profile picture base64 data must be less than 7MB',
+  })
   profilePicture?: string;
 }

@@ -30,12 +30,11 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
 
   private cleanupExpiredEntries() {
     const now = new Date();
+    const maxWindow = Math.max(this.loginWindow, this.blockDuration);
 
     for (const [key, attempts] of this.loginAttempts.entries()) {
       const recentAttempts = attempts.filter(
-        (attempt) =>
-          now.getTime() - attempt.getTime() <
-          this.loginWindow + this.blockDuration
+        (attempt) => now.getTime() - attempt.getTime() < maxWindow
       );
 
       if (recentAttempts.length === 0) {
@@ -63,12 +62,13 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const attempts = this.loginAttempts.get(key) ?? [];
 
+    const maxWindow = Math.max(this.loginWindow, this.blockDuration);
     const recentAttempts = attempts.filter(
-      (attempt) => now.getTime() - attempt.getTime() < this.loginWindow
+      (attempt) => now.getTime() - attempt.getTime() < maxWindow
     );
 
     if (recentAttempts.length >= this.maxLoginAttempts) {
-      const lastAttempt = recentAttempts.at(-1);
+      const lastAttempt = attempts.at(-1);
       if (
         lastAttempt &&
         now.getTime() - lastAttempt.getTime() < this.blockDuration
