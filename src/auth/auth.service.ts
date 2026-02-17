@@ -71,9 +71,11 @@ export class AuthService {
 
     const passwordHash = await hash(password, 10);
     const emailToken = this.generateEmailToken();
-
     try {
       const birthdateDate = new Date(birthdate);
+      if (Number.isNaN(birthdateDate.getTime())) {
+        throw new BadRequestException('Failed to parse birthdate');
+      }
 
       const user = new this.userModel({
         username,
@@ -125,12 +127,6 @@ export class AuthService {
         },
       };
     } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes('failed to parse birthdate')
-      ) {
-        throw new BadRequestException('Invalid birthdate format');
-      }
       if (
         error instanceof Error &&
         error.message.includes('failed to hash password')
@@ -234,11 +230,11 @@ export class AuthService {
 
     try {
       const payload = this.jwtService.verify(refreshToken) as unknown as {
-        jti: string;
+        type: string;
         sub: string;
       };
 
-      if (payload.jti !== 'refresh') {
+      if (payload.type !== 'refresh') {
         throw new UnauthorizedException('Invalid token type');
       }
 
@@ -493,12 +489,12 @@ export class AuthService {
     }
 
     if (updateDto.birthdate) {
-      try {
-        updateData.birthdate = new Date(updateDto.birthdate);
-        hasUpdates = true;
-      } catch {
+      const date = new Date(updateDto.birthdate);
+      if (Number.isNaN(date.getTime())) {
         throw new BadRequestException('Invalid birthdate format');
       }
+      updateData.birthdate = date;
+      hasUpdates = true;
     }
 
     if (updateDto.phoneNumber !== undefined) {
@@ -628,14 +624,30 @@ export class AuthService {
 
   async updateRefreshToken(
     userId: string,
+    oldRefreshToken: string,
     refreshToken: string
   ): Promise<void> {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
+    // First remove expired tokens and the old refresh token
     await this.userModel.updateOne(
       { _id: userId },
       {
-        $pull: { refreshTokens: { expiresAt: { $lt: new Date() } } },
+        $pull: {
+          refreshTokens: {
+            $or: [
+              { expiresAt: { $lt: new Date() } },
+              { token: oldRefreshToken },
+            ],
+          },
+        },
+      }
+    );
+
+    // Then add the new refresh token with slice limit
+    await this.userModel.updateOne(
+      { _id: userId },
+      {
         $push: {
           refreshTokens: {
             $each: [{ token: refreshToken, expiresAt }],
@@ -664,10 +676,13 @@ export class AuthService {
       jwtid: randomUUID(),
     });
 
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: '7d',
-      jwtid: randomUUID(),
-    });
+    const refreshToken = this.jwtService.sign(
+      { ...payload, type: 'refresh' },
+      {
+        expiresIn: '7d',
+        jwtid: randomUUID(),
+      }
+    );
 
     return { accessToken, refreshToken };
   }

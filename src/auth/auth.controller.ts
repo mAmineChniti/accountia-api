@@ -98,11 +98,21 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async refreshTokenHandler(
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @Req() req: Request
   ): Promise<AuthResponseDto> {
+    const authHeader = req.headers.authorization;
+    const oldRefreshToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : '';
+
     const tokens = this.authService.generateTokens(user);
 
-    await this.authService.updateRefreshToken(user.id, tokens.refreshToken);
+    await this.authService.updateRefreshToken(
+      user.id,
+      oldRefreshToken,
+      tokens.refreshToken
+    );
 
     return {
       accessToken: tokens.accessToken,
