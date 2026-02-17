@@ -50,7 +50,7 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh') {
     }
 
     return {
-      id: user._id,
+      id: user._id.toString(),
       email: user.email,
       username: user.username,
     };

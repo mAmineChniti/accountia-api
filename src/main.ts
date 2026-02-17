@@ -8,6 +8,12 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
+  // Enable CORS for frontend
+  app.enableCors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -41,7 +47,11 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
 
-  console.log(`🚀 API running on http://localhost:${String(port)}/api/docs`);
+  const docsUrl =
+    process.env.NODE_ENV === 'production'
+      ? `Port ${port} - /api`
+      : `http://localhost:${String(port)}/api/docs`;
+  console.log(`🚀 API running on ${docsUrl}`);
 }
 /* eslint-disable unicorn/prefer-top-level-await */
 bootstrap().catch((error: unknown) => {
