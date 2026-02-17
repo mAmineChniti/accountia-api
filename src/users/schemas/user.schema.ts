@@ -78,12 +78,12 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
-UserSchema.pre(
-  'save',
-  function (this: UserDocument, next: (err?: Error) => void) {
-    if (this.refreshTokens && this.refreshTokens.length > 10) {
-      this.refreshTokens = this.refreshTokens.slice(-10);
-    }
-    next();
+UserSchema.pre('save', function () {
+  if (
+    this.refreshTokens &&
+    Array.isArray(this.refreshTokens) &&
+    this.refreshTokens.length > 10
+  ) {
+    this.refreshTokens = this.refreshTokens.slice(-10);
   }
-);
+});
