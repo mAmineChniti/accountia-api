@@ -32,7 +32,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('User not found or inactive');
     }
     return {
-      id: user._id,
+      id: user._id.toString(),
       email: user.email,
       username: user.username,
       firstName: user.firstName,
