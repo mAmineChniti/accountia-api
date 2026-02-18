@@ -2,13 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ConflictExceptionFilter } from '@/common/filters/conflict-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
 
-  // Enable CORS for frontend
   app.enableCors({
     origin: process.env.FRONTEND_URL,
     credentials: true,
@@ -22,6 +22,8 @@ async function bootstrap() {
       transform: true,
     })
   );
+
+  app.useGlobalFilters(new ConflictExceptionFilter());
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
@@ -49,7 +51,7 @@ async function bootstrap() {
 
   const docsUrl =
     process.env.NODE_ENV === 'production'
-      ? `Port ${port} - /api`
+      ? `Port ${port} - /api/docs`
       : `http://localhost:${String(port)}/api/docs`;
   console.log(`🚀 API running on ${docsUrl}`);
 }

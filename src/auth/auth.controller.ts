@@ -11,6 +11,7 @@ import {
   Delete,
   Req,
   Param,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,6 +21,9 @@ import {
 } from '@nestjs/swagger';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import type { Request } from 'express';
+import type { Response } from 'express';
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { AuthService } from '@/auth/auth.service';
 import { RegisterDto } from '@/auth/dto/register.dto';
 import { LoginDto } from '@/auth/dto/login.dto';
@@ -28,18 +32,20 @@ import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
 import { FetchUserByIdDto } from '@/auth/dto/fetch-user-by-id.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
+import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
   UserResponseDto,
   MessageResponseDto,
   HealthResponseDto,
 } from '@/auth/dto/user-response.dto';
+import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
 
 @ApiTags('Authentication')
-@Controller('api/auth')
+@Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -48,10 +54,12 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: 'User successfully registered',
-    type: AuthResponseDto,
+    type: RegistrationResponseDto,
   })
   @ApiResponse({ status: 409, description: 'User already exists' })
-  async register(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
+  async register(
+    @Body() registerDto: RegisterDto
+  ): Promise<RegistrationResponseDto> {
     return this.authService.register(registerDto);
   }
 
@@ -154,9 +162,39 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Email confirmed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async confirmEmail(
-    @Param('token') token: string
-  ): Promise<{ success: boolean; message: string }> {
-    return this.authService.confirmEmail(token);
+    @Param('token') token: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const result = await this.authService.confirmEmail(token);
+
+    try {
+      const templatePath = path.join(
+        process.cwd(),
+        'src',
+        'auth',
+        'templates',
+        'email_confirmed.html'
+      );
+      const template = await readFile(templatePath, 'utf8');
+
+      const year = new Date().getFullYear();
+      let html = template.replaceAll('{{.Year}}', year.toString());
+
+      if (result.success) {
+        html = html.replaceAll('{{if .Success}}', '').replaceAll('{{end}}', '');
+        html = html.replace(/{{else}}[\S\s]*?{{end}}/, '');
+        html = html.replaceAll('{{.Message}}', '');
+      } else {
+        html = html.replace(/{{if .Success}}[\S\s]*?{{else}}/, '');
+        html = html.replaceAll('{{end}}', '');
+        html = html.replaceAll('{{.Message}}', result.message);
+      }
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch {
+      res.json(result);
+    }
   }
 
   @Get('health')
@@ -286,8 +324,6 @@ export class AuthController {
   }
 
   @Post('resend-confirmation-email')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend confirmation email' })
   @ApiResponse({
@@ -295,13 +331,14 @@ export class AuthController {
     description: 'Confirmation email sent successfully',
     type: MessageResponseDto,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 409, description: 'Email already confirmed' })
   @ApiResponse({ status: 429, description: 'Too many requests' })
   async resendConfirmationEmail(
-    @CurrentUser() user: UserPayload
+    @Body() resendConfirmationDto: ResendConfirmationDto
   ): Promise<MessageResponseDto> {
-    return this.authService.resendConfirmationEmail(user.id);
+    return this.authService.resendConfirmationEmail(
+      resendConfirmationDto.email
+    );
   }
 }
