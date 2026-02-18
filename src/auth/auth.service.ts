@@ -192,6 +192,12 @@ export class AuthService {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+      accessTokenExpiresAt: new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString(),
+      refreshTokenExpiresAt: new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
       user: {
         id: user._id.toString(),
         username: user.username,
@@ -255,6 +261,12 @@ export class AuthService {
       return {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        accessTokenExpiresAt: new Date(
+          Date.now() + 24 * 60 * 60 * 1000
+        ).toISOString(),
+        refreshTokenExpiresAt: new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString(),
         user: {
           id: user._id.toString(),
           username: user.username,

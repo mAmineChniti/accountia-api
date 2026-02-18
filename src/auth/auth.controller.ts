@@ -22,7 +22,6 @@ import {
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import type { Request } from 'express';
 import type { Response } from 'express';
-import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { AuthService } from '@/auth/auth.service';
 import { RegisterDto } from '@/auth/dto/register.dto';
@@ -125,6 +124,12 @@ export class AuthController {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
+      accessTokenExpiresAt: new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString(),
+      refreshTokenExpiresAt: new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
       user: {
         id: user.id,
         username: user.username,
@@ -163,37 +168,34 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async confirmEmail(
     @Param('token') token: string,
-    @Res() res: Response
-  ): Promise<void> {
+    @Res({ passthrough: true }) res: Response
+  ): Promise<{ success: boolean; message?: string } | void> {
     const result = await this.authService.confirmEmail(token);
 
     try {
-      const templatePath = path.join(
-        process.cwd(),
-        'src',
-        'auth',
-        'templates',
-        'email_confirmed.html'
-      );
+      const templatePath = './templates/email_confirmed.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
       let html = template.replaceAll('{{.Year}}', year.toString());
 
       if (result.success) {
+        // Remove entire else block and remaining markers
+        html = html.replaceAll(/{{else}}[\S\s]*?{{end}}/g, '');
         html = html.replaceAll('{{if .Success}}', '').replaceAll('{{end}}', '');
-        html = html.replace(/{{else}}[\S\s]*?{{end}}/, '');
         html = html.replaceAll('{{.Message}}', '');
       } else {
-        html = html.replace(/{{if .Success}}[\S\s]*?{{else}}/, '');
+        // Remove if block and remaining markers
+        html = html.replaceAll(/{{if .Success}}[\S\s]*?{{else}}/g, '');
         html = html.replaceAll('{{end}}', '');
         html = html.replaceAll('{{.Message}}', result.message);
       }
 
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
+      return;
     } catch {
-      res.json(result);
+      return result;
     }
   }
 
