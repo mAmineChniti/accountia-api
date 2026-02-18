@@ -4,7 +4,7 @@ This is comprehensive API documentation for Accountia API. The API is a RESTful 
 
 ## Base URL
 
-```
+```text
 http://localhost:3000/api
 ```
 
@@ -31,7 +31,7 @@ SMTP_PORT=587
 FRONTEND_URL=https://yourdomain.com
 
 # Server Configuration
-HOSTNAME=localhost
+APP_HOSTNAME=localhost
 PORT=3000
 ```
 
@@ -324,10 +324,10 @@ interface LoginDto {
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "accessTokenExpiresIn": "24h",
-  "refreshTokenExpiresIn": "7d",
+  "accessToken": "<access_token>",
+  "refreshToken": "<refresh_token>",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
   "user": {
     "id": "615f2e0a6c6d5c0e1a1e4a01",
     "username": "john_doe",
@@ -452,6 +452,8 @@ async function login(email: string, password: string) {
 
   if (response.ok) {
     // Store tokens securely
+    // WARNING: localStorage is vulnerable to XSS attacks
+    // Consider using HttpOnly, Secure, SameSite cookies instead
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
 
@@ -507,7 +509,7 @@ async function login(email: string, password: string) {
 
 **Headers Required**
 
-```
+```text
 Authorization: Bearer <access_token>
 Content-Type: application/json
 ```
@@ -528,7 +530,7 @@ interface RefreshTokenDto {
 
 ```json
 {
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "refreshToken": "<refresh_token>"
 }
 ```
 
@@ -626,7 +628,7 @@ async function logout(accessToken: string, refreshToken: string) {
 
 **Headers Required**
 
-```
+```text
 Authorization: Bearer <refresh_token>
 ```
 
@@ -639,10 +641,10 @@ Authorization: Bearer <refresh_token>
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "accessTokenExpiresIn": "24h",
-  "refreshTokenExpiresIn": "7d",
+  "accessToken": "<access_token>",
+  "refreshToken": "<refresh_token>",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
   "user": {
     "id": "615f2e0a6c6d5c0e1a1e4a01",
     "username": "john_doe",
@@ -720,6 +722,8 @@ async function refreshTokens(refreshToken: string) {
       const data = await response.json();
 
       // Update stored tokens
+      // WARNING: localStorage is vulnerable to XSS attacks
+      // Consider using HttpOnly, Secure, SameSite cookies instead
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
 
@@ -786,16 +790,17 @@ async function makeAuthenticatedRequest(
 }
 ```
 
-"email": "john.doe.full@example.com",
-"password": "new_password",
-"firstName": "John",
-"lastName": "Doe",
-"birthdate": "2000-01-01",
-"phoneNumber": "+1234567890",
-"profilePicture": "<base64 string>"
+```
+{
+  "email": "john.doe.full@example.com",
+  "password": "new_password",
+  "firstName": "John",
+  "lastName": "Doe",
+  "birthdate": "2000-01-01",
+  "phoneNumber": "+1234567890",
+  "profilePicture": "<base64 string>"
 }
-
-````
+```
 
 **Success Response:**
 
@@ -813,7 +818,7 @@ async function makeAuthenticatedRequest(
     "emailConfirmed": false
   }
 }
-````
+```
 
 **Validation Error Response:**
 
@@ -1016,7 +1021,7 @@ Returns HTML confirmation page with error message and styling.
 **Example:**
 
 ```
-GET http://localhost:3000/auth/confirm-email/abc123def456
+GET http://localhost:3000/api/auth/confirm-email/abc123def456
 ```
 
 **Frontend Integration:**
@@ -1142,8 +1147,8 @@ All validation errors are returned as an `errors` object mapping field names to 
 interface AuthResponseDto {
   accessToken: string;
   refreshToken: string;
-  accessTokenExpiresIn: string; // "24h"
-  refreshTokenExpiresIn: string; // "7d"
+  accessTokenExpiresAt: string; // ISO 8601 datetime (e.g., "2024-02-19T14:07:00.000Z")
+  refreshTokenExpiresAt: string; // ISO 8601 datetime (e.g., "2024-02-26T14:07:00.000Z")
   user: {
     id: string;
     username: string;
@@ -1189,39 +1194,56 @@ const loginResponse = await login(email, password);
 localStorage.setItem('accessToken', loginResponse.accessToken);
 localStorage.setItem('refreshToken', loginResponse.refreshToken);
 localStorage.setItem(
-  'accessTokenExpiresIn',
-  loginResponse.accessTokenExpiresIn
+  'accessTokenExpiresAt',
+  loginResponse.accessTokenExpiresAt
 );
 localStorage.setItem(
-  'refreshTokenExpiresIn',
-  loginResponse.refreshTokenExpiresIn
+  'refreshTokenExpiresAt',
+  loginResponse.refreshTokenExpiresAt
 );
+
+// Check if token is expired
+const isTokenExpired = (expiresAt: string): boolean => {
+  return new Date(expiresAt) < new Date();
+};
+
+// Auto-refresh logic
+const checkAndRefreshToken = async () => {
+  const expiresAt = localStorage.getItem('accessTokenExpiresAt');
+  if (expiresAt && isTokenExpired(expiresAt)) {
+    // Refresh token logic here
+    await refreshToken();
+  }
+};
+```
 
 // Calculate when tokens expire
 const getExpiryTime = (expiresIn: string): Date => {
-  const now = new Date();
-  if (expiresIn === '24h') {
-    return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  } else if (expiresIn === '7d') {
-    return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  }
-  return now;
+const now = new Date();
+if (expiresIn === '24h') {
+return new Date(now.getTime() + 24 _ 60 _ 60 _ 1000);
+} else if (expiresIn === '7d') {
+return new Date(now.getTime() + 7 _ 24 _ 60 _ 60 \* 1000);
+}
+return now;
 };
 
 // Check if token needs refresh
 const needsRefresh = (expiresIn: string): boolean => {
-  const expiry = getExpiryTime(expiresIn);
-  const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
-  return expiry <= fiveMinutesFromNow;
+const expiry = getExpiryTime(expiresIn);
+const fiveMinutesFromNow = new Date(Date.now() + 5 _ 60 _ 1000);
+return expiry <= fiveMinutesFromNow;
 };
 
 // Automatic refresh logic
 if (needsRefresh('24h')) {
-  const refreshResponse = await refreshTokens(refreshToken);
-  // Update stored tokens and expiry times
+const refreshResponse = await refreshTokens(refreshToken);
+// Update stored tokens and expiry times
 }
+
 ```
 
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```
