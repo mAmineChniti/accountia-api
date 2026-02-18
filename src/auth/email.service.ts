@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createTransport } from 'nodemailer';
 
@@ -47,7 +46,7 @@ export class EmailService {
     this.frontendUrl = process.env.FRONTEND_URL;
 
     const port = process.env.PORT ?? '3000';
-    const host = process.env.HOSTNAME ?? 'localhost';
+    const host = process.env.APP_HOST ?? 'localhost';
     const protocol = host === 'localhost' ? 'http' : 'https';
     this.apiUrl = `${protocol}://${host}:${port}`;
   }
@@ -56,13 +55,7 @@ export class EmailService {
     const confirmationLink = `${this.apiUrl}/auth/confirm-email/${token}`;
 
     try {
-      const templatePath = path.join(
-        process.cwd(),
-        'src',
-        'auth',
-        'templates',
-        'confirmation_email.html'
-      );
+      const templatePath = './templates/email_confirmed.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
@@ -83,13 +76,7 @@ export class EmailService {
     resetToken: string
   ): Promise<void> {
     try {
-      const templatePath = path.join(
-        process.cwd(),
-        'src',
-        'auth',
-        'templates',
-        'password_reset.html'
-      );
+      const templatePath = './templates/password_reset.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
