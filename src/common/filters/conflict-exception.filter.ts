@@ -2,32 +2,28 @@ import {
   ExceptionFilter,
   Catch,
   ArgumentsHost,
-  HttpException,
+  ConflictException,
 } from '@nestjs/common';
 import { Response } from 'express';
 
-@Catch(HttpException)
+@Catch(ConflictException)
 export class ConflictExceptionFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost) {
+  catch(exception: ConflictException, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const status = exception.getStatus();
+    const exceptionResponse = exception.getResponse();
 
-    if (status === 409) {
-      const exceptionResponse = exception.getResponse();
-
-      if (
-        typeof exceptionResponse === 'object' &&
-        exceptionResponse !== null &&
-        'type' in exceptionResponse
-      ) {
-        response.status(status).json(exceptionResponse);
-        return;
-      }
+    if (
+      typeof exceptionResponse === 'object' &&
+      exceptionResponse !== null &&
+      'type' in exceptionResponse
+    ) {
+      response.status(409).json(exceptionResponse);
+      return;
     }
 
-    response.status(status).json({
-      statusCode: status,
+    response.status(409).json({
+      statusCode: 409,
       message: exception.message,
       timestamp: new Date().toISOString(),
     });

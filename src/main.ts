@@ -51,7 +51,7 @@ async function bootstrap() {
 
   const docsUrl =
     process.env.NODE_ENV === 'production'
-      ? `Port ${port} - /api/docs`
+      ? `Port ${port} - docs disabled in production`
       : `http://localhost:${String(port)}/api/docs`;
   console.log(`🚀 API running on ${docsUrl}`);
 }
