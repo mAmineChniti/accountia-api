@@ -10,6 +10,7 @@ export class EmailService {
   private readonly smtpHost: string;
   private readonly smtpPort: string;
   private readonly frontendUrl: string;
+  private readonly apiUrl: string;
 
   constructor() {
     if (
@@ -44,10 +45,15 @@ export class EmailService {
     this.smtpHost = process.env.SMTP_HOST ?? 'smtp.gmail.com';
     this.smtpPort = process.env.SMTP_PORT ?? '587';
     this.frontendUrl = process.env.FRONTEND_URL;
+
+    const port = process.env.PORT ?? '3000';
+    const host = process.env.HOSTNAME ?? 'localhost';
+    const protocol = host === 'localhost' ? 'http' : 'https';
+    this.apiUrl = `${protocol}://${host}:${port}`;
   }
 
   async sendConfirmationEmail(email: string, token: string): Promise<void> {
-    const confirmationLink = `${this.frontendUrl}/api/auth/confirm-email/${token}`;
+    const confirmationLink = `${this.apiUrl}/auth/confirm-email/${token}`;
 
     try {
       const templatePath = path.join(
