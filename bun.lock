@@ -18,7 +18,7 @@
         "joi": "^18.0.2",
         "mongoose": "^9.2.1",
         "multer": "^2.0.2",
-        "nodemailer": "^8.0.0",
+        "nodemailer": "^8.0.1",
         "passport": "^0.7.0",
         "passport-jwt": "^4.0.1",
         "reflect-metadata": "^0.2.2",
@@ -1188,7 +1188,7 @@
 
     "node-releases": ["node-releases@2.0.27", "", {}, ""],
 
-    "nodemailer": ["nodemailer@8.0.0", "", {}, "sha512-xvVJf/f0bzmNpnRIbhCp/IKxaHgJ6QynvUbLXzzMRPG3LDQr5oXkYuw4uDFyFYs8cge8agwwrJAXZsd4hhMquw=="],
+    "nodemailer": ["nodemailer@8.0.1", "", {}, "sha512-5kcldIXmaEjZcHR6F28IKGSgpmZHaF1IXLWFTG+Xh3S+Cce4MiakLtWY+PlBU69fLbRa8HlaGIrC/QolUpHkhg=="],
 
     "normalize-path": ["normalize-path@3.0.0", "", {}, ""],
 
