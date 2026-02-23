@@ -76,8 +76,7 @@ export class AuthService {
             type: 'EMAIL_NOT_CONFIRMED',
             message:
               'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: existingUser.email,
-            userId: existingUser._id.toString(),
+            email: email,
           });
       throw error;
     }
@@ -205,6 +204,11 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        profilePicture: user.profilePicture,
+        birthdate:
+          user.birthdate instanceof Date
+            ? user.birthdate
+            : new Date(user.birthdate),
       },
     };
   }
@@ -321,7 +325,6 @@ export class AuthService {
     user.passwordHash = await hash(newPassword, 10);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
-    user.refreshTokens = [];
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
@@ -398,8 +401,14 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate: user.birthdate,
-      dateJoined: user.createdAt,
+      birthdate:
+        user.birthdate instanceof Date
+          ? user.birthdate
+          : new Date(user.birthdate),
+      dateJoined:
+        user.createdAt instanceof Date
+          ? user.createdAt
+          : new Date(user.createdAt),
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -421,8 +430,14 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate: user.birthdate,
-      dateJoined: user.createdAt,
+      birthdate:
+        user.birthdate instanceof Date
+          ? user.birthdate
+          : new Date(user.birthdate),
+      dateJoined:
+        user.createdAt instanceof Date
+          ? user.createdAt
+          : new Date(user.createdAt),
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -538,8 +553,14 @@ export class AuthService {
         username: updatedUser.username,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
-        birthdate: updatedUser.birthdate,
-        dateJoined: updatedUser.createdAt,
+        birthdate:
+          updatedUser.birthdate instanceof Date
+            ? updatedUser.birthdate
+            : new Date(updatedUser.birthdate),
+        dateJoined:
+          updatedUser.createdAt instanceof Date
+            ? updatedUser.createdAt
+            : new Date(updatedUser.createdAt),
         profilePicture: updatedUser.profilePicture,
         emailConfirmed: updatedUser.emailConfirmed,
       };
@@ -574,52 +595,6 @@ export class AuthService {
       throw new BadRequestException(
         'An error occurred while deleting your account'
       );
-    }
-  }
-
-  async getHealthStatus(): Promise<{
-    status: string;
-  }> {
-    try {
-      await this.userModel.findOne().limit(1);
-      return { status: 'ok' };
-    } catch {
-      return { status: 'error' };
-    }
-  }
-
-  async getInternalHealthMetrics(): Promise<{
-    status: string;
-    details?: Record<string, unknown>;
-  }> {
-    try {
-      const userCount = await this.userModel.countDocuments();
-      const activeUsers = await this.userModel.countDocuments({
-        isActive: true,
-      });
-      const confirmedUsers = await this.userModel.countDocuments({
-        emailConfirmed: true,
-      });
-
-      return {
-        status: 'ok',
-        details: {
-          database: 'connected',
-          userCount,
-          activeUsers,
-          confirmedUsers,
-          timestamp: new Date().toISOString(),
-        },
-      };
-    } catch (error: unknown) {
-      return {
-        status: 'error',
-        details: {
-          database: 'disconnected',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-        },
-      };
     }
   }
 
