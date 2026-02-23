@@ -35,11 +35,3 @@ export class MessageResponseDto {
   @ApiProperty({ example: 'Operation completed successfully' })
   message: string;
 }
-
-export class HealthResponseDto {
-  @ApiProperty({ example: 'ok' })
-  status: string;
-
-  @ApiPropertyOptional({ type: Object })
-  details?: Record<string, unknown>;
-}
