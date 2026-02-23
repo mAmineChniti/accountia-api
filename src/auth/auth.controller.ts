@@ -35,7 +35,6 @@ import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
   UserResponseDto,
   MessageResponseDto,
-  HealthResponseDto,
 } from '@/auth/dto/user-response.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
@@ -197,42 +196,6 @@ export class AuthController {
     } catch {
       return result;
     }
-  }
-
-  @Get('health')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Service health check (authenticated) - returns detailed metrics',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Service health status with detailed metrics',
-    type: HealthResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 503, description: 'Service unavailable' })
-  async healthCheck(): Promise<HealthResponseDto> {
-    const result = await this.authService.getInternalHealthMetrics();
-    return {
-      status: result.status,
-      details: result.details,
-    };
-  }
-
-  @Get('public-health')
-  @ApiOperation({ summary: 'Public health check - minimal status only' })
-  @ApiResponse({
-    status: 200,
-    description: 'Service health status (minimal)',
-    type: HealthResponseDto,
-  })
-  @ApiResponse({ status: 503, description: 'Service unavailable' })
-  async publicHealthCheck(): Promise<HealthResponseDto> {
-    const result = await this.authService.getHealthStatus();
-    return {
-      status: result.status,
-    };
   }
 
   @Get('fetchuser')
