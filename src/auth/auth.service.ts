@@ -12,6 +12,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { hash, compare } from 'bcrypt';
+import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { User, UserDocument } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
@@ -27,13 +28,19 @@ import {
   UserResponseDto,
   MessageResponseDto,
 } from '@/auth/dto/user-response.dto';
+import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 
 interface TokenPayload {
+  sub?: string;
   id: string;
   email: string;
   username: string;
+  isAdmin: boolean;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
 }
 
 @Injectable()
@@ -89,6 +96,13 @@ export class AuthService {
         throw new BadRequestException('Failed to parse birthdate');
       }
 
+      let finalProfilePicture = profilePicture;
+      if (!finalProfilePicture) {
+        const svg = multiavatar(username);
+        finalProfilePicture =
+          'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+      }
+
       const user = new this.userModel({
         username,
         email,
@@ -98,9 +112,10 @@ export class AuthService {
         birthdate: birthdateDate,
         phoneNumber,
         acceptTerms,
-        profilePicture,
+        profilePicture: finalProfilePicture,
         emailToken,
         emailConfirmed: false,
+        isAdmin: false,
       });
 
       await user.save();
@@ -147,10 +162,6 @@ export class AuthService {
       throw new ForbiddenException(
         'Account is temporarily locked due to too many failed attempts'
       );
-    }
-
-    if (!user.isActive) {
-      throw new ForbiddenException('Account is deactivated');
     }
 
     if (!user.emailConfirmed) {
@@ -204,11 +215,9 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        birthdate: user.birthdate,
         profilePicture: user.profilePicture,
-        birthdate:
-          user.birthdate instanceof Date
-            ? user.birthdate
-            : new Date(user.birthdate),
+        isAdmin: !!user.isAdmin,
       },
     };
   }
@@ -278,6 +287,9 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phoneNumber: user.phoneNumber,
+          birthdate: user.birthdate,
+          profilePicture: user.profilePicture,
+          isAdmin: !!user.isAdmin,
         },
       };
     } catch (error: unknown) {
@@ -401,14 +413,8 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate:
-        user.birthdate instanceof Date
-          ? user.birthdate
-          : new Date(user.birthdate),
-      dateJoined:
-        user.createdAt instanceof Date
-          ? user.createdAt
-          : new Date(user.createdAt),
+      birthdate: user.birthdate,
+      dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -430,14 +436,8 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate:
-        user.birthdate instanceof Date
-          ? user.birthdate
-          : new Date(user.birthdate),
-      dateJoined:
-        user.createdAt instanceof Date
-          ? user.createdAt
-          : new Date(user.createdAt),
+      birthdate: user.birthdate,
+      dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -445,6 +445,28 @@ export class AuthService {
     return {
       message: 'User fetched successfully',
       user: publicUser,
+    };
+  }
+
+  async fetchAllUsers(): Promise<UsersListResponseDto> {
+    const users = await this.userModel.find().lean();
+
+    const formatted = users.map((u) => ({
+      id: u._id.toString(),
+      username: u.username,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      birthdate: u.birthdate,
+      profilePicture: u.profilePicture,
+      phoneNumber: u.phoneNumber,
+      isAdmin: !!u.isAdmin,
+      dateJoined: u.createdAt,
+    }));
+
+    return {
+      message: 'Users retrieved successfully',
+      users: formatted,
     };
   }
 
@@ -553,14 +575,8 @@ export class AuthService {
         username: updatedUser.username,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
-        birthdate:
-          updatedUser.birthdate instanceof Date
-            ? updatedUser.birthdate
-            : new Date(updatedUser.birthdate),
-        dateJoined:
-          updatedUser.createdAt instanceof Date
-            ? updatedUser.createdAt
-            : new Date(updatedUser.createdAt),
+        birthdate: updatedUser.birthdate,
+        dateJoined: updatedUser.createdAt,
         profilePicture: updatedUser.profilePicture,
         emailConfirmed: updatedUser.emailConfirmed,
       };
@@ -596,6 +612,23 @@ export class AuthService {
         'An error occurred while deleting your account'
       );
     }
+  }
+
+  async deleteUserByAdmin(
+    adminId: string,
+    userId: string
+  ): Promise<MessageResponseDto> {
+    if (adminId === userId) {
+      throw new BadRequestException('Administrators cannot delete themselves');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('The specified user could not be found');
+    }
+
+    await this.userModel.deleteOne({ _id: userId });
+    return { message: 'User deleted successfully' };
   }
 
   async updateRefreshToken(
@@ -638,13 +671,19 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
-    const payload = {
-      sub:
-        user instanceof User && '_id' in user
-          ? (user as UserDocument)._id.toString()
-          : (user as TokenPayload).id,
+    const userId =
+      user instanceof User && '_id' in user
+        ? (user as UserDocument)._id.toString()
+        : (user as TokenPayload).id;
+    const payload: TokenPayload = {
+      sub: userId,
+      id: userId,
       email: user.email,
       username: user.username,
+      isAdmin: user.isAdmin,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phoneNumber: user.phoneNumber,
     };
 
     const accessToken = this.jwtService.sign(payload, {

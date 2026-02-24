@@ -27,7 +27,8 @@ export class User {
   phoneNumber?: string;
 
   @Prop({ default: true })
-  isActive: boolean;
+  @Prop({ default: false })
+  isAdmin: boolean;
 
   @Prop({ default: false })
   emailConfirmed: boolean;
