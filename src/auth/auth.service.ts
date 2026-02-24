@@ -12,6 +12,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { hash, compare } from 'bcrypt';
+import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { User, UserDocument } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
@@ -96,6 +97,13 @@ export class AuthService {
         throw new BadRequestException('Failed to parse birthdate');
       }
 
+      let finalProfilePicture = profilePicture;
+      if (!finalProfilePicture) {
+        const svg = multiavatar(username);
+        finalProfilePicture =
+          'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+      }
+
       const user = new this.userModel({
         username,
         email,
@@ -105,11 +113,10 @@ export class AuthService {
         birthdate: birthdateDate,
         phoneNumber,
         acceptTerms,
-        profilePicture,
+        profilePicture: finalProfilePicture,
         emailToken,
         emailConfirmed: false,
-        // automatically make the very first user an administrator
-        isAdmin: (await this.userModel.countDocuments()) === 0,
+        isAdmin: false,
       });
 
       await user.save();

@@ -37,7 +37,7 @@ export class AuthMiddleware implements NestMiddleware {
         .select('-passwordHash -refreshTokens');
 
       if (!user) {
-        throw new UnauthorizedException('User not found or inactive');
+        throw new UnauthorizedException('User not found');
       }
 
       req.user = {

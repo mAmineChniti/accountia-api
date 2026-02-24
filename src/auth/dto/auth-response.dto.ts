@@ -20,7 +20,12 @@ export class AuthResponseDto {
   refreshTokenExpiresAt: string;
 
   @ApiProperty({
-    example: { id: '1', username: 'john_doe', email: 'john@example.com' },
+    example: {
+      id: '1',
+      username: 'john_doe',
+      email: 'john@example.com',
+      isAdmin: true,
+    },
   })
   user: {
     id: string;

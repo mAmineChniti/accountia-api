@@ -294,7 +294,7 @@ export class AuthController {
   @Delete('users/:id')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Admin: delete an inactive user by id' })
+  @ApiOperation({ summary: 'Admin: delete a user by id' })
   @ApiResponse({
     status: 200,
     description: 'User removed successfully',
@@ -305,7 +305,7 @@ export class AuthController {
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({
     status: 400,
-    description: 'Cannot delete active user or self',
+    description: 'Administrators cannot delete themselves',
   })
   async deleteUserByAdmin(
     @CurrentUser() user: UserPayload,
