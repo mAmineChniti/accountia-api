@@ -53,7 +53,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
   ) {}
 
   @Post('register')
@@ -87,7 +87,7 @@ export class AuthController {
   ): Promise<void> {
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
     const result = await this.authService.login(loginDto, ip);
-
+    
     // Set tokens in cookies
     res.cookie('accessToken', result.accessToken, {
       httpOnly: true,
@@ -95,14 +95,14 @@ export class AuthController {
       sameSite: 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
-
+    
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
-
+    
     // Also return in body for backwards compatibility
     res.json(result);
   }
@@ -342,7 +342,7 @@ export class AuthController {
   })
   async changePassword(
     @CurrentUser() user: UserPayload,
-    @Body() changePasswordDto: ChangePasswordDto
+    @Body() changePasswordDto: ChangePasswordDto,
   ): Promise<MessageResponseDto> {
     return this.usersService.changePassword(user.id, changePasswordDto);
   }
@@ -471,11 +471,7 @@ export class AuthController {
   }
 
   @Get('check')
-  @ApiOperation({
-    summary: 'Check if user is authenticated (optional)',
-    description:
-      'Public endpoint to check if user is logged in. Returns user data if authenticated, null if not.',
-  })
+  @ApiOperation({ summary: 'Check if user is authenticated (optional)', description: 'Public endpoint to check if user is logged in. Returns user data if authenticated, null if not.' })
   @ApiResponse({
     status: 200,
     description: 'Authentication check completed',
@@ -504,7 +500,7 @@ export class AuthController {
       // Try Authorization header first
       const authHeader = request.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.slice(7);
+        token = authHeader.substring(7);
       }
 
       // Try cookies if no header token
@@ -522,12 +518,8 @@ export class AuthController {
       }
 
       // Try to validate the token
-      const payload = this.jwtService.verify<{
-        sub: string;
-        email: string;
-        username: string;
-      }>(token);
-
+      const payload = this.jwtService.verify(token) as { sub: string; email: string; username: string };
+      
       // Token is valid, try to fetch the user
       try {
         const user = await this.authService.fetchUser(payload.sub);

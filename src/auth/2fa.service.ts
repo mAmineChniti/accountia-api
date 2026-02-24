@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as speakeasy from 'speakeasy';
 import * as QRCode from 'qrcode';
@@ -27,7 +26,7 @@ export class TwoFactorService {
 
     return {
       secret: secret.base32,
-      qrCode: secret.otpauth_url ?? '',
+      qrCode: secret.otpauth_url || '',
       backupCodes,
     };
   }
@@ -45,7 +44,7 @@ export class TwoFactorService {
 
     try {
       return await QRCode.toDataURL(otpauthUrl);
-    } catch {
+    } catch (error) {
       throw new BadRequestException('Failed to generate QR code');
     }
   }
@@ -63,7 +62,7 @@ export class TwoFactorService {
       });
 
       return verified;
-    } catch {
+    } catch (error) {
       return false;
     }
   }
@@ -79,6 +78,8 @@ export class TwoFactorService {
    * Remove backup code from list
    */
   removeBackupCode(backupCodes: string[], code: string): string[] {
-    return backupCodes.filter((bc) => bc.toUpperCase() !== code.toUpperCase());
+    return backupCodes.filter(
+      (bc) => bc.toUpperCase() !== code.toUpperCase()
+    );
   }
 }

@@ -19,11 +19,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         // Then try to extract from cookies
         (req: Request) => {
-          const cookies = req.cookies as Record<string, string> | undefined;
-          if (cookies?.accessToken) {
-            return cookies.accessToken;
+          if (req.cookies && req.cookies.accessToken) {
+            return req.cookies.accessToken;
           }
-          return;
+          return null;
         },
       ]),
       ignoreExpiration: false,
@@ -47,10 +46,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       .findById(payload.sub)
       .select('-passwordHash -refreshTokens');
 
-    console.log('[JWT] User found in DB:', {
-      exists: !!user,
-      isActive: user?.isActive,
-    });
+    console.log('[JWT] User found in DB:', { exists: !!user, isActive: user?.isActive });
 
     if (!user) {
       console.error('[JWT] User not found in database for ID:', payload.sub);

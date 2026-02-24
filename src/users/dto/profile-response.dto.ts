@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class ProfileResponseDto {
   @ApiProperty({ example: 'user-id-123' })
@@ -19,7 +19,7 @@ export class ProfileResponseDto {
   @ApiProperty({ example: '1990-01-15' })
   birthdate: Date;
 
-  @ApiPropertyOptional({ example: '+1234567890', nullable: true })
+  @ApiProperty({ example: '+1234567890', required: false, nullable: true })
   phoneNumber?: string;
 
   @ApiProperty({ example: true })
@@ -28,15 +28,12 @@ export class ProfileResponseDto {
   @ApiProperty({ example: true })
   emailConfirmed: boolean;
 
-  @ApiPropertyOptional({
-    example: 'https://example.com/profile.jpg',
-    nullable: true,
-  })
+  @ApiProperty({ example: 'https://example.com/profile.jpg', required: false, nullable: true })
   profilePicture?: string;
 
-  @ApiPropertyOptional({ example: '2024-01-15T10:00:00Z' })
+  @ApiProperty({ example: '2024-01-15T10:00:00Z', required: false })
   createdAt?: Date;
 
-  @ApiPropertyOptional({ example: '2024-01-15T10:00:00Z' })
+  @ApiProperty({ example: '2024-01-15T10:00:00Z', required: false })
   updatedAt?: Date;
 }

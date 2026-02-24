@@ -3,7 +3,8 @@ import { AppModule } from '@/app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConflictExceptionFilter } from '@/common/filters/conflict-exception.filter';
-import cookieParser from 'cookie-parser';
+
+const cookieParser = require('cookie-parser');
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,7 +12,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
