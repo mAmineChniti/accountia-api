@@ -25,6 +25,11 @@ export class AuthResponseDto {
       username: 'john_doe',
       email: 'john@example.com',
       isAdmin: true,
+      firstName: 'John',
+      lastName: 'Doe',
+      phoneNumber: '+1234567890',
+      profilePicture: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+      birthdate: '1990-01-01T00:00:00.000Z',
     },
   })
   user: {
@@ -35,5 +40,7 @@ export class AuthResponseDto {
     lastName?: string;
     phoneNumber?: string;
     isAdmin: boolean;
+    profilePicture?: string;
+    birthdate?: Date;
   };
 }

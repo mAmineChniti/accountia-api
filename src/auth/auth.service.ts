@@ -83,8 +83,7 @@ export class AuthService {
             type: 'EMAIL_NOT_CONFIRMED',
             message:
               'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: existingUser.email,
-            userId: existingUser._id.toString(),
+            email: email,
           });
       throw error;
     }
@@ -216,6 +215,8 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        birthdate: user.birthdate,
+        profilePicture: user.profilePicture,
         isAdmin: !!user.isAdmin,
       },
     };
@@ -286,6 +287,8 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phoneNumber: user.phoneNumber,
+          birthdate: user.birthdate,
+          profilePicture: user.profilePicture,
           isAdmin: !!user.isAdmin,
         },
       };
@@ -334,7 +337,6 @@ export class AuthService {
     user.passwordHash = await hash(newPassword, 10);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
-    user.refreshTokens = [];
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
