@@ -24,12 +24,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     email: string;
     username: string;
-    isAdmin?: boolean;
+    isAdmin: boolean;
   }) {
     const user = await this.userModel
       .findById(payload.sub)
       .select('-passwordHash -refreshTokens');
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new Error('User not found or inactive');
     }
     return {

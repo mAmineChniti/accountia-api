@@ -36,7 +36,7 @@ export class AuthMiddleware implements NestMiddleware {
         .findById(payload.sub)
         .select('-passwordHash -refreshTokens');
 
-      if (!user || !user.isActive) {
+      if (!user) {
         throw new UnauthorizedException('User not found or inactive');
       }
 
@@ -47,6 +47,7 @@ export class AuthMiddleware implements NestMiddleware {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        isAdmin: !!user.isAdmin,
       };
 
       next();

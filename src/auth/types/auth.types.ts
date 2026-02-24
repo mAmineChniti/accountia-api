@@ -7,8 +7,7 @@ export interface UserPayload {
   firstName: string;
   lastName: string;
   phoneNumber?: string;
-  /** Indicates the user has admin privileges */
-  isAdmin?: boolean;
+  isAdmin: boolean;
 }
 
 export interface AuthenticatedRequest extends Request {
