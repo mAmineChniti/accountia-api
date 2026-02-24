@@ -6,8 +6,9 @@ import {
   MaxLength,
   IsOptional,
   IsBoolean,
-  IsDateString,
+  IsDate,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
@@ -45,8 +46,9 @@ export class RegisterDto {
 
   @ApiProperty({ example: '1990-01-01T00:00:00Z' })
   @IsNotEmpty()
-  @IsDateString()
-  birthdate: string;
+  @Type(() => Date)
+  @IsDate()
+  birthdate: Date;
 
   @ApiPropertyOptional({ example: '+1234567890' })
   @IsOptional()
