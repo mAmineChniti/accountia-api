@@ -4,9 +4,8 @@ import {
   MinLength,
   MaxLength,
   IsOptional,
-  IsDate,
+  IsDateString,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -52,9 +51,8 @@ export class UpdateUserDto {
 
   @ApiPropertyOptional({ example: '1990-01-01T00:00:00Z' })
   @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  birthdate?: Date;
+  @IsDateString()
+  birthdate?: string;
 
   @ApiPropertyOptional({ example: '+1234567890' })
   @IsOptional()

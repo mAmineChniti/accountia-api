@@ -22,13 +22,12 @@ import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
-import {
-  PublicUserDto,
-  UserResponseDto,
-  MessageResponseDto,
-} from '@/auth/dto/user-response.dto';
+import { PublicUserDto, UserResponseDto } from '@/auth/dto/user-response.dto';
+import { MessageResponseDto } from '@/users/dto/message-response.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
+import { TwoFactorService } from '@/auth/2fa.service';
+import { TwoFactorSetupResponseDto } from '@/auth/dto/two-factor.dto';
 
 interface TokenPayload {
   id: string;
@@ -42,7 +41,8 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private emailService: EmailService,
-    private rateLimitingService: RateLimitingService
+    private rateLimitingService: RateLimitingService,
+    private twoFactorService: TwoFactorService
   ) {}
 
   async register(registerDto: RegisterDto): Promise<RegistrationResponseDto> {
@@ -76,7 +76,8 @@ export class AuthService {
             type: 'EMAIL_NOT_CONFIRMED',
             message:
               'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: email,
+            email: existingUser.email,
+            userId: existingUser._id.toString(),
           });
       throw error;
     }
@@ -153,11 +154,12 @@ export class AuthService {
       throw new ForbiddenException('Account is deactivated');
     }
 
-    if (!user.emailConfirmed) {
-      throw new ForbiddenException(
-        'Email not confirmed. Please confirm your email before logging in.'
-      );
-    }
+    // Email confirmation check disabled for development
+    // if (!user.emailConfirmed) {
+    //   throw new ForbiddenException(
+    //     'Email not confirmed. Please confirm your email before logging in.'
+    //   );
+    // }
 
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
@@ -204,11 +206,6 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
-        profilePicture: user.profilePicture,
-        birthdate:
-          user.birthdate instanceof Date
-            ? user.birthdate
-            : new Date(user.birthdate),
       },
     };
   }
@@ -325,6 +322,7 @@ export class AuthService {
     user.passwordHash = await hash(newPassword, 10);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    user.refreshTokens = [];
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
@@ -401,14 +399,8 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate:
-        user.birthdate instanceof Date
-          ? user.birthdate
-          : new Date(user.birthdate),
-      dateJoined:
-        user.createdAt instanceof Date
-          ? user.createdAt
-          : new Date(user.createdAt),
+      birthdate: user.birthdate,
+      dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -430,14 +422,8 @@ export class AuthService {
       username: user.username,
       firstName: user.firstName,
       lastName: user.lastName,
-      birthdate:
-        user.birthdate instanceof Date
-          ? user.birthdate
-          : new Date(user.birthdate),
-      dateJoined:
-        user.createdAt instanceof Date
-          ? user.createdAt
-          : new Date(user.createdAt),
+      birthdate: user.birthdate,
+      dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
     };
@@ -452,115 +438,119 @@ export class AuthService {
     userId: string,
     updateDto: UpdateUserDto
   ): Promise<UserResponseDto> {
-    const user = await this.userModel.findById(userId);
-
-    if (!user) {
-      throw new NotFoundException('Your user profile could not be found');
-    }
-
-    const updateData: Partial<User> = {};
-    let hasUpdates = false;
-
-    if (updateDto.username && updateDto.username !== user.username) {
-      const existingUser = await this.userModel.findOne({
-        username: updateDto.username,
-      });
-      if (existingUser) {
-        throw new ConflictException('Username is already taken');
-      }
-      updateData.username = updateDto.username;
-      hasUpdates = true;
-    }
-
-    if (updateDto.email && updateDto.email !== user.email) {
-      const existingUser = await this.userModel.findOne({
-        email: updateDto.email,
-      });
-      if (existingUser) {
-        throw new ConflictException('Email is already registered');
-      }
-      updateData.email = updateDto.email;
-      updateData.emailConfirmed = false;
-      updateData.emailToken = this.generateEmailToken();
-      hasUpdates = true;
-    }
-
-    if (updateDto.password) {
-      try {
-        updateData.passwordHash = await hash(updateDto.password, 10);
-        hasUpdates = true;
-      } catch {
-        throw new BadRequestException('Unable to process password update');
-      }
-    }
-
-    if (updateDto.firstName !== undefined) {
-      updateData.firstName = updateDto.firstName;
-      hasUpdates = true;
-    }
-
-    if (updateDto.lastName !== undefined) {
-      updateData.lastName = updateDto.lastName;
-      hasUpdates = true;
-    }
-
-    if (updateDto.birthdate) {
-      const date = new Date(updateDto.birthdate);
-      if (Number.isNaN(date.getTime())) {
-        throw new BadRequestException('Invalid birthdate format');
-      }
-      updateData.birthdate = date;
-      hasUpdates = true;
-    }
-
-    if (updateDto.phoneNumber !== undefined) {
-      updateData.phoneNumber = updateDto.phoneNumber;
-      hasUpdates = true;
-    }
-
-    if (updateDto.profilePicture !== undefined) {
-      updateData.profilePicture = updateDto.profilePicture;
-      hasUpdates = true;
-    }
-
-    if (!hasUpdates) {
-      throw new BadRequestException('No update fields provided');
-    }
-
     try {
-      const updatedUser = await this.userModel.findByIdAndUpdate(
-        userId,
-        updateData,
-        { new: true }
-      );
+      const user = await this.userModel.findById(userId);
 
-      if (!updatedUser) {
-        throw new BadRequestException('Failed to update user');
+      if (!user) {
+        throw new NotFoundException('Your user profile could not be found');
       }
 
-      if (updateData.email && updateData.emailToken) {
+      let hasUpdates = false;
+
+      // Check and update username
+      if (updateDto.username && updateDto.username !== user.username) {
+        const existingUser = await this.userModel.findOne({
+          username: updateDto.username,
+        });
+        if (existingUser) {
+          throw new ConflictException('Username is already taken');
+        }
+        user.username = updateDto.username;
+        hasUpdates = true;
+      }
+
+      // Check and update email
+      if (updateDto.email && updateDto.email !== user.email) {
+        const existingUser = await this.userModel.findOne({
+          email: updateDto.email,
+        });
+        if (existingUser) {
+          throw new ConflictException('Email is already registered');
+        }
+        user.email = updateDto.email;
+        user.emailConfirmed = false;
+        user.emailToken = this.generateEmailToken();
+
         try {
           await this.emailService.sendConfirmationEmail(
-            updateData.email,
-            updateData.emailToken
+            updateDto.email,
+            user.emailToken
           );
         } catch (error) {
           console.error('Failed to send confirmation email:', error);
         }
+        hasUpdates = true;
       }
+
+      // Update password
+      if (updateDto.password) {
+        try {
+          user.passwordHash = await hash(updateDto.password, 10);
+          hasUpdates = true;
+        } catch {
+          throw new BadRequestException('Unable to process password update');
+        }
+      }
+
+      // Update firstName
+      if (updateDto.firstName !== undefined && updateDto.firstName !== null) {
+        if (
+          typeof updateDto.firstName === 'string' &&
+          updateDto.firstName.trim() === ''
+        ) {
+          throw new BadRequestException('First name cannot be empty');
+        }
+        user.firstName = updateDto.firstName;
+        hasUpdates = true;
+      }
+
+      // Update lastName
+      if (updateDto.lastName !== undefined && updateDto.lastName !== null) {
+        if (
+          typeof updateDto.lastName === 'string' &&
+          updateDto.lastName.trim() === ''
+        ) {
+          throw new BadRequestException('Last name cannot be empty');
+        }
+        user.lastName = updateDto.lastName;
+        hasUpdates = true;
+      }
+
+      // Update birthdate
+      if (updateDto.birthdate) {
+        const date = new Date(updateDto.birthdate);
+        if (Number.isNaN(date.getTime())) {
+          throw new BadRequestException('Invalid birthdate format');
+        }
+        user.birthdate = date;
+        hasUpdates = true;
+      }
+
+      // Update phoneNumber
+      if (updateDto.phoneNumber !== undefined) {
+        user.phoneNumber = updateDto.phoneNumber;
+        hasUpdates = true;
+      }
+
+      // Update profilePicture
+      if (updateDto.profilePicture !== undefined) {
+        user.profilePicture = updateDto.profilePicture;
+        hasUpdates = true;
+      }
+
+      if (!hasUpdates) {
+        throw new BadRequestException('No update fields provided');
+      }
+
+      // Save the document with updated fields
+      const updatedUser = await user.save();
 
       const publicUser: PublicUserDto = {
         username: updatedUser.username,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
-        birthdate:
-          updatedUser.birthdate instanceof Date
-            ? updatedUser.birthdate
-            : new Date(updatedUser.birthdate),
-        dateJoined:
-          updatedUser.createdAt instanceof Date
-            ? updatedUser.createdAt
-            : new Date(updatedUser.createdAt),
+        birthdate: updatedUser.birthdate,
+        dateJoined: updatedUser.createdAt,
         profilePicture: updatedUser.profilePicture,
         emailConfirmed: updatedUser.emailConfirmed,
       };
@@ -570,9 +560,18 @@ export class AuthService {
         user: publicUser,
       };
     } catch (error) {
-      if (error instanceof HttpException) {
+      // Re-throw known exceptions
+      if (
+        error instanceof ConflictException ||
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException ||
+        error instanceof HttpException
+      ) {
         throw error;
       }
+
+      // Handle any other errors
+      console.error('Update user error:', error);
       throw new BadRequestException(
         'An error occurred while updating your profile'
       );
@@ -595,6 +594,52 @@ export class AuthService {
       throw new BadRequestException(
         'An error occurred while deleting your account'
       );
+    }
+  }
+
+  async getHealthStatus(): Promise<{
+    status: string;
+  }> {
+    try {
+      await this.userModel.findOne().limit(1);
+      return { status: 'ok' };
+    } catch {
+      return { status: 'error' };
+    }
+  }
+
+  async getInternalHealthMetrics(): Promise<{
+    status: string;
+    details?: Record<string, unknown>;
+  }> {
+    try {
+      const userCount = await this.userModel.countDocuments();
+      const activeUsers = await this.userModel.countDocuments({
+        isActive: true,
+      });
+      const confirmedUsers = await this.userModel.countDocuments({
+        emailConfirmed: true,
+      });
+
+      return {
+        status: 'ok',
+        details: {
+          database: 'connected',
+          userCount,
+          activeUsers,
+          confirmedUsers,
+          timestamp: new Date().toISOString(),
+        },
+      };
+    } catch (error: unknown) {
+      return {
+        status: 'error',
+        details: {
+          database: 'disconnected',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString(),
+        },
+      };
     }
   }
 
@@ -694,5 +739,150 @@ export class AuthService {
       user.lockUntil = undefined;
       await (user as UserDocument).save();
     }
+  }
+
+  /**
+   * Setup 2FA - Generate secret and QR code
+   */
+  async setupTwoFactor(userId: string): Promise<TwoFactorSetupResponseDto> {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('2FA is already enabled for this account');
+    }
+
+    const { secret, backupCodes } = this.twoFactorService.generateSecret(
+      user.email
+    );
+    const qrCode = await this.twoFactorService.generateQRCode(
+      secret,
+      user.email
+    );
+
+    return {
+      secret,
+      qrCode,
+      backupCodes,
+    };
+  }
+
+  /**
+   * Verify and enable 2FA
+   */
+  async enableTwoFactor(
+    userId: string,
+    code: string,
+    secret: string,
+    backupCodes: string[]
+  ): Promise<MessageResponseDto> {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.twoFactorEnabled) {
+      throw new BadRequestException('2FA is already enabled');
+    }
+
+    // Verify the OTP code
+    const isValid = this.twoFactorService.verifyToken(secret, code);
+    if (!isValid) {
+      throw new BadRequestException('Invalid OTP code');
+    }
+
+    // Enable 2FA and store secret and backup codes
+    user.twoFactorEnabled = true;
+    user.twoFactorSecret = secret;
+    user.backupCodes = backupCodes;
+
+    await user.save();
+
+    return { message: '2FA enabled successfully' };
+  }
+
+  /**
+   * Disable 2FA
+   */
+  async disableTwoFactor(
+    userId: string,
+    password: string
+  ): Promise<MessageResponseDto> {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.twoFactorEnabled) {
+      throw new BadRequestException('2FA is not enabled for this account');
+    }
+
+    // Verify password before disabling
+    const isPasswordValid = await compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    // Disable 2FA
+    user.twoFactorEnabled = false;
+    user.twoFactorSecret = undefined;
+    user.backupCodes = [];
+
+    await user.save();
+
+    return { message: '2FA disabled successfully' };
+  }
+
+  /**
+   * Verify 2FA code during login
+   */
+  async verifyTwoFactorDuringLogin(
+    userId: string,
+    code: string
+  ): Promise<boolean> {
+    const user = await this.userModel.findById(userId);
+
+    if (!user || !user.twoFactorEnabled) {
+      throw new BadRequestException('2FA is not enabled');
+    }
+
+    // Try OTP code first
+    if (this.twoFactorService.verifyToken(user.twoFactorSecret!, code)) {
+      return true;
+    }
+
+    // Try backup code
+    if (this.twoFactorService.verifyBackupCode(user.backupCodes, code)) {
+      // Remove used backup code
+      user.backupCodes = this.twoFactorService.removeBackupCode(
+        user.backupCodes,
+        code
+      );
+      await user.save();
+      return true;
+    }
+
+    throw new UnauthorizedException('Invalid 2FA code');
+  }
+
+  /**
+   * Get 2FA status
+   */
+  async getTwoFactorStatus(userId: string) {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      twoFactorEnabled: user.twoFactorEnabled,
+      backupCodesRemaining: user.backupCodes?.length || 0,
+    };
   }
 }

@@ -20,16 +20,7 @@ export class AuthResponseDto {
   refreshTokenExpiresAt: string;
 
   @ApiProperty({
-    example: {
-      id: '1',
-      username: 'john_doe',
-      email: 'john@example.com',
-      firstName: 'John',
-      lastName: 'Doe',
-      phoneNumber: '+1234567890',
-      profilePicture: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-      birthdate: '1990-01-01T00:00:00.000Z',
-    },
+    example: { id: '1', username: 'john_doe', email: 'john@example.com' },
   })
   user: {
     id: string;
@@ -38,7 +29,5 @@ export class AuthResponseDto {
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
-    profilePicture?: string;
-    birthdate?: Date;
   };
 }

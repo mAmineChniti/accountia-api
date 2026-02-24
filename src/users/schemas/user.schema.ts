@@ -69,6 +69,15 @@ export class User {
   @Prop()
   lockUntil?: Date;
 
+  @Prop({ default: false })
+  twoFactorEnabled: boolean;
+
+  @Prop()
+  twoFactorSecret?: string;
+
+  @Prop({ default: [] })
+  backupCodes: string[];
+
   @Prop()
   createdAt: Date;
 

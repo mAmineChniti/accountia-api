@@ -7,16 +7,19 @@ import { AuthService } from '@/auth/auth.service';
 import { AuthController } from '@/auth/auth.controller';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
+import { TwoFactorService } from '@/auth/2fa.service';
 import { JwtStrategy } from '@/auth/strategies/jwt.strategy';
 import { RefreshStrategy } from '@/auth/strategies/refresh.strategy';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { User, UserSchema } from '@/users/schemas/user.schema';
+import { UsersModule } from '@/users/users.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     PassportModule,
+    UsersModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({
@@ -32,6 +35,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     AuthService,
     EmailService,
     RateLimitingService,
+    TwoFactorService,
     JwtStrategy,
     RefreshStrategy,
     JwtAuthGuard,
@@ -40,6 +44,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
   controllers: [AuthController],
   exports: [
     AuthService,
+    TwoFactorService,
     JwtStrategy,
     RefreshStrategy,
     RateLimitingService,

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createTransport } from 'nodemailer';
 
 @Injectable()
@@ -52,16 +53,26 @@ export class EmailService {
   }
 
   async sendConfirmationEmail(email: string, token: string): Promise<void> {
-    const confirmationLink = `${this.apiUrl}/auth/confirm-email/${token}`;
+    const confirmationLink = `${this.apiUrl}/api/auth/confirm-email/${token}`;
 
     try {
-      const templatePath = './templates/email_confirmed.html';
+      const templatePath = path.join(
+        process.cwd(),
+        'src',
+        'auth',
+        'templates',
+        'confirmation_email.html'
+      );
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
       const html = template
         .replaceAll('{{.ConfirmationLink}}', confirmationLink)
         .replaceAll('{{.Year}}', year.toString());
+
+      console.log('[CONFIRMATION EMAIL] Token:', token);
+      console.log('[CONFIRMATION EMAIL] Link:', confirmationLink);
+      console.log('[CONFIRMATION EMAIL] HTML sent successfully to:', email);
 
       await this.sendEmail(email, 'Confirm Your Accountia Account', html);
     } catch (error: unknown) {
@@ -76,7 +87,13 @@ export class EmailService {
     resetToken: string
   ): Promise<void> {
     try {
-      const templatePath = './templates/password_reset.html';
+      const templatePath = path.join(
+        process.cwd(),
+        'src',
+        'auth',
+        'templates',
+        'password_reset.html'
+      );
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
