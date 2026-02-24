@@ -27,6 +27,7 @@ import {
   UserResponseDto,
   MessageResponseDto,
 } from '@/auth/dto/user-response.dto';
+import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 
@@ -34,6 +35,7 @@ interface TokenPayload {
   id: string;
   email: string;
   username: string;
+  isAdmin?: boolean;
 }
 
 @Injectable()
@@ -102,6 +104,8 @@ export class AuthService {
         profilePicture,
         emailToken,
         emailConfirmed: false,
+        // automatically make the very first user an administrator
+        isAdmin: (await this.userModel.countDocuments()) === 0,
       });
 
       await user.save();
@@ -205,6 +209,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        isAdmin: user.isAdmin,
       },
     };
   }
@@ -274,6 +279,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phoneNumber: user.phoneNumber,
+          isAdmin: user.isAdmin,
         },
       };
     } catch (error: unknown) {
@@ -433,6 +439,28 @@ export class AuthService {
     };
   }
 
+  async fetchAllUsers(): Promise<UsersListResponseDto> {
+    const users = await this.userModel.find().lean();
+
+    const formatted = users.map((u) => ({
+      id: u._id.toString(),
+      username: u.username,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      birthdate: u.birthdate,
+      profilePicture: u.profilePicture,
+      phoneNumber: u.phoneNumber,
+      isAdmin: u.isAdmin,
+      dateJoined: u.createdAt,
+    }));
+
+    return {
+      message: 'Users retrieved successfully',
+      users: formatted,
+    };
+  }
+
   async updateUser(
     userId: string,
     updateDto: UpdateUserDto
@@ -577,50 +605,30 @@ export class AuthService {
     }
   }
 
-  async getHealthStatus(): Promise<{
-    status: string;
-  }> {
-    try {
-      await this.userModel.findOne().limit(1);
-      return { status: 'ok' };
-    } catch {
-      return { status: 'error' };
+  /**
+   * Administrative deletion that only operates on inactive accounts.
+   */
+  async deleteUserByAdmin(
+    adminId: string,
+    userId: string
+  ): Promise<MessageResponseDto> {
+    if (adminId === userId) {
+      throw new BadRequestException('Administrators cannot delete themselves');
     }
-  }
 
-  async getInternalHealthMetrics(): Promise<{
-    status: string;
-    details?: Record<string, unknown>;
-  }> {
-    try {
-      const userCount = await this.userModel.countDocuments();
-      const activeUsers = await this.userModel.countDocuments({
-        isActive: true,
-      });
-      const confirmedUsers = await this.userModel.countDocuments({
-        emailConfirmed: true,
-      });
-
-      return {
-        status: 'ok',
-        details: {
-          database: 'connected',
-          userCount,
-          activeUsers,
-          confirmedUsers,
-          timestamp: new Date().toISOString(),
-        },
-      };
-    } catch (error: unknown) {
-      return {
-        status: 'error',
-        details: {
-          database: 'disconnected',
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString(),
-        },
-      };
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('The specified user could not be found');
     }
+
+    if (user.isActive) {
+      throw new BadRequestException(
+        'Only inactive accounts may be deleted by an administrator'
+      );
+    }
+
+    await this.userModel.deleteOne({ _id: userId });
+    return { message: 'User deleted successfully' };
   }
 
   async updateRefreshToken(
@@ -663,13 +671,14 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
-    const payload = {
-      sub:
+    const payload: TokenPayload = {
+      id:
         user instanceof User && '_id' in user
           ? (user as UserDocument)._id.toString()
           : (user as TokenPayload).id,
       email: user.email,
       username: user.username,
+      isAdmin: (user as User).isAdmin ?? (user as TokenPayload).isAdmin,
     };
 
     const accessToken = this.jwtService.sign(payload, {

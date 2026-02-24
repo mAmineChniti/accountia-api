@@ -1241,9 +1241,77 @@ const refreshResponse = await refreshTokens(refreshToken);
 // Update stored tokens and expiry times
 }
 
+````
+
+### Administrative Endpoints
+
+#### GET `/auth/users` - List all users (admin only)
+
+- **HTTP Method**: GET
+- **Route**: `/api/auth/users`
+- **Description**: Retrieves a list of every registered user. Intended for administrative oversight, this endpoint returns basic metadata (username, email, first/last name, birthdate, phone number, profile picture, admin flag, join date) for each account. Only users with `isAdmin` set to `true` may call it.
+- **Authentication Required**: Yes
+- **Guards**: `JwtAuthGuard`, `AdminGuard`
+
+**Success Response (200 OK)**
+
+```json
+{
+  "message": "Users retrieved successfully",
+  "users": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "username": "john_doe",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "birthdate": "1990-01-01T00:00:00.000Z",
+      "profilePicture": "data:image/png;base64,iVBORw0...",
+      "phoneNumber": "123-456-7890",
+      "isAdmin": false,
+      "dateJoined": "2023-01-01T00:00:00.000Z"
+    }
+  ]
+}
 ```
+
+**Error Responses**
+
+- `401 Unauthorized` – missing/invalid token
+- `403 Forbidden` – authenticated user is not an admin
+
+
+#### DELETE `/auth/users/:id` - Remove inactive user (admin only)
+
+- **HTTP Method**: DELETE
+- **Route**: `/api/auth/users/:id`
+- **Description**: Deletes an account belonging to another user. Only users with `isAdmin` set to `true` may call this endpoint. The target user must be inactive (`isActive=false`). Administrators cannot delete themselves via this route.
+- **Authentication Required**: Yes
+- **Guards**: `JwtAuthGuard`, `AdminGuard`
+- **Request Parameters**:
+  - `id` (string) – MongoDB ObjectId of the user to remove
+
+**Success Response (200 OK)**
+
+```json
+{
+  "message": "User deleted successfully"
+}
+````
+
+**Error Responses**
+
+- `401 Unauthorized` – missing/invalid token
+- `403 Forbidden` – authenticated user is not an admin
+- `404 Not Found` – target user does not exist
+- `400 Bad Request` – cannot delete an active user or administrator attempted to delete their own account
+
+---
 
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+```
+
 ```

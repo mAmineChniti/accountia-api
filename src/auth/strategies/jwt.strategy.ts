@@ -24,6 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     email: string;
     username: string;
+    isAdmin?: boolean;
   }) {
     const user = await this.userModel
       .findById(payload.sub)
@@ -38,6 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
+      isAdmin: user.isAdmin,
     };
   }
 }

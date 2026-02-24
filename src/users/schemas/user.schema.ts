@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type UserDocument = User & Document;
 
-@Schema({ timestamps: true })
+@Schema({ collection: 'users', timestamps: true })
 export class User {
   @Prop({ required: true, unique: true })
   username: string;
@@ -28,6 +28,10 @@ export class User {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  // flag indicating administrative privileges
+  @Prop({ default: false })
+  isAdmin: boolean;
 
   @Prop({ default: false })
   emailConfirmed: boolean;
