@@ -138,7 +138,7 @@ export class AuthController {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
-        isAdmin: user.isAdmin,
+        isAdmin: !!user.isAdmin,
       },
     };
   }

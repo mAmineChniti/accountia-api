@@ -32,10 +32,14 @@ import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 
 interface TokenPayload {
+  sub?: string;
   id: string;
   email: string;
   username: string;
-  isAdmin?: boolean;
+  isAdmin: boolean;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
 }
 
 @Injectable()
@@ -209,7 +213,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
-        isAdmin: user.isAdmin,
+        isAdmin: !!user.isAdmin,
       },
     };
   }
@@ -279,7 +283,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           phoneNumber: user.phoneNumber,
-          isAdmin: user.isAdmin,
+          isAdmin: !!user.isAdmin,
         },
       };
     } catch (error: unknown) {
@@ -451,7 +455,7 @@ export class AuthService {
       birthdate: u.birthdate,
       profilePicture: u.profilePicture,
       phoneNumber: u.phoneNumber,
-      isAdmin: u.isAdmin,
+      isAdmin: !!u.isAdmin,
       dateJoined: u.createdAt,
     }));
 
@@ -671,14 +675,19 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
+    const userId =
+      user instanceof User && '_id' in user
+        ? (user as UserDocument)._id.toString()
+        : (user as TokenPayload).id;
     const payload: TokenPayload = {
-      id:
-        user instanceof User && '_id' in user
-          ? (user as UserDocument)._id.toString()
-          : (user as TokenPayload).id,
+      sub: userId,
+      id: userId,
       email: user.email,
       username: user.username,
-      isAdmin: (user as User).isAdmin ?? (user as TokenPayload).isAdmin,
+      isAdmin: user.isAdmin,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phoneNumber: user.phoneNumber,
     };
 
     const accessToken = this.jwtService.sign(payload, {
