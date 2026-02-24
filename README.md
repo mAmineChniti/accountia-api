@@ -1215,7 +1215,7 @@ const checkAndRefreshToken = async () => {
     await refreshToken();
   }
 };
-```
+
 
 // Calculate when tokens expire
 const getExpiryTime = (expiresIn: string): Date => {
@@ -1241,7 +1241,7 @@ const refreshResponse = await refreshTokens(refreshToken);
 // Update stored tokens and expiry times
 }
 
-````
+```
 
 ### Administrative Endpoints
 
@@ -1280,12 +1280,11 @@ const refreshResponse = await refreshTokens(refreshToken);
 - `401 Unauthorized` – missing/invalid token
 - `403 Forbidden` – authenticated user is not an admin
 
-
-#### DELETE `/auth/users/:id` - Remove inactive user (admin only)
+#### DELETE `/auth/users/:id` - Remove user (admin only)
 
 - **HTTP Method**: DELETE
 - **Route**: `/api/auth/users/:id`
-- **Description**: Deletes an account belonging to another user. Only users with `isAdmin` set to `true` may call this endpoint. The target user must be inactive (`isActive=false`). Administrators cannot delete themselves via this route.
+- **Description**: Deletes an account belonging to another user. Only users with `isAdmin` set to `true` may call this endpoint. Administrators cannot delete themselves via this route.
 - **Authentication Required**: Yes
 - **Guards**: `JwtAuthGuard`, `AdminGuard`
 - **Request Parameters**:
@@ -1297,21 +1296,17 @@ const refreshResponse = await refreshTokens(refreshToken);
 {
   "message": "User deleted successfully"
 }
-````
+```
 
 **Error Responses**
 
 - `401 Unauthorized` – missing/invalid token
 - `403 Forbidden` – authenticated user is not an admin
 - `404 Not Found` – target user does not exist
-- `400 Bad Request` – cannot delete an active user or administrator attempted to delete their own account
+- `400 Bad Request` – administrator attempted to delete their own account
 
 ---
 
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-```
-
-```
