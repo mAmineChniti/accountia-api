@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthenticatedRequest } from '@/auth/types/auth.types';
 
@@ -12,7 +13,7 @@ export class AdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
     if (!user) {
-      throw new ForbiddenException('No authenticated user found');
+      throw new UnauthorizedException('No authenticated user found');
     }
     if (!user.isAdmin) {
       throw new ForbiddenException('Insufficient privileges');

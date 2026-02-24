@@ -97,6 +97,7 @@ interface UserPayload {
   firstName: string;
   lastName: string;
   phoneNumber?: string;
+  isAdmin: boolean;
 }
 ```
 
@@ -333,6 +334,7 @@ interface LoginDto {
     "username": "john_doe",
     "email": "john.doe@example.com",
     "firstName": "John",
+    "isAdmin": false,
     "lastName": "Doe",
     "phoneNumber": "+1234567890"
   }
@@ -1156,6 +1158,7 @@ interface AuthResponseDto {
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
+    isAdmin: boolean;
   };
 }
 ```
@@ -1216,31 +1219,29 @@ const checkAndRefreshToken = async () => {
   }
 };
 
-
 // Calculate when tokens expire
 const getExpiryTime = (expiresIn: string): Date => {
-const now = new Date();
-if (expiresIn === '24h') {
-return new Date(now.getTime() + 24 _ 60 _ 60 _ 1000);
-} else if (expiresIn === '7d') {
-return new Date(now.getTime() + 7 _ 24 _ 60 _ 60 \* 1000);
-}
-return now;
+  const now = new Date();
+  if (expiresIn === '24h') {
+    return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  } else if (expiresIn === '7d') {
+    return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  }
+  return now;
 };
 
 // Check if token needs refresh
 const needsRefresh = (expiresIn: string): boolean => {
-const expiry = getExpiryTime(expiresIn);
-const fiveMinutesFromNow = new Date(Date.now() + 5 _ 60 _ 1000);
-return expiry <= fiveMinutesFromNow;
+  const expiry = getExpiryTime(expiresIn);
+  const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
+  return expiry <= fiveMinutesFromNow;
 };
 
 // Automatic refresh logic
 if (needsRefresh('24h')) {
-const refreshResponse = await refreshTokens(refreshToken);
-// Update stored tokens and expiry times
+  const refreshResponse = await refreshTokens(refreshToken);
+  // Update stored tokens and expiry times
 }
-
 ```
 
 ### Administrative Endpoints

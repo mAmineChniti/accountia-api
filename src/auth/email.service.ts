@@ -55,7 +55,7 @@ export class EmailService {
     const confirmationLink = `${this.apiUrl}/auth/confirm-email/${token}`;
 
     try {
-      const templatePath = './templates/email_confirmed.html';
+      const templatePath = './src/auth/templates/email_confirmed.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
@@ -76,7 +76,7 @@ export class EmailService {
     resetToken: string
   ): Promise<void> {
     try {
-      const templatePath = './templates/password_reset.html';
+      const templatePath = './src/auth/templates/password_reset.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
