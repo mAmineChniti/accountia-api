@@ -7,6 +7,7 @@ export interface UserPayload {
   firstName: string;
   lastName: string;
   phoneNumber?: string;
+  isAdmin: boolean;
 }
 
 export interface AuthenticatedRequest extends Request {

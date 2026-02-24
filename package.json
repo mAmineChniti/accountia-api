@@ -23,6 +23,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@multiavatar/multiavatar": "^1.0.7",
     "@nestjs/common": "^11.1.13",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.1.13",
@@ -56,8 +57,8 @@
     "@types/nodemailer": "^7.0.11",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.3",
-    "@typescript-eslint/parser": "^6.15.0",
-    "eslint": "^10.0.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "9.39.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-unicorn": "^63.0.0",
@@ -97,8 +98,6 @@
   },
   "trustedDependencies": [
     "@nestjs/core",
-    "@scarf/scarf",
-    "bcrypt",
     "unrs-resolver"
   ]
 }

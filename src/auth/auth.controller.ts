@@ -36,9 +36,11 @@ import {
   UserResponseDto,
   MessageResponseDto,
 } from '@/auth/dto/user-response.dto';
+import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
+import { AdminGuard } from '@/auth/guards/admin.guard';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
 
@@ -136,6 +138,7 @@ export class AuthController {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
+        isAdmin: !!user.isAdmin,
       },
     };
   }
@@ -172,7 +175,7 @@ export class AuthController {
     const result = await this.authService.confirmEmail(token);
 
     try {
-      const templatePath = './templates/email_confirmed.html';
+      const templatePath = './src/auth/templates/email_confirmed.html';
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
@@ -274,7 +277,7 @@ export class AuthController {
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete user account' })
+  @ApiOperation({ summary: 'Delete your own user account' })
   @ApiResponse({
     status: 200,
     description: 'Account deleted successfully',
@@ -286,6 +289,40 @@ export class AuthController {
     @CurrentUser() user: UserPayload
   ): Promise<MessageResponseDto> {
     return this.authService.deleteUser(user.id);
+  }
+
+  @Delete('users/:id')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: delete a user by id' })
+  @ApiResponse({
+    status: 200,
+    description: 'User removed successfully',
+    type: MessageResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Insufficient privileges' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 400,
+    description: 'Administrators cannot delete themselves',
+  })
+  async deleteUserByAdmin(
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string
+  ): Promise<MessageResponseDto> {
+    return this.authService.deleteUserByAdmin(user.id, id);
+  }
+
+  @Get('users')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiOperation({ summary: 'Admin: fetch all users' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, type: UsersListResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  async getAllUsers(): Promise<UsersListResponseDto> {
+    return this.authService.fetchAllUsers();
   }
 
   @Post('resend-confirmation-email')

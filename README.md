@@ -97,6 +97,7 @@ interface UserPayload {
   firstName: string;
   lastName: string;
   phoneNumber?: string;
+  isAdmin: boolean;
 }
 ```
 
@@ -333,6 +334,7 @@ interface LoginDto {
     "username": "john_doe",
     "email": "john.doe@example.com",
     "firstName": "John",
+    "isAdmin": false,
     "lastName": "Doe",
     "phoneNumber": "+1234567890"
   }
@@ -651,7 +653,8 @@ Authorization: Bearer <refresh_token>
     "email": "john.doe@example.com",
     "firstName": "John",
     "lastName": "Doe",
-    "phoneNumber": "+1234567890"
+    "phoneNumber": "+1234567890",
+    "isAdmin": false
   }
 }
 ```
@@ -1156,6 +1159,7 @@ interface AuthResponseDto {
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
+    isAdmin: boolean;
   };
 }
 ```
@@ -1215,35 +1219,85 @@ const checkAndRefreshToken = async () => {
     await refreshToken();
   }
 };
-```
-
-// Calculate when tokens expire
-const getExpiryTime = (expiresIn: string): Date => {
-const now = new Date();
-if (expiresIn === '24h') {
-return new Date(now.getTime() + 24 _ 60 _ 60 _ 1000);
-} else if (expiresIn === '7d') {
-return new Date(now.getTime() + 7 _ 24 _ 60 _ 60 \* 1000);
-}
-return now;
-};
 
 // Check if token needs refresh
-const needsRefresh = (expiresIn: string): boolean => {
-const expiry = getExpiryTime(expiresIn);
-const fiveMinutesFromNow = new Date(Date.now() + 5 _ 60 _ 1000);
-return expiry <= fiveMinutesFromNow;
+const needsRefresh = (accessTokenExpiresAt: string): boolean => {
+  const expiry = new Date(accessTokenExpiresAt).getTime();
+  const buffer = 5 * 60 * 1000; // 5 minutes in ms
+  return expiry <= Date.now() + buffer;
 };
 
 // Automatic refresh logic
-if (needsRefresh('24h')) {
-const refreshResponse = await refreshTokens(refreshToken);
-// Update stored tokens and expiry times
+if (needsRefresh(localStorage.getItem('accessTokenExpiresAt'))) {
+  const refreshResponse = await refreshTokens(refreshToken);
+  // Update stored tokens and expiry times
 }
-
 ```
+
+### Administrative Endpoints
+
+#### GET `/auth/users` - List all users (admin only)
+
+- **HTTP Method**: GET
+- **Route**: `/api/auth/users`
+- **Description**: Retrieves a list of every registered user. Intended for administrative oversight, this endpoint returns basic metadata (username, email, first/last name, birthdate, phone number, profile picture, admin flag, join date) for each account. Only users with `isAdmin` set to `true` may call it.
+- **Authentication Required**: Yes
+- **Guards**: `JwtAuthGuard`, `AdminGuard`
+
+**Success Response (200 OK)**
+
+```json
+{
+  "message": "Users retrieved successfully",
+  "users": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "username": "john_doe",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "birthdate": "1990-01-01T00:00:00.000Z",
+      "profilePicture": "data:image/png;base64,iVBORw0...",
+      "phoneNumber": "123-456-7890",
+      "isAdmin": false,
+      "dateJoined": "2023-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Error Responses**
+
+- `401 Unauthorized` – missing/invalid token
+- `403 Forbidden` – authenticated user is not an admin
+
+#### DELETE `/auth/users/:id` - Remove user (admin only)
+
+- **HTTP Method**: DELETE
+- **Route**: `/api/auth/users/:id`
+- **Description**: Deletes an account belonging to another user. Only users with `isAdmin` set to `true` may call this endpoint. Administrators cannot delete themselves via this route.
+- **Authentication Required**: Yes
+- **Guards**: `JwtAuthGuard`, `AdminGuard`
+- **Request Parameters**:
+  - `id` (string) – MongoDB ObjectId of the user to remove
+
+**Success Response (200 OK)**
+
+```json
+{
+  "message": "User deleted successfully"
+}
+```
+
+**Error Responses**
+
+- `401 Unauthorized` – missing/invalid token
+- `403 Forbidden` – authenticated user is not an admin
+- `404 Not Found` – target user does not exist
+- `400 Bad Request` – administrator attempted to delete their own account
+
+---
 
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```

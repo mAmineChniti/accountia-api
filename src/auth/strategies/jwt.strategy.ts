@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -24,12 +24,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     sub: string;
     email: string;
     username: string;
+    isAdmin: boolean;
   }) {
     const user = await this.userModel
       .findById(payload.sub)
       .select('-passwordHash -refreshTokens');
-    if (!user || !user.isActive) {
-      throw new Error('User not found or inactive');
+    if (!user) {
+      throw new UnauthorizedException('User not found');
     }
     return {
       id: user._id.toString(),
@@ -38,6 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
+      isAdmin: user.isAdmin,
     };
   }
 }

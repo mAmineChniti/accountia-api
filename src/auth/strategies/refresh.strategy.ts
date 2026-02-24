@@ -37,7 +37,7 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh') {
     const rawToken = authHeader.slice(7);
 
     const user = await this.userModel.findById(payload.sub);
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new Error('User not found or inactive');
     }
 

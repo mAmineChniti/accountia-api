@@ -24,6 +24,7 @@ export class AuthResponseDto {
       id: '1',
       username: 'john_doe',
       email: 'john@example.com',
+      isAdmin: true,
       firstName: 'John',
       lastName: 'Doe',
       phoneNumber: '+1234567890',
@@ -38,6 +39,7 @@ export class AuthResponseDto {
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
+    isAdmin: boolean;
     profilePicture?: string;
     birthdate?: Date;
   };
