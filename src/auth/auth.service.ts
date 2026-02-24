@@ -612,9 +612,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Administrative deletion that only operates on inactive accounts.
-   */
   async deleteUserByAdmin(
     adminId: string,
     userId: string

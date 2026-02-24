@@ -653,7 +653,8 @@ Authorization: Bearer <refresh_token>
     "email": "john.doe@example.com",
     "firstName": "John",
     "lastName": "Doe",
-    "phoneNumber": "+1234567890"
+    "phoneNumber": "+1234567890",
+    "isAdmin": false
   }
 }
 ```
@@ -1219,26 +1220,15 @@ const checkAndRefreshToken = async () => {
   }
 };
 
-// Calculate when tokens expire
-const getExpiryTime = (expiresIn: string): Date => {
-  const now = new Date();
-  if (expiresIn === '24h') {
-    return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  } else if (expiresIn === '7d') {
-    return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-  }
-  return now;
-};
-
 // Check if token needs refresh
-const needsRefresh = (expiresIn: string): boolean => {
-  const expiry = getExpiryTime(expiresIn);
-  const fiveMinutesFromNow = new Date(Date.now() + 5 * 60 * 1000);
-  return expiry <= fiveMinutesFromNow;
+const needsRefresh = (accessTokenExpiresAt: string): boolean => {
+  const expiry = new Date(accessTokenExpiresAt).getTime();
+  const buffer = 5 * 60 * 1000; // 5 minutes in ms
+  return expiry <= Date.now() + buffer;
 };
 
 // Automatic refresh logic
-if (needsRefresh('24h')) {
+if (needsRefresh(localStorage.getItem('accessTokenExpiresAt'))) {
   const refreshResponse = await refreshTokens(refreshToken);
   // Update stored tokens and expiry times
 }
