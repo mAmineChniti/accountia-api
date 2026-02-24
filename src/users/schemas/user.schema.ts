@@ -27,9 +27,6 @@ export class User {
   phoneNumber?: string;
 
   @Prop({ default: true })
-  isActive: boolean;
-
-  // flag indicating administrative privileges
   @Prop({ default: false })
   isAdmin: boolean;
 

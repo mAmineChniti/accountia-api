@@ -158,10 +158,6 @@ export class AuthService {
       );
     }
 
-    if (!user.isActive) {
-      throw new ForbiddenException('Account is deactivated');
-    }
-
     if (!user.emailConfirmed) {
       throw new ForbiddenException(
         'Email not confirmed. Please confirm your email before logging in.'
@@ -623,12 +619,6 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
     if (!user) {
       throw new NotFoundException('The specified user could not be found');
-    }
-
-    if (user.isActive) {
-      throw new BadRequestException(
-        'Only inactive accounts may be deleted by an administrator'
-      );
     }
 
     await this.userModel.deleteOne({ _id: userId });
