@@ -31,6 +31,7 @@ import {
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
+import { FirebaseAdminService } from '@/firebase-admin/firebase-admin.service';
 
 interface TokenPayload {
   sub?: string;
@@ -49,7 +50,8 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private emailService: EmailService,
-    private rateLimitingService: RateLimitingService
+    private rateLimitingService: RateLimitingService,
+    private firebaseAdminService: FirebaseAdminService
   ) {}
 
   async register(registerDto: RegisterDto): Promise<RegistrationResponseDto> {
@@ -179,6 +181,99 @@ export class AuthService {
 
     await this.resetFailedAttempts(user);
     this.rateLimitingService.clearLoginAttempts(email, ip);
+
+    const tokens = this.generateTokens(user);
+
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          refreshTokens: {
+            $each: [
+              {
+                token: tokens.refreshToken,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              },
+            ],
+            $slice: -10,
+          },
+        },
+      }
+    );
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      accessTokenExpiresAt: new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString(),
+      refreshTokenExpiresAt: new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        birthdate: user.birthdate,
+        profilePicture: user.profilePicture,
+        isAdmin: !!user.isAdmin,
+      },
+    };
+  }
+
+  async socialLogin(
+    idToken: string,
+    expectedProvider: 'google.com' | 'github.com'
+  ): Promise<AuthResponseDto> {
+    let decodedToken: {
+      email?: string;
+      name?: string;
+      picture?: string;
+      firebase?: {
+        sign_in_provider?: string;
+      };
+    };
+
+    try {
+      decodedToken = await this.firebaseAdminService
+        .getAuth()
+        .verifyIdToken(idToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    if (decodedToken.firebase?.sign_in_provider !== expectedProvider) {
+      throw new UnauthorizedException('Token provider mismatch');
+    }
+
+    const email = decodedToken.email?.trim().toLowerCase();
+    if (!email) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    let user = await this.userModel.findOne({ email });
+
+    if (!user) {
+      const username = await this.generateUniqueUsername(email);
+      const { firstName, lastName } = this.getNameParts(decodedToken.name);
+      const passwordHash = await hash(randomUUID(), 10);
+
+      user = await this.userModel.create({
+        email,
+        username,
+        firstName,
+        lastName,
+        profilePicture: decodedToken.picture?.trim() || undefined,
+        passwordHash,
+        acceptTerms: true,
+        emailConfirmed: true,
+        isAdmin: false,
+        birthdate: new Date('1970-01-01T00:00:00.000Z'),
+      });
+    }
 
     const tokens = this.generateTokens(user);
 
@@ -704,6 +799,36 @@ export class AuthService {
 
   private generateEmailToken(): string {
     return randomBytes(16).toString('hex');
+  }
+
+  private getNameParts(name?: string): { firstName: string; lastName: string } {
+    const fullName = name?.trim();
+    if (!fullName) {
+      return { firstName: 'Social', lastName: 'User' };
+    }
+
+    const parts = fullName.split(/\s+/);
+    const firstName = parts[0] || 'Social';
+    const lastName = parts.slice(1).join(' ') || 'User';
+
+    return { firstName, lastName };
+  }
+
+  private async generateUniqueUsername(email: string): Promise<string> {
+    const prefix = email.split('@')[0].replaceAll(/[^a-zA-Z0-9_]/g, '_') || 'user';
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const suffix = Math.floor(1000 + Math.random() * 9000);
+      const candidate = `${prefix}_${String(suffix)}`;
+      const exists = await this.userModel.exists({ username: candidate });
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictException(
+      'Unable to generate a unique username for social account'
+    );
   }
 
   async validateUser(
