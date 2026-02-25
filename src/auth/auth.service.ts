@@ -11,6 +11,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
+import type { JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
 import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -43,6 +44,16 @@ interface TokenPayload {
   phoneNumber?: string;
 }
 
+import { generateSecret, verify, generateURI } from 'otplib';
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+let qrcodeModule: typeof import('qrcode') | undefined;
+
+const getQrcode = async () => {
+  qrcodeModule ??= await import('qrcode');
+  return qrcodeModule;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -51,6 +62,158 @@ export class AuthService {
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
   ) {}
+
+  check2FAVerificationLimit(email: string, ip: string): void {
+    const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
+      email,
+      ip
+    );
+    if (!rateLimitResult.allowed) {
+      throw new HttpException(
+        'Too many 2FA attempts. Please try again later.',
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+  }
+
+  record2FAAttempt(email: string, ip: string, codeValid: boolean): void {
+    if (codeValid) {
+      this.rateLimitingService.clearLoginAttempts(email, ip);
+    } else {
+      this.rateLimitingService.recordFailedLogin(email, ip);
+    }
+  }
+
+  async setupTwoFactor(
+    userId: string
+  ): Promise<{ qrCode: string; secret: string }> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.twoFactorEnabled)
+      throw new BadRequestException('2FA already enabled');
+
+    const { toDataURL } = await getQrcode();
+
+    const appName = process.env.APP_NAME ?? 'Accountia';
+    const secret = generateSecret();
+
+    user.twoFactorTempSecret = secret;
+    await user.save();
+
+    const otpauthUrl = generateURI({
+      issuer: appName,
+      label: user.email,
+      secret,
+    });
+    const qrCode = await toDataURL(otpauthUrl);
+    return { qrCode: qrCode ?? '', secret };
+  }
+
+  async verifyTwoFactor(userId: string, code: string): Promise<boolean> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.twoFactorTempSecret)
+      throw new BadRequestException('No 2FA setup in progress');
+
+    const result = await verify({
+      secret: user.twoFactorTempSecret,
+      token: code,
+    });
+    const isValid = result.valid;
+
+    if (!isValid) return false;
+
+    user.twoFactorSecret = user.twoFactorTempSecret;
+    user.twoFactorEnabled = true;
+    user.twoFactorTempSecret = undefined;
+    await user.save();
+    return true;
+  }
+
+  generateTempToken(user: UserDocument): string {
+    return this.jwtService.sign(
+      { sub: user._id.toString(), type: '2fa-temp' },
+      { expiresIn: '5m', jwtid: randomUUID() }
+    );
+  }
+
+  async twoFactorLogin(
+    tempToken: string,
+    code: string,
+    ip: string
+  ): Promise<AuthResponseDto> {
+    let payload: JwtPayload;
+    try {
+      payload = this.jwtService.verify(tempToken);
+    } catch {
+      throw new UnauthorizedException('Invalid or expired temp token');
+    }
+
+    if (payload.type !== '2fa-temp') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    const user = await this.userModel.findById(payload.sub);
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret)
+      throw new UnauthorizedException('2FA not enabled');
+
+    this.check2FAVerificationLimit(user.email, ip);
+
+    const result = await verify({ secret: user.twoFactorSecret, token: code });
+    const isValid = result.valid;
+
+    if (!isValid) {
+      this.record2FAAttempt(user.email, ip, false);
+      throw new UnauthorizedException('Invalid 2FA code');
+    }
+
+    this.record2FAAttempt(user.email, ip, true);
+    const tokens = this.generateTokens(user);
+    await this.userModel.updateOne(
+      { _id: user._id },
+      {
+        $push: {
+          refreshTokens: {
+            $each: [
+              {
+                token: tokens.refreshToken,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              },
+            ],
+            $slice: -10,
+          },
+        },
+      }
+    );
+    return this.buildAuthResponse(tokens, user);
+  }
+
+  private buildAuthResponse(
+    tokens: { accessToken: string; refreshToken: string },
+    user: UserDocument
+  ): AuthResponseDto {
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      accessTokenExpiresAt: new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString(),
+      refreshTokenExpiresAt: new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      user: {
+        id: user._id.toString(),
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneNumber: user.phoneNumber,
+        birthdate: user.birthdate,
+        profilePicture: user.profilePicture,
+        isAdmin: !!user.isAdmin,
+      },
+    };
+  }
 
   async register(registerDto: RegisterDto): Promise<RegistrationResponseDto> {
     const {
@@ -138,9 +301,13 @@ export class AuthService {
     }
   }
 
-  async login(loginDto: LoginDto, ip: string): Promise<AuthResponseDto> {
+  async login(
+    loginDto: LoginDto,
+    ip: string
+  ): Promise<
+    AuthResponseDto | { tempToken: string; twoFactorRequired: boolean }
+  > {
     const { email, password } = loginDto;
-
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
       email,
       ip
@@ -151,37 +318,34 @@ export class AuthService {
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
-
     const user = await this.userModel.findOne({ email });
     if (!user) {
       this.rateLimitingService.recordFailedLogin(email, ip);
       throw new UnauthorizedException('Invalid email or password');
     }
-
     if (user.lockUntil && user.lockUntil > new Date()) {
       throw new ForbiddenException(
         'Account is temporarily locked due to too many failed attempts'
       );
     }
-
     if (!user.emailConfirmed) {
       throw new ForbiddenException(
         'Email not confirmed. Please confirm your email before logging in.'
       );
     }
-
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
       this.rateLimitingService.recordFailedLogin(email, ip);
       throw new UnauthorizedException('Invalid email or password');
     }
-
+    if (user.twoFactorEnabled) {
+      const tempToken = this.generateTempToken(user);
+      return { tempToken, twoFactorRequired: true };
+    }
     await this.resetFailedAttempts(user);
     this.rateLimitingService.clearLoginAttempts(email, ip);
-
     const tokens = this.generateTokens(user);
-
     await this.userModel.updateOne(
       { _id: user._id },
       {
@@ -198,28 +362,7 @@ export class AuthService {
         },
       }
     );
-
-    return {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      accessTokenExpiresAt: new Date(
-        Date.now() + 24 * 60 * 60 * 1000
-      ).toISOString(),
-      refreshTokenExpiresAt: new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000
-      ).toISOString(),
-      user: {
-        id: user._id.toString(),
-        username: user.username,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phoneNumber: user.phoneNumber,
-        birthdate: user.birthdate,
-        profilePicture: user.profilePicture,
-        isAdmin: !!user.isAdmin,
-      },
-    };
+    return this.buildAuthResponse(tokens, user);
   }
 
   async logout(userId: string, refreshToken: string): Promise<void> {
@@ -271,27 +414,7 @@ export class AuthService {
         }
       );
 
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        accessTokenExpiresAt: new Date(
-          Date.now() + 24 * 60 * 60 * 1000
-        ).toISOString(),
-        refreshTokenExpiresAt: new Date(
-          Date.now() + 7 * 24 * 60 * 60 * 1000
-        ).toISOString(),
-        user: {
-          id: user._id.toString(),
-          username: user.username,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phoneNumber: user.phoneNumber,
-          birthdate: user.birthdate,
-          profilePicture: user.profilePicture,
-          isAdmin: !!user.isAdmin,
-        },
-      };
+      return this.buildAuthResponse(tokens, user);
     } catch (error: unknown) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -638,7 +761,6 @@ export class AuthService {
   ): Promise<void> {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    // First remove expired tokens and the old refresh token
     await this.userModel.updateOne(
       { _id: userId },
       {
@@ -653,7 +775,6 @@ export class AuthService {
       }
     );
 
-    // Then add the new refresh token with slice limit
     await this.userModel.updateOne(
       { _id: userId },
       {

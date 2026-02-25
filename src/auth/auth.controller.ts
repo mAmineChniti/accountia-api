@@ -18,6 +18,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import type { Request } from 'express';
@@ -43,8 +45,12 @@ import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
+import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
+import { TwoFAVerifyDto } from '@/auth/dto/2fa-verify.dto';
+import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
 
 @ApiTags('Authentication')
+@ApiExtraModels(AuthResponseDto)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -69,16 +75,81 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Login successful',
-    type: AuthResponseDto,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(AuthResponseDto) },
+        {
+          type: 'object',
+          properties: {
+            tempToken: { type: 'string' },
+            twoFactorRequired: { type: 'boolean' },
+          },
+          required: ['tempToken', 'twoFactorRequired'],
+        },
+      ],
+    },
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 403, description: 'Account locked or deactivated' })
   async login(
     @Body() loginDto: LoginDto,
     @Req() req: Request
-  ): Promise<AuthResponseDto> {
+  ): Promise<
+    AuthResponseDto | { tempToken: string; twoFactorRequired: boolean }
+  > {
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
     return this.authService.login(loginDto, ip);
+  }
+
+  @Post('2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Setup 2FA (generate secret, QR)' })
+  @ApiResponse({
+    status: 200,
+    description: '2FA setup info',
+    type: TwoFASetupResponseDto,
+  })
+  async setup2FA(
+    @CurrentUser() user: UserPayload
+  ): Promise<TwoFASetupResponseDto> {
+    const result = await this.authService.setupTwoFactor(user.id);
+    return { qrCode: result.qrCode, secret: result.secret };
+  }
+
+  @Post('2fa/verify')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify and enable 2FA' })
+  @ApiResponse({ status: 200, description: '2FA enabled' })
+  async verify2FA(
+    @CurrentUser() user: UserPayload,
+    @Body() dto: TwoFAVerifyDto,
+    @Req() req: Request
+  ): Promise<{ enabled: boolean }> {
+    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    this.authService.check2FAVerificationLimit(user.email, ip);
+    const enabled = await this.authService.verifyTwoFactor(user.id, dto.code);
+    this.authService.record2FAAttempt(user.email, ip, enabled);
+    return { enabled };
+  }
+
+  @Post('2fa/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '2FA login step (validate temp token + TOTP)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Full JWT issued',
+    type: AuthResponseDto,
+  })
+  async twoFactorLogin(
+    @Body() dto: TwoFALoginDto,
+    @Req() req: Request
+  ): Promise<AuthResponseDto> {
+    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    return this.authService.twoFactorLogin(dto.tempToken, dto.code, ip);
   }
 
   @Post('logout')
