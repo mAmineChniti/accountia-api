@@ -11,10 +11,10 @@
     "lint": "eslint --fix .",
     "format:check": "prettier --check .",
     "lint:check": "eslint . --max-warnings=0",
-    "start": "nest start",
+    "start": "npm run build && node -r module-alias/register dist/src/main.js",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node -r module-alias/register dist/src/main.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -34,8 +34,10 @@
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "firebase-admin": "^13.6.1",
     "joi": "^18.0.2",
     "mongoose": "^9.2.1",
+    "module-alias": "^2.2.3",
     "multer": "^2.0.2",
     "nodemailer": "^8.0.1",
     "passport": "^0.7.0",
@@ -99,5 +101,8 @@
   "trustedDependencies": [
     "@nestjs/core",
     "unrs-resolver"
-  ]
+  ],
+  "_moduleAliases": {
+    "@": "dist/src"
+  }
 }

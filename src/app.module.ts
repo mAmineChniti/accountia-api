@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
+import { FirebaseAdminModule } from '@/firebase-admin/firebase-admin.module';
 
 @Module({
   imports: [
@@ -16,8 +17,12 @@ import { AuthModule } from '@/auth/auth.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
+        FIREBASE_PROJECT_ID: Joi.string().required(),
+        FIREBASE_CLIENT_EMAIL: Joi.string().required(),
+        FIREBASE_PRIVATE_KEY: Joi.string().required(),
       }),
     }),
+    FirebaseAdminModule,
 
     MongooseModule.forRootAsync({
       inject: [ConfigService],

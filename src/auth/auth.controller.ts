@@ -38,6 +38,7 @@ import {
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
+import { SocialAuthDto } from '@/auth/dto/social-auth.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
@@ -79,6 +80,32 @@ export class AuthController {
   ): Promise<AuthResponseDto> {
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
     return this.authService.login(loginDto, ip);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login/Register with Google (Firebase)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Social login successful',
+    type: AuthResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async googleLogin(@Body() dto: SocialAuthDto): Promise<AuthResponseDto> {
+    return this.authService.socialLogin(dto.idToken, 'google.com');
+  }
+
+  @Post('github')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login/Register with GitHub (Firebase)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Social login successful',
+    type: AuthResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
+  async githubLogin(@Body() dto: SocialAuthDto): Promise<AuthResponseDto> {
+    return this.authService.socialLogin(dto.idToken, 'github.com');
   }
 
   @Post('logout')
