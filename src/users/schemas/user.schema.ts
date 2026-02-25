@@ -26,7 +26,6 @@ export class User {
   @Prop()
   phoneNumber?: string;
 
-  @Prop({ default: true })
   @Prop({ default: false })
   isAdmin: boolean;
 
@@ -57,6 +56,15 @@ export class User {
 
   @Prop()
   lastEmailAttemptTime?: Date;
+
+  @Prop({ default: false })
+  twoFactorEnabled: boolean;
+
+  @Prop()
+  twoFactorSecret?: string;
+
+  @Prop()
+  twoFactorTempSecret?: string;
 
   @Prop()
   passwordResetToken?: string;

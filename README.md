@@ -320,8 +320,10 @@ interface LoginDto {
 
 **Success Response (200 OK)**
 
-- **Type**: `AuthResponseDto`
-- **Description**: Login successful, tokens returned
+- **Type**: `AuthResponseDto` | `{ tempToken: string; twoFactorRequired: boolean }`
+- **Description**: Login successful
+
+**When 2FA is disabled:**
 
 ```json
 {
@@ -338,6 +340,15 @@ interface LoginDto {
     "lastName": "Doe",
     "phoneNumber": "+1234567890"
   }
+}
+```
+
+**When 2FA is enabled:**
+
+```json
+{
+  "tempToken": "<temporary_token>",
+  "twoFactorRequired": true
 }
 ```
 
@@ -417,6 +428,215 @@ interface LoginDto {
 
 - **Tables Involved**: `users` collection
 - **Relations**: None (single document lookup)
+- **2FA Flow**: When user has 2FA enabled, returns temp token for second-factor verification
+- **Rate Limiting**: Applied per email + IP combination
+
+---
+
+#### POST `/auth/2fa/setup` - Setup Two-Factor Authentication
+
+**Basic Information**
+
+- **HTTP Method**: POST
+- **Route**: `/api/auth/2fa/setup`
+- **Module**: Auth
+- **Controller**: AuthController
+- **Method**: `setup2FA`
+
+**Authentication & Authorization**
+
+- **Authentication Required**: Yes (JWT)
+- **Guard**: `JwtAuthGuard`
+- **Roles/Permissions**: Authenticated user
+
+**Request Details**
+
+**Headers**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Response Documentation**
+
+**Success Response (200 OK)**
+
+- **Type**: `TwoFASetupResponseDto`
+- **Description**: 2FA setup information generated
+
+```json
+{
+  "qrCode": "data:image/png;base64,<base64_encoded_qr_code>",
+  "secret": "JBSWY3DPEHPK3PXP"
+}
+```
+
+**Error Responses**
+
+**Unauthorized Error (401 Unauthorized)**
+
+- **When**: Invalid or missing JWT token
+
+**Bad Request Error (400 Bad Request)**
+
+- **When**: 2FA is already enabled
+
+```json
+{
+  "statusCode": 400,
+  "message": "2FA already enabled"
+}
+```
+
+---
+
+#### POST `/auth/2fa/verify` - Verify and Enable Two-Factor Authentication
+
+**Basic Information**
+
+- **HTTP Method**: POST
+- **Route**: `/api/auth/2fa/verify`
+- **Module**: Auth
+- **Controller**: AuthController
+- **Method**: `verify2FA`
+
+**Authentication & Authorization**
+
+- **Authentication Required**: Yes (JWT)
+- **Guard**: `JwtAuthGuard`
+- **Roles/Permissions**: Authenticated user
+
+**Request Details**
+
+**Headers**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body (TwoFAVerifyDto)**
+
+```typescript
+interface TwoFAVerifyDto {
+  code: string; // Required, 6-digit TOTP code
+}
+```
+
+**Example Request Body**
+
+```json
+{
+  "code": "123456"
+}
+```
+
+**Response Documentation**
+
+**Success Response (200 OK)**
+
+```json
+{
+  "enabled": true
+}
+```
+
+**Error Responses**
+
+**Unauthorized Error (401 Unauthorized)**
+
+- **When**: Invalid or missing JWT token
+
+**Bad Request Error (400 Bad Request)**
+
+- **When**: No 2FA setup in progress or invalid code
+
+**Too Many Requests (429 Too Many Requests)**
+
+- **When**: Rate limit exceeded
+
+---
+
+#### POST `/auth/2fa/login` - Complete Two-Factor Authentication Login
+
+**Basic Information**
+
+- **HTTP Method**: POST
+- **Route**: `/api/auth/2fa/login`
+- **Module**: Auth
+- **Controller**: AuthController
+- **Method**: `twoFactorLogin`
+
+**Authentication & Authorization**
+
+- **Authentication Required**: No (uses temp token)
+- **Guard**: None (public endpoint)
+- **Roles/Permissions**: None
+
+**Request Details**
+
+**Request Body (TwoFALoginDto)**
+
+```typescript
+interface TwoFALoginDto {
+  tempToken: string; // Required, temporary token from login
+  code: string; // Required, 6-digit TOTP code
+}
+```
+
+**Example Request Body**
+
+```json
+{
+  "tempToken": "<temporary_token_from_login>",
+  "code": "123456"
+}
+```
+
+**Response Documentation**
+
+**Success Response (200 OK)**
+
+- **Type**: `AuthResponseDto`
+- **Description**: 2FA verification successful, full JWT tokens issued
+
+```json
+{
+  "accessToken": "<access_token>",
+  "refreshToken": "<refresh_token>",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
+  "user": {
+    "id": "615f2e0a6c6d5c0e1a1e4a01",
+    "username": "john_doe",
+    "email": "john.doe@example.com",
+    "firstName": "John",
+    "isAdmin": false,
+    "lastName": "Doe",
+    "phoneNumber": "+1234567890"
+  }
+}
+```
+
+**Error Responses**
+
+**Unauthorized Error (401 Unauthorized)**
+
+- **When**: Invalid temp token, expired token, invalid token type, or invalid 2FA code
+
+**Too Many Requests (429 Too Many Requests)**
+
+- **When**: Rate limit exceeded
+
+**2FA Flow Summary:**
+
+1. **Setup**: Call `POST /auth/2fa/setup` to get QR code and secret
+2. **Scan**: User scans QR code with authenticator app
+3. **Verify**: Call `POST /auth/2fa/verify` with the 6-digit code to enable 2FA
+4. **Login**: Call `POST /auth/login` - if 2FA enabled, returns temp token
+5. **Complete**: Call `POST /auth/2fa/login` with temp token and 6-digit code
+
 - **Transactions**: None
 - **Side Effects**:
   - Failed login attempts tracked (max 5, 15-minute lock)
@@ -793,7 +1013,21 @@ async function makeAuthenticatedRequest(
 }
 ```
 
-```
+## Update User Profile
+
+Update your user profile information by sending a PATCH request to `/auth/update` with the following fields:
+
+- **email**: User email address
+- **password**: New password (optional)
+- **firstName**: User's first name
+- **lastName**: User's last name
+- **birthdate**: User's birthdate (YYYY-MM-DD format)
+- **phoneNumber**: Phone number with country code
+- **profilePicture**: Base64 encoded image string
+
+**Request Body:**
+
+```json
 {
   "email": "john.doe.full@example.com",
   "password": "new_password",
@@ -860,7 +1094,7 @@ const UpdatedUser: User = {
 };
 
 async function updateUser(accessToken: string, user: User) {
-  const response = await fetch(`${BASE_URL}/update`, {
+  const response = await fetch(`${BASE_URL}/auth/update`, {
     method: 'PUT', // or 'PATCH'
     headers: {
       'Content-Type': 'application/json',
@@ -1187,50 +1421,6 @@ interface LoginDto {
 ```typescript
 interface RefreshTokenDto {
   refreshToken: string;
-}
-```
-
-### Token Management Usage Examples
-
-```typescript
-// Store tokens with expiry information
-const loginResponse = await login(email, password);
-localStorage.setItem('accessToken', loginResponse.accessToken);
-localStorage.setItem('refreshToken', loginResponse.refreshToken);
-localStorage.setItem(
-  'accessTokenExpiresAt',
-  loginResponse.accessTokenExpiresAt
-);
-localStorage.setItem(
-  'refreshTokenExpiresAt',
-  loginResponse.refreshTokenExpiresAt
-);
-
-// Check if token is expired
-const isTokenExpired = (expiresAt: string): boolean => {
-  return new Date(expiresAt) < new Date();
-};
-
-// Auto-refresh logic
-const checkAndRefreshToken = async () => {
-  const expiresAt = localStorage.getItem('accessTokenExpiresAt');
-  if (expiresAt && isTokenExpired(expiresAt)) {
-    // Refresh token logic here
-    await refreshToken();
-  }
-};
-
-// Check if token needs refresh
-const needsRefresh = (accessTokenExpiresAt: string): boolean => {
-  const expiry = new Date(accessTokenExpiresAt).getTime();
-  const buffer = 5 * 60 * 1000; // 5 minutes in ms
-  return expiry <= Date.now() + buffer;
-};
-
-// Automatic refresh logic
-if (needsRefresh(localStorage.getItem('accessTokenExpiresAt'))) {
-  const refreshResponse = await refreshTokens(refreshToken);
-  // Update stored tokens and expiry times
 }
 ```
 
