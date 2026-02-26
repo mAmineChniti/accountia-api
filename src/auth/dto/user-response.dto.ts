@@ -23,12 +23,25 @@ export class PublicUserDto {
   emailConfirmed: boolean;
 }
 
+export class PrivateUserDto extends PublicUserDto {
+  @ApiProperty({ example: 'john@example.com' })
+  email: string;
+}
+
 export class UserResponseDto {
   @ApiProperty({ example: 'User profile retrieved successfully' })
   message: string;
 
   @ApiProperty({ type: PublicUserDto })
   user: PublicUserDto;
+}
+
+export class PrivateUserResponseDto {
+  @ApiProperty({ example: 'User profile retrieved successfully' })
+  message: string;
+
+  @ApiProperty({ type: PrivateUserDto })
+  user: PrivateUserDto;
 }
 
 export class MessageResponseDto {

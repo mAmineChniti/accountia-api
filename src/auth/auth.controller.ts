@@ -37,6 +37,7 @@ import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
   UserResponseDto,
   MessageResponseDto,
+  PrivateUserResponseDto,
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
@@ -246,7 +247,7 @@ export class AuthController {
     const result = await this.authService.confirmEmail(token);
 
     try {
-      const templatePath = './src/auth/templates/email_confirmed.html';
+      const templatePath = `${process.cwd()}/src/auth/templates/email_confirmed.html`;
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
@@ -279,11 +280,13 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'User profile retrieved successfully',
-    type: UserResponseDto,
+    type: PrivateUserResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  async fetchUser(@CurrentUser() user: UserPayload): Promise<UserResponseDto> {
+  async fetchUser(
+    @CurrentUser() user: UserPayload
+  ): Promise<PrivateUserResponseDto> {
     return this.authService.fetchUser(user.id);
   }
 
@@ -312,7 +315,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Profile updated successfully',
-    type: UserResponseDto,
+    type: PrivateUserResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid update data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -321,7 +324,7 @@ export class AuthController {
   async updateUser(
     @CurrentUser() user: UserPayload,
     @Body() updateDto: UpdateUserDto
-  ): Promise<UserResponseDto> {
+  ): Promise<PrivateUserResponseDto> {
     return this.authService.updateUser(user.id, updateDto);
   }
 
@@ -332,7 +335,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Profile updated successfully',
-    type: UserResponseDto,
+    type: PrivateUserResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid update data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -341,7 +344,7 @@ export class AuthController {
   async patchUser(
     @CurrentUser() user: UserPayload,
     @Body() updateDto: UpdateUserDto
-  ): Promise<UserResponseDto> {
+  ): Promise<PrivateUserResponseDto> {
     return this.authService.updateUser(user.id, updateDto);
   }
 
