@@ -28,6 +28,8 @@ import {
   PublicUserDto,
   UserResponseDto,
   MessageResponseDto,
+  PrivateUserResponseDto,
+  PrivateUserDto,
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
@@ -525,16 +527,17 @@ export class AuthService {
     }
   }
 
-  async fetchUser(userId: string): Promise<UserResponseDto> {
+  async fetchUser(userId: string): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
       throw new NotFoundException('Your user profile could not be retrieved');
     }
 
-    const publicUser: PublicUserDto = {
+    const publicUser: PrivateUserDto = {
       username: user.username,
       firstName: user.firstName,
+      email: user.email,
       lastName: user.lastName,
       birthdate: user.birthdate,
       dateJoined: user.createdAt,
@@ -596,7 +599,7 @@ export class AuthService {
   async updateUser(
     userId: string,
     updateDto: UpdateUserDto
-  ): Promise<UserResponseDto> {
+  ): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
@@ -676,7 +679,7 @@ export class AuthService {
       const updatedUser = await this.userModel.findByIdAndUpdate(
         userId,
         updateData,
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!updatedUser) {
@@ -694,8 +697,9 @@ export class AuthService {
         }
       }
 
-      const publicUser: PublicUserDto = {
+      const publicUser: PrivateUserDto = {
         username: updatedUser.username,
+        email: updatedUser.email,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
         birthdate: updatedUser.birthdate,
