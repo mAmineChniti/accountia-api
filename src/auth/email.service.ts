@@ -45,17 +45,17 @@ export class EmailService {
     this.smtpPort = process.env.SMTP_PORT ?? '587';
     this.frontendUrl = process.env.FRONTEND_URL;
 
-    const port = process.env.PORT ?? '3000';
+    const port = process.env.PORT ?? '4789';
     const host = process.env.APP_HOST ?? 'localhost';
     const protocol = host === 'localhost' ? 'http' : 'https';
     this.apiUrl = `${protocol}://${host}:${port}`;
   }
 
   async sendConfirmationEmail(email: string, token: string): Promise<void> {
-    const confirmationLink = `${this.apiUrl}/auth/confirm-email/${token}`;
+    const confirmationLink = `${this.apiUrl}/api/auth/confirm-email/${token}`;
 
     try {
-      const templatePath = './src/auth/templates/email_confirmed.html';
+      const templatePath = `${process.cwd()}/src/auth/templates/confirmation_email.html`;
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
@@ -76,12 +76,13 @@ export class EmailService {
     resetToken: string
   ): Promise<void> {
     try {
-      const templatePath = './src/auth/templates/password_reset.html';
+      const templatePath = `${process.cwd()}/src/auth/templates/password_reset.html`;
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
       const html = template
         .replaceAll('{{.Token}}', resetToken)
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
         .replaceAll('{{.Year}}', year.toString());
 
       await this.sendEmail(email, 'Password Reset Request for Accountia', html);
