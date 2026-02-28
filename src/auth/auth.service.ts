@@ -15,7 +15,7 @@ import type { JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
 import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { User, UserDocument } from '@/users/schemas/user.schema';
+import { User, UserDocument, Role } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
 import { LoginDto } from '@/auth/dto/login.dto';
 import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
@@ -35,12 +35,14 @@ import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 
+// ✅ CORRIGÉ : role ajouté dans TokenPayload
 interface TokenPayload {
   sub?: string;
   id: string;
   email: string;
   username: string;
   isAdmin: boolean;
+  role: Role;
   firstName?: string;
   lastName?: string;
   phoneNumber?: string;
@@ -213,6 +215,7 @@ export class AuthService {
         birthdate: user.birthdate,
         profilePicture: user.profilePicture,
         isAdmin: !!user.isAdmin,
+        role: user.role, // ✅ déjà présent, confirmé
       },
     };
   }
@@ -268,6 +271,7 @@ export class AuthService {
           'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
       }
 
+      // ✅ CONFIRMÉ : role BUSINESS_OWNER par défaut à l'inscription
       const user = new this.userModel({
         username,
         email,
@@ -281,6 +285,7 @@ export class AuthService {
         emailToken,
         emailConfirmed: false,
         isAdmin: false,
+        role: Role.BUSINESS_OWNER,
       });
 
       await user.save();
@@ -792,20 +797,23 @@ export class AuthService {
     );
   }
 
-  generateTokens(user: User | TokenPayload): {
+  // ✅ CORRIGÉ : role inclus dans le JWT payload
+  generateTokens(user: UserDocument | TokenPayload): {
     accessToken: string;
     refreshToken: string;
   } {
-    const userId =
-      user instanceof User && '_id' in user
-        ? (user as UserDocument)._id.toString()
-        : (user as TokenPayload).id;
+    const isDocument = '_id' in user;
+    const userId = isDocument
+      ? (user as UserDocument)._id.toString()
+      : (user as TokenPayload).id;
+
     const payload: TokenPayload = {
       sub: userId,
       id: userId,
       email: user.email,
       username: user.username,
-      isAdmin: user.isAdmin,
+      isAdmin: !!user.isAdmin,
+      role: user.role,           // ✅ AJOUTÉ
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
