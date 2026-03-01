@@ -592,6 +592,7 @@ export class AuthService {
       profilePicture: u.profilePicture,
       phoneNumber: u.phoneNumber,
       isAdmin: !!u.isAdmin,
+      role: u.role,
       dateJoined: u.createdAt,
     }));
 

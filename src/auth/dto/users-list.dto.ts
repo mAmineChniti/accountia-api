@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Role } from '@/users/schemas/user.schema';
 
 export class UserSummaryDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
@@ -27,6 +28,9 @@ export class UserSummaryDto {
 
   @ApiProperty({ example: false })
   isAdmin!: boolean;
+
+  @ApiPropertyOptional({ enum: Role, example: Role.BUSINESS_OWNER })
+  role?: Role;
 
   @ApiProperty({ example: '2023-01-01T00:00:00.000Z' })
   dateJoined!: Date;
