@@ -4,12 +4,21 @@ import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
 
+const mongoUriSchema = Joi.string()
+  .pattern(/^mongodb(\+srv)?:\/\/.+/)
+  .required()
+  .messages({
+    'string.empty': 'MONGO_URI is required',
+    'string.pattern.base':
+      'MONGO_URI must start with mongodb:// or mongodb+srv://',
+  });
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
-        MONGO_URI: Joi.string().uri().required(),
+        MONGO_URI: mongoUriSchema,
         JWT_SECRET: Joi.string().required(),
         GMAIL_USERNAME: Joi.string().required(),
         GMAIL_APP_PASSWORD: Joi.string().required(),
