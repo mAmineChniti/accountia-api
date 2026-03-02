@@ -7,6 +7,7 @@ import {
   NotFoundException,
   HttpException,
   HttpStatus,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -46,6 +47,22 @@ interface TokenPayload {
   phoneNumber?: string;
 }
 
+type GoogleTokenInfo = {
+  aud: string;
+  email: string;
+  email_verified?: string;
+  given_name?: string;
+  family_name?: string;
+  name?: string;
+  picture?: string;
+};
+
+type GoogleOAuthInitParams = {
+  mode: 'login' | 'register';
+  lang: string;
+  redirectUri?: string;
+};
+
 import { generateSecret, verify, generateURI } from 'otplib';
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
@@ -64,6 +81,156 @@ export class AuthService {
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
   ) {}
+
+  getGoogleAuthUrl(params: GoogleOAuthInitParams): string {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+
+    if (!clientId || !callbackUrl) {
+      throw new BadRequestException(
+        'Google OAuth is not configured on the server'
+      );
+    }
+
+    const sanitizedRedirectUri = this.resolveFrontendRedirectUri(
+      params.redirectUri,
+      params.lang
+    );
+
+    const statePayload = Buffer.from(
+      JSON.stringify({
+        mode: params.mode,
+        lang: params.lang,
+        redirectUri: sanitizedRedirectUri,
+      })
+    ).toString('base64url');
+
+    const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    googleUrl.searchParams.set('client_id', clientId);
+    googleUrl.searchParams.set('redirect_uri', callbackUrl);
+    googleUrl.searchParams.set('response_type', 'code');
+    googleUrl.searchParams.set('scope', 'openid email profile');
+    googleUrl.searchParams.set('state', statePayload);
+    googleUrl.searchParams.set('prompt', 'select_account');
+
+    return googleUrl.toString();
+  }
+
+  async handleGoogleCallback(params: {
+    code?: string;
+    state?: string;
+  }): Promise<string> {
+    try {
+      if (!params.code || !params.state) {
+        throw new BadRequestException(
+          'Missing Google OAuth callback parameters'
+        );
+      }
+      const authCode = params.code;
+
+      const stateData = this.parseGoogleState(params.state);
+      const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+      if (!callbackUrl || !clientId || !clientSecret) {
+        throw new BadRequestException(
+          'Google OAuth is not configured on the server'
+        );
+      }
+
+      const tokenResponse = await this.withOptionalInsecureGoogleTls(() =>
+        fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            code: authCode,
+            client_id: clientId,
+            client_secret: clientSecret,
+            redirect_uri: callbackUrl,
+            grant_type: 'authorization_code',
+          }).toString(),
+        })
+      );
+
+      if (!tokenResponse.ok) {
+        throw new UnauthorizedException('Failed to exchange Google auth code');
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        id_token?: string;
+        access_token?: string;
+      };
+
+      if (!tokenData.id_token || !tokenData.access_token) {
+        throw new UnauthorizedException('Google token response is invalid');
+      }
+      const idToken = tokenData.id_token;
+
+      const tokenInfoResponse = await this.withOptionalInsecureGoogleTls(() =>
+        fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+        )
+      );
+
+      if (!tokenInfoResponse.ok) {
+        throw new UnauthorizedException(
+          'Failed to verify Google identity token'
+        );
+      }
+
+      const tokenInfo = (await tokenInfoResponse.json()) as GoogleTokenInfo;
+      if (tokenInfo.aud !== clientId || !tokenInfo.email) {
+        throw new UnauthorizedException('Google identity token is not valid');
+      }
+
+      const user = await this.findOrCreateGoogleUser(tokenInfo);
+      const tokens = this.generateTokens(user);
+
+      await this.userModel.updateOne(
+        { _id: user._id },
+        {
+          $push: {
+            refreshTokens: {
+              $each: [
+                {
+                  token: tokens.refreshToken,
+                  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                },
+              ],
+              $slice: -10,
+            },
+          },
+        }
+      );
+
+      const role: 'admin' | 'user' = user.isAdmin ? 'admin' : 'user';
+      const redirectUrl = new URL(stateData.redirectUri);
+      redirectUrl.searchParams.set('accessToken', tokens.accessToken);
+      redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
+      redirectUrl.searchParams.set(
+        'accessTokenExpiresAt',
+        new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      );
+      redirectUrl.searchParams.set(
+        'refreshTokenExpiresAt',
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      );
+      redirectUrl.searchParams.set('userId', user._id.toString());
+      redirectUrl.searchParams.set('role', role);
+      redirectUrl.searchParams.set('isAdmin', String(user.isAdmin));
+
+      return redirectUrl.toString();
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        'Google OAuth callback failed unexpectedly'
+      );
+    }
+  }
 
   check2FAVerificationLimit(email: string, ip: string): void {
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
@@ -857,6 +1024,173 @@ export class AuthService {
       user.failedLoginAttempts = 0;
       user.lockUntil = undefined;
       await (user as UserDocument).save();
+    }
+  }
+
+  private resolveFrontendRedirectUri(
+    requestedRedirectUri: string | undefined,
+    lang: string
+  ): string {
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl) {
+      throw new BadRequestException('FRONTEND_URL is not configured');
+    }
+
+    const fallback = new URL(`/${lang}/auth/callback`, frontendUrl).toString();
+    if (!requestedRedirectUri) {
+      return fallback;
+    }
+
+    try {
+      const requested = new URL(requestedRedirectUri);
+      const frontend = new URL(frontendUrl);
+      if (requested.origin !== frontend.origin) {
+        return fallback;
+      }
+      return requested.toString();
+    } catch {
+      return fallback;
+    }
+  }
+
+  private parseGoogleState(state: string): {
+    mode: 'login' | 'register';
+    lang: string;
+    redirectUri: string;
+  } {
+    try {
+      const decoded = Buffer.from(state, 'base64url').toString('utf8');
+      const parsed = JSON.parse(decoded) as {
+        mode?: 'login' | 'register';
+        lang?: string;
+        redirectUri?: string;
+      };
+
+      if (
+        !parsed.mode ||
+        !parsed.lang ||
+        !parsed.redirectUri ||
+        (parsed.mode !== 'login' && parsed.mode !== 'register')
+      ) {
+        throw new Error('invalid state');
+      }
+
+      return {
+        mode: parsed.mode,
+        lang: parsed.lang,
+        redirectUri: this.resolveFrontendRedirectUri(
+          parsed.redirectUri,
+          parsed.lang
+        ),
+      };
+    } catch {
+      throw new BadRequestException('Invalid Google OAuth state');
+    }
+  }
+
+  private async findOrCreateGoogleUser(
+    tokenInfo: GoogleTokenInfo
+  ): Promise<UserDocument> {
+    const existing = await this.userModel.findOne({ email: tokenInfo.email });
+    if (existing) {
+      if (!existing.emailConfirmed) {
+        existing.emailConfirmed = true;
+        existing.emailToken = undefined;
+        await existing.save();
+      }
+      return existing;
+    }
+
+    const baseUsername = tokenInfo.email.split('@')[0] ?? 'accountia-user';
+    const username = await this.generateUniqueUsername(baseUsername);
+    const names = this.extractNames(tokenInfo);
+    const randomPassword = randomBytes(32).toString('hex');
+    const passwordHash = await hash(randomPassword, 10);
+
+    const user = new this.userModel({
+      username,
+      email: tokenInfo.email,
+      passwordHash,
+      firstName: names.firstName,
+      lastName: names.lastName,
+      birthdate: new Date('2000-01-01T00:00:00.000Z'),
+      phoneNumber: undefined,
+      acceptTerms: true,
+      profilePicture: tokenInfo.picture,
+      emailConfirmed: true,
+      emailToken: undefined,
+      isAdmin: false,
+    });
+
+    await user.save();
+    return user;
+  }
+
+  private extractNames(tokenInfo: GoogleTokenInfo): {
+    firstName: string;
+    lastName: string;
+  } {
+    const firstName = tokenInfo.given_name?.trim();
+    const lastName = tokenInfo.family_name?.trim();
+    if (firstName && lastName) {
+      return { firstName, lastName };
+    }
+
+    const fullName = tokenInfo.name?.trim();
+    if (fullName) {
+      const [first, ...rest] = fullName.split(' ');
+      return {
+        firstName: first || 'Google',
+        lastName: rest.join(' ') || 'User',
+      };
+    }
+
+    return { firstName: 'Google', lastName: 'User' };
+  }
+
+  private async generateUniqueUsername(base: string): Promise<string> {
+    const sanitized = base
+      .toLowerCase()
+      .replaceAll(/[^\d_a-z-]/g, '-')
+      .replaceAll(/-+/g, '-')
+      .slice(0, 20)
+      .replaceAll(/^-+|-+$/g, '');
+
+    const root =
+      sanitized.length >= 5 ? sanitized : `user-${sanitized}`.slice(0, 20);
+
+    let candidate = root;
+    let attempts = 0;
+    while (attempts < 20) {
+      const existing = await this.userModel.findOne({ username: candidate });
+      if (!existing) return candidate;
+
+      attempts += 1;
+      const suffix = `-${randomBytes(2).toString('hex')}`;
+      candidate = `${root.slice(0, Math.max(5, 20 - suffix.length))}${suffix}`;
+    }
+
+    return `user-${randomBytes(4).toString('hex')}`;
+  }
+
+  private async withOptionalInsecureGoogleTls<T>(
+    task: () => Promise<T>
+  ): Promise<T> {
+    if (process.env.GOOGLE_OAUTH_ALLOW_INSECURE_TLS !== 'true') {
+      return task();
+    }
+
+    const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+    try {
+      return await task();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      } else {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous;
+      }
     }
   }
 }
