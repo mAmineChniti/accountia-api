@@ -6,12 +6,10 @@ import { RevenuesController } from './revenues.controller';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: Revenue.name, schema: RevenueSchema }
-    ])
+    MongooseModule.forFeature([{ name: Revenue.name, schema: RevenueSchema }]),
   ],
   controllers: [RevenuesController],
   providers: [RevenuesService],
-  exports: [RevenuesService]
+  exports: [RevenuesService],
 })
 export class RevenuesModule {}

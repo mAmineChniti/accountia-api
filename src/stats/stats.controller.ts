@@ -1,7 +1,8 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { StatsService } from './stats.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiResponse } from '@nestjs/swagger';
+import { type AuthenticatedRequest } from '../common/types/authenticated-request.interface';
 
 @ApiTags('Stats')
 @ApiBearerAuth() // <<< هذا يضيف زر Authorize في Swagger
@@ -11,7 +12,11 @@ export class StatsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('monthly')
-  getMonthly(@Req() req) {
-    return this.statsService.getMonthlyStats(req.user.id);
+  @ApiResponse({
+    status: 200,
+    description: 'Monthly statistics retrieved successfully',
+  })
+  getMonthly(@Req() req: AuthenticatedRequest) {
+    return this.statsService.getMonthlyStats(req.user?.id ?? '');
   }
 }

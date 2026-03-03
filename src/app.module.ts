@@ -33,10 +33,8 @@ import { ExpensesModule } from './expenses/expenses.module';
     // Modules de l'application
     AuthModule,
     StatsModule,
-   
-  RevenuesModule,
-  ExpensesModule,
-  StatsModule ,// ajout du module stats si tu veux l'utiliser
+    RevenuesModule,
+    ExpensesModule,
   ],
   controllers: [],
   providers: [],

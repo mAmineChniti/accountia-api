@@ -5,7 +5,7 @@ export type RevenueDocument = Revenue & Document;
 
 @Schema({ timestamps: true })
 export class Revenue {
-  @Prop({ required: true })
+  @Prop({ required: true, min: 0 })
   amount: number;
 
   @Prop({ required: true })
@@ -16,3 +16,6 @@ export class Revenue {
 }
 
 export const RevenueSchema = SchemaFactory.createForClass(Revenue);
+
+// Add compound index for user and date lookups
+RevenueSchema.index({ user: 1, date: -1 });
