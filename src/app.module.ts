@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AdminSeeder } from './seeder/admin.seeder';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
@@ -36,6 +35,6 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [],
-  providers: [AdminSeeder],
+  providers: [],
 })
 export class AppModule {}
