@@ -30,6 +30,7 @@ export class AuthMiddleware implements NestMiddleware {
       const payload = this.jwtService.verify(token) as unknown as {
         sub: string;
         jti: string;
+        id: string;
       };
 
       const user = await this.userModel
@@ -47,7 +48,7 @@ export class AuthMiddleware implements NestMiddleware {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
-        isAdmin: !!user.isAdmin,
+        role: user.role,
       };
 
       next();

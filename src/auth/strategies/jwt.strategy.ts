@@ -19,13 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: {
-    jti: string;
-    sub: string;
-    email: string;
-    username: string;
-    isAdmin: boolean;
-  }) {
+  async validate(payload: { jti: string; sub: string; id: string }) {
     const user = await this.userModel
       .findById(payload.sub)
       .select('-passwordHash -refreshTokens');
@@ -39,7 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
-      isAdmin: user.isAdmin,
+      role: user.role,
     };
   }
 }

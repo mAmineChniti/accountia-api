@@ -12,6 +12,7 @@ import { RefreshStrategy } from '@/auth/strategies/refresh.strategy';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
+import { RolesGuard } from '@/auth/guards/roles.guard';
 import { User, UserSchema } from '@/users/schemas/user.schema';
 
 @Module({
@@ -38,6 +39,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
+    RolesGuard,
   ],
   controllers: [AuthController],
   exports: [
@@ -48,6 +50,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
+    RolesGuard,
   ],
 })
 export class AuthModule {}

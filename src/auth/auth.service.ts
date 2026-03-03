@@ -35,16 +35,13 @@ import {
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
+import { Role } from '@/auth/enums/role.enum';
+import { RoleResponseDto } from '@/auth/dto/role-response.dto';
+import { type UserPayload } from '@/auth/types/auth.types';
 
 interface TokenPayload {
   sub?: string;
   id: string;
-  email: string;
-  username: string;
-  isAdmin: boolean;
-  firstName?: string;
-  lastName?: string;
-  phoneNumber?: string;
 }
 
 type GoogleTokenInfo = {
@@ -204,7 +201,7 @@ export class AuthService {
         }
       );
 
-      const role: 'admin' | 'user' = user.isAdmin ? 'admin' : 'user';
+      const role = user.role;
       const redirectUrl = new URL(stateData.redirectUri);
       redirectUrl.searchParams.set('accessToken', tokens.accessToken);
       redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
@@ -218,7 +215,6 @@ export class AuthService {
       );
       redirectUrl.searchParams.set('userId', user._id.toString());
       redirectUrl.searchParams.set('role', role);
-      redirectUrl.searchParams.set('isAdmin', String(user.isAdmin));
 
       return redirectUrl.toString();
     } catch (error) {
@@ -379,7 +375,7 @@ export class AuthService {
         phoneNumber: user.phoneNumber,
         birthdate: user.birthdate,
         profilePicture: user.profilePicture,
-        isAdmin: !!user.isAdmin,
+        role: user.role,
       },
     };
   }
@@ -447,7 +443,6 @@ export class AuthService {
         profilePicture: finalProfilePicture,
         emailToken,
         emailConfirmed: false,
-        isAdmin: false,
       });
 
       await user.save();
@@ -710,6 +705,7 @@ export class AuthService {
       dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
+      role: user.role,
     };
 
     return {
@@ -733,6 +729,7 @@ export class AuthService {
       dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
+      role: user.role,
     };
 
     return {
@@ -753,7 +750,7 @@ export class AuthService {
       birthdate: u.birthdate,
       profilePicture: u.profilePicture,
       phoneNumber: u.phoneNumber,
-      isAdmin: !!u.isAdmin,
+      role: u.role,
       dateJoined: u.createdAt,
     }));
 
@@ -873,6 +870,7 @@ export class AuthService {
         dateJoined: updatedUser.createdAt,
         profilePicture: updatedUser.profilePicture,
         emailConfirmed: updatedUser.emailConfirmed,
+        role: updatedUser.role,
       };
 
       return {
@@ -921,6 +919,21 @@ export class AuthService {
       throw new NotFoundException('The specified user could not be found');
     }
 
+    const admin = await this.userModel.findById(adminId);
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+
+    // Prevent platform admins from deleting platform owners
+    if (
+      admin.role === Role.PLATFORM_ADMIN &&
+      user.role === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Platform admins cannot delete platform owners'
+      );
+    }
+
     await this.userModel.deleteOne({ _id: userId });
     return { message: 'User deleted successfully' };
   }
@@ -967,15 +980,10 @@ export class AuthService {
       user instanceof User && '_id' in user
         ? (user as UserDocument)._id.toString()
         : (user as TokenPayload).id;
+
     const payload: TokenPayload = {
       sub: userId,
       id: userId,
-      email: user.email,
-      username: user.username,
-      isAdmin: user.isAdmin,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phoneNumber: user.phoneNumber,
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -1119,7 +1127,6 @@ export class AuthService {
       profilePicture: tokenInfo.picture,
       emailConfirmed: true,
       emailToken: undefined,
-      isAdmin: false,
     });
 
     await user.save();
@@ -1171,6 +1178,54 @@ export class AuthService {
     }
 
     return `user-${randomBytes(4).toString('hex')}`;
+  }
+
+  async changeUserRole(
+    userId: string,
+    newRole: Role,
+    currentUser: UserPayload
+  ): Promise<RoleResponseDto> {
+    // Prevent users from changing their own role
+    if (userId === currentUser.id) {
+      throw new ForbiddenException('You cannot change your own role');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const previousRole = user.role;
+
+    // Only allow PLATFORM_OWNER to change roles of PLATFORM_ADMIN
+    if (
+      currentUser.role === Role.PLATFORM_ADMIN &&
+      previousRole === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Platform Admin cannot change Platform Owner role'
+      );
+    }
+
+    // Only allow PLATFORM_OWNER to change roles of PLATFORM_ADMIN
+    if (
+      currentUser.role === Role.PLATFORM_ADMIN &&
+      newRole === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Platform Admin cannot assign Platform Owner role'
+      );
+    }
+
+    user.role = newRole;
+    await user.save();
+
+    return {
+      message: 'User role updated successfully',
+      userId: user._id.toString(),
+      newRole: user.role,
+      previousRole,
+    };
   }
 
   private async withOptionalInsecureGoogleTls<T>(
