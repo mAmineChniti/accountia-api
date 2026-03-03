@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { createTransport } from 'nodemailer';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { User, UserDocument } from '@/users/schemas/user.schema';
 
 @Injectable()
 export class EmailService {
@@ -11,7 +14,7 @@ export class EmailService {
   private readonly frontendUrl: string;
   private readonly apiUrl: string;
 
-  constructor() {
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {
     if (
       typeof process.env.GMAIL_USERNAME !== 'string' ||
       !process.env.GMAIL_USERNAME.trim()
@@ -89,6 +92,110 @@ export class EmailService {
     } catch (error: unknown) {
       throw new Error(
         `Failed to send password reset email: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  async sendBusinessApplicationEmail(
+    userId: string,
+    businessName: string
+  ): Promise<void> {
+    const userEmail = await this.getUserEmail(userId);
+
+    try {
+      const templatePath = `${process.cwd()}/src/business/templates/business_application_submitted.html`;
+      const template = await readFile(templatePath, 'utf8');
+
+      const year = new Date().getFullYear();
+      const html = template
+        .replaceAll('{{.BusinessName}}', businessName)
+        .replaceAll('{{.Year}}', year.toString());
+
+      await this.sendEmail(
+        userEmail,
+        `Business Application Received: ${businessName}`,
+        html
+      );
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to send business application email: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  async sendBusinessApprovalEmail(
+    userId: string,
+    businessName: string
+  ): Promise<void> {
+    const userEmail = await this.getUserEmail(userId);
+
+    try {
+      const templatePath = `${process.cwd()}/src/business/templates/business_application_approved.html`;
+      const template = await readFile(templatePath, 'utf8');
+
+      const year = new Date().getFullYear();
+      const html = template
+        .replaceAll('{{.BusinessName}}', businessName)
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
+        .replaceAll('{{.Year}}', year.toString());
+
+      await this.sendEmail(
+        userEmail,
+        `Business Application Approved: ${businessName}`,
+        html
+      );
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to send business approval email: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  async sendBusinessRejectionEmail(
+    userId: string,
+    businessName: string,
+    reviewNotes?: string
+  ): Promise<void> {
+    const userEmail = await this.getUserEmail(userId);
+
+    try {
+      const templatePath = `${process.cwd()}/src/business/templates/business_application_rejected.html`;
+      const template = await readFile(templatePath, 'utf8');
+
+      const year = new Date().getFullYear();
+      const html = template
+        .replaceAll('{{.BusinessName}}', businessName)
+        .replaceAll(
+          '{{.ReviewNotes}}',
+          reviewNotes ?? 'No specific reason provided'
+        )
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
+        .replaceAll('{{.Year}}', year.toString());
+
+      await this.sendEmail(
+        userEmail,
+        `Business Application Update: ${businessName}`,
+        html
+      );
+    } catch (error: unknown) {
+      throw new Error(
+        `Failed to send business rejection email: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  private async getUserEmail(userId: string): Promise<string> {
+    try {
+      const user = await this.userModel.findById(userId).select('email').lean();
+      if (!user || !user.email) {
+        throw new Error(
+          `User not found or email not available for user ID: ${userId}`
+        );
+      }
+      return user.email;
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch user email: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }

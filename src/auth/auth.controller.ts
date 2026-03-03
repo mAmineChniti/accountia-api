@@ -43,9 +43,14 @@ import {
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
+import { ChangeRoleDto } from '@/auth/dto/change-role.dto';
+import { RoleResponseDto } from '@/auth/dto/role-response.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
+import { RolesGuard } from '@/auth/guards/roles.guard';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { Role } from '@/auth/enums/role.enum';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
@@ -265,7 +270,7 @@ export class AuthController {
         firstName: user.firstName,
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
-        isAdmin: !!user.isAdmin,
+        role: user.role,
       },
     };
   }
@@ -413,6 +418,7 @@ export class AuthController {
     type: MessageResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Cannot delete admin accounts' })
   @ApiResponse({ status: 500, description: 'Failed to delete account' })
   async deleteUser(
     @CurrentUser() user: UserPayload
@@ -470,6 +476,33 @@ export class AuthController {
   ): Promise<MessageResponseDto> {
     return this.authService.resendConfirmationEmail(
       resendConfirmationDto.email
+    );
+  }
+
+  @Patch('change-role')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change user role (Platform Owner/Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'User role changed successfully',
+    type: RoleResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async changeUserRole(
+    @Body() changeRoleDto: ChangeRoleDto,
+    @CurrentUser() currentUser: UserPayload
+  ): Promise<RoleResponseDto> {
+    return this.authService.changeUserRole(
+      changeRoleDto.userId,
+      changeRoleDto.newRole,
+      currentUser
     );
   }
 }

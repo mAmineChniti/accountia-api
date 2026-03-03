@@ -1,156 +1,62 @@
-# Accountia API Documentation
+# Accountia API Reference
 
-This is comprehensive API documentation for Accountia API. The API is a RESTful API that allows you to interact with Accountia server for user authentication, profile management, and email verification.
+Complete API reference for Accountia API endpoints with all possible requests and responses based on actual controller implementation.
 
 ## Base URL
 
-```text
+```
 http://localhost:3000/api
 ```
 
-## Environment Configuration
+## Authentication Headers
 
-Required environment variables:
-
-```bash
-# Database
-MONGO_URI=mongodb://localhost:27017/accountia
-
-# JWT Configuration
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-JWT_EXPIRES_IN=24h
-JWT_REFRESH_EXPIRES_IN=168h # 7 days
-
-# Email Configuration (Gmail SMTP)
-GMAIL_USERNAME=your-email@gmail.com
-GMAIL_APP_PASSWORD=your-app-password
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-
-# Frontend Configuration
-FRONTEND_URL=https://yourdomain.com
-
-# Server Configuration
-APP_HOSTNAME=localhost
-PORT=3000
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
 ```
 
-## API Documentation UI
+---
 
-- The interactive Swagger UI is exposed at `/docs` route under the API base path
-- Visit `http://localhost:3000/api/docs` to view API documentation and test endpoints
+## 🔐 Authentication Endpoints
 
-## Global Configuration
+### GET /auth/google
 
-### Global Prefix
+Start Google OAuth login/signup flow.
 
-- All routes are prefixed with `/api`
+**Query Parameters:**
 
-### Global Validation Pipe
+- `mode` (optional): 'login' | 'register' (default: 'login')
+- `lang` (optional): Language (default: 'en')
+- `redirectUri` (optional): Custom redirect URI
 
-```typescript
-{
-  whitelist: true,           // Only allow defined properties
-  forbidNonWhitelisted: true, // Reject unknown properties
-  forbidUnknownValues: true,  // Strict validation
-  transform: true            // Auto-transform types
-}
-```
+**Responses:**
 
-### Global Exception Filter
+**302 Found**
+Redirects to Google OAuth consent screen.
 
-- `ConflictExceptionFilter` handles structured conflict responses
-- Preserves `type` field in conflict exceptions for frontend handling
+---
 
-### CORS Configuration
+### GET /auth/google/callback
 
-- Origin: `process.env.FRONTEND_URL`
-- Credentials: enabled
+Handle Google OAuth callback and redirect to frontend.
 
-### Swagger Configuration
+**Query Parameters:**
 
-- Available in non-production environments
-- Bearer token authentication
-- Title: "Accountia API"
-- Version: "1.0"
+- `code` (optional): OAuth authorization code
+- `state` (optional): OAuth state parameter
 
-## Authentication & Authorization
+**Responses:**
 
-### JWT Strategy
+**302 Found**
+Redirects to frontend callback route with success/error parameters.
 
-- **Access Token**: 24 hours expiration
-- **Refresh Token**: 7 days expiration
-- Token format: Bearer token in Authorization header
+---
 
-### Guards
+### POST /auth/register
 
-- `JwtAuthGuard`: Protects authenticated routes
-- `RefreshJwtGuard`: Protects refresh token routes
+Register a new user.
 
-### User Payload Structure
-
-```typescript
-interface UserPayload {
-  id: string;
-  email: string;
-  username: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber?: string;
-  isAdmin: boolean;
-}
-```
-
-## Endpoints
-
-### Authentication Module
-
-#### POST `/auth/register` - Register a new user
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/register`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `register`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: No
-- **Guard**: None (public endpoint)
-- **Roles/Permissions**: None
-
-**Request Details**
-
-**Request Body (RegisterDto)**
-
-```typescript
-interface RegisterDto {
-  username: string; // Required, 5-20 chars
-  email: string; // Required, valid email
-  password: string; // Required, min 6 chars
-  firstName: string; // Required, 2-50 chars
-  lastName: string; // Required, 2-50 chars
-  birthdate: string; // Required, ISO date string
-  phoneNumber?: string; // Optional, string
-  acceptTerms: boolean; // Required, must be true
-  profilePicture?: string; // Optional, base64, max 7MB
-}
-```
-
-**Validation Rules**
-
-- `username`: `@IsNotEmpty()`, `@IsString()`, `@MinLength(5)`, `@MaxLength(20)`
-- `email`: `@IsNotEmpty()`, `@IsEmail()`
-- `password`: `@IsNotEmpty()`, `@IsString()`, `@MinLength(6)`
-- `firstName`: `@IsNotEmpty()`, `@IsString()`, `@MinLength(2)`, `@MaxLength(50)`
-- `lastName`: `@IsNotEmpty()`, `@IsString()`, `@MinLength(2)`, `@MaxLength(50)`
-- `birthdate`: `@IsNotEmpty()`, `@IsDateString()`
-- `acceptTerms`: `@IsNotEmpty()`, `@IsBoolean()`
-- `profilePicture`: `@IsOptional()`, `@IsString()`, `@MaxLength(9333334)`
-
-**Example Request Body**
+**Request Body:**
 
 ```json
 {
@@ -161,17 +67,13 @@ interface RegisterDto {
   "lastName": "Doe",
   "birthdate": "2000-01-01",
   "phoneNumber": "+1234567890",
-  "acceptTerms": true,
-  "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+  "acceptTerms": true
 }
 ```
 
-**Response Documentation**
+**Responses:**
 
-**Success Response (201 Created)**
-
-- **Type**: `RegistrationResponseDto`
-- **Description**: User successfully registered, confirmation email sent
+**201 Created**
 
 ```json
 {
@@ -180,134 +82,21 @@ interface RegisterDto {
 }
 ```
 
-**Error Responses**
-
-**Validation Error (400 Bad Request)**
-
-- **When**: Request body fails validation
+**409 Conflict**
 
 ```json
 {
-  "message": "Validation failed",
-  "errors": {
-    "username": "username must be at least 5 characters",
-    "email": "invalid email format",
-    "password": "password must contain at least one uppercase, lowercase, number, or special character",
-    "acceptTerms": "You must accept the terms and conditions"
-  }
+  "message": "User already exists"
 }
 ```
 
-**Conflict Error (409 Conflict)**
+---
 
-- **When**: User already exists
+### POST /auth/login
 
-_Unconfirmed User Exists:_
+Login user.
 
-```json
-{
-  "type": "EMAIL_NOT_CONFIRMED",
-  "message": "Account exists but email is not confirmed. Please check your email or request a new confirmation.",
-  "email": "john.doe@example.com",
-  "userId": "507f1f77bcf86cd799439011"
-}
-```
-
-_Confirmed User Exists:_
-
-```json
-{
-  "type": "ACCOUNT_EXISTS",
-  "message": "Username or email is already registered"
-}
-```
-
-**Database & Business Logic Insights**
-
-- **Tables Involved**: `users` collection
-- **Relations**: None (single collection operation)
-- **Transactions**: Single document save
-- **Side Effects**:
-  - Password hashed with bcrypt (salt rounds: 10)
-  - Email confirmation token generated (32 hex chars)
-  - Confirmation email sent via EmailService
-- **Events Triggered**: None
-- **Queue Jobs**: None
-- **Caching**: None
-
-**Frontend Integration Notes**
-
-```typescript
-// Common mistakes to avoid:
-// 1. Not checking for EMAIL_NOT_CONFIRMED type
-// 2. Not handling structured conflict responses
-// 3. Not showing resend confirmation button for unconfirmed users
-
-async function register(userData: RegisterDto) {
-  const response = await fetch(`${BASE_URL}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData),
-  });
-
-  const data = await response.json();
-
-  if (response.ok) {
-    // Show success message, prompt email check
-    return { success: true, data };
-  } else if (response.status === 409) {
-    if (data.type === 'EMAIL_NOT_CONFIRMED') {
-      // Show "Resend Confirmation Email" button
-      return {
-        success: false,
-        type: 'EMAIL_NOT_CONFIRMED',
-        email: data.email,
-        userId: data.userId,
-      };
-    } else if (data.type === 'ACCOUNT_EXISTS') {
-      // Show "Account exists" error
-      return { success: false, type: 'ACCOUNT_EXISTS', message: data.message };
-    }
-  } else {
-    // Show validation errors
-    return { success: false, type: 'VALIDATION_ERROR', errors: data.errors };
-  }
-}
-```
-
-#### POST `/auth/login` - Login a user
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/login`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `login`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: No
-- **Guard**: None (public endpoint)
-- **Roles/Permissions**: None
-
-**Request Details**
-
-**Request Body (LoginDto)**
-
-```typescript
-interface LoginDto {
-  email: string; // Required, valid email
-  password: string; // Required, string
-}
-```
-
-**Validation Rules**
-
-- `email`: `@IsNotEmpty()`, `@IsEmail()`
-- `password`: `@IsNotEmpty()`, `@IsString()`
-
-**Example Request Body**
+**Request Body:**
 
 ```json
 {
@@ -316,555 +105,14 @@ interface LoginDto {
 }
 ```
 
-**Response Documentation**
+**Responses:**
 
-**Success Response (200 OK)**
-
-- **Type**: `AuthResponseDto` | `{ tempToken: string; twoFactorRequired: boolean }`
-- **Description**: Login successful
-
-**When 2FA is disabled:**
+**200 OK (Login Successful)**
 
 ```json
 {
-  "accessToken": "<access_token>",
-  "refreshToken": "<refresh_token>",
-  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
-  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
-  "user": {
-    "id": "615f2e0a6c6d5c0e1a1e4a01",
-    "username": "john_doe",
-    "email": "john.doe@example.com",
-    "firstName": "John",
-    "isAdmin": false,
-    "lastName": "Doe",
-    "phoneNumber": "+1234567890"
-  }
-}
-```
-
-**When 2FA is enabled:**
-
-```json
-{
-  "tempToken": "<temporary_token>",
-  "twoFactorRequired": true
-}
-```
-
-**Error Responses**
-
-**Validation Error (400 Bad Request)**
-
-- **When**: Request body fails validation
-
-```json
-{
-  "message": "Validation failed",
-  "errors": {
-    "email": "email is required",
-    "password": "password must contain at least one uppercase, lowercase, number, or special character"
-  }
-}
-```
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid credentials
-
-```json
-{
-  "statusCode": 401,
-  "message": "Invalid email or password",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-**Forbidden Error (403 Forbidden)**
-
-- **When**: Account locked
-
-```json
-{
-  "statusCode": 403,
-  "message": "Account is temporarily locked due to too many failed attempts",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-- **When**: Account deactivated
-
-```json
-{
-  "statusCode": 403,
-  "message": "Account is deactivated",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-- **When**: Email not confirmed
-
-```json
-{
-  "statusCode": 403,
-  "message": "Email not confirmed. Please confirm your email before logging in.",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-**Too Many Requests (429 Too Many Requests)**
-
-- **When**: Rate limit exceeded
-
-```json
-{
-  "statusCode": 429,
-  "message": "Too many failed login attempts. Please try again later.",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-**Database & Business Logic Insights**
-
-- **Tables Involved**: `users` collection
-- **Relations**: None (single document lookup)
-- **2FA Flow**: When user has 2FA enabled, returns temp token for second-factor verification
-- **Rate Limiting**: Applied per email + IP combination
-
----
-
-#### POST `/auth/2fa/setup` - Setup Two-Factor Authentication
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/2fa/setup`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `setup2FA`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: Yes (JWT)
-- **Guard**: `JwtAuthGuard`
-- **Roles/Permissions**: Authenticated user
-
-**Request Details**
-
-**Headers**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Response Documentation**
-
-**Success Response (200 OK)**
-
-- **Type**: `TwoFASetupResponseDto`
-- **Description**: 2FA setup information generated
-
-```json
-{
-  "qrCode": "data:image/png;base64,<base64_encoded_qr_code>",
-  "secret": "JBSWY3DPEHPK3PXP"
-}
-```
-
-**Error Responses**
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid or missing JWT token
-
-**Bad Request Error (400 Bad Request)**
-
-- **When**: 2FA is already enabled
-
-```json
-{
-  "statusCode": 400,
-  "message": "2FA already enabled"
-}
-```
-
----
-
-#### POST `/auth/2fa/verify` - Verify and Enable Two-Factor Authentication
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/2fa/verify`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `verify2FA`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: Yes (JWT)
-- **Guard**: `JwtAuthGuard`
-- **Roles/Permissions**: Authenticated user
-
-**Request Details**
-
-**Headers**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Request Body (TwoFAVerifyDto)**
-
-```typescript
-interface TwoFAVerifyDto {
-  code: string; // Required, 6-digit TOTP code
-}
-```
-
-**Example Request Body**
-
-```json
-{
-  "code": "123456"
-}
-```
-
-**Response Documentation**
-
-**Success Response (200 OK)**
-
-```json
-{
-  "enabled": true
-}
-```
-
-**Error Responses**
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid or missing JWT token
-
-**Bad Request Error (400 Bad Request)**
-
-- **When**: No 2FA setup in progress or invalid code
-
-**Too Many Requests (429 Too Many Requests)**
-
-- **When**: Rate limit exceeded
-
----
-
-#### POST `/auth/2fa/login` - Complete Two-Factor Authentication Login
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/2fa/login`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `twoFactorLogin`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: No (uses temp token)
-- **Guard**: None (public endpoint)
-- **Roles/Permissions**: None
-
-**Request Details**
-
-**Request Body (TwoFALoginDto)**
-
-```typescript
-interface TwoFALoginDto {
-  tempToken: string; // Required, temporary token from login
-  code: string; // Required, 6-digit TOTP code
-}
-```
-
-**Example Request Body**
-
-```json
-{
-  "tempToken": "<temporary_token_from_login>",
-  "code": "123456"
-}
-```
-
-**Response Documentation**
-
-**Success Response (200 OK)**
-
-- **Type**: `AuthResponseDto`
-- **Description**: 2FA verification successful, full JWT tokens issued
-
-```json
-{
-  "accessToken": "<access_token>",
-  "refreshToken": "<refresh_token>",
-  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
-  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
-  "user": {
-    "id": "615f2e0a6c6d5c0e1a1e4a01",
-    "username": "john_doe",
-    "email": "john.doe@example.com",
-    "firstName": "John",
-    "isAdmin": false,
-    "lastName": "Doe",
-    "phoneNumber": "+1234567890"
-  }
-}
-```
-
-**Error Responses**
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid temp token, expired token, invalid token type, or invalid 2FA code
-
-**Too Many Requests (429 Too Many Requests)**
-
-- **When**: Rate limit exceeded
-
-**2FA Flow Summary:**
-
-1. **Setup**: Call `POST /auth/2fa/setup` to get QR code and secret
-2. **Scan**: User scans QR code with authenticator app
-3. **Verify**: Call `POST /auth/2fa/verify` with the 6-digit code to enable 2FA
-4. **Login**: Call `POST /auth/login` - if 2FA enabled, returns temp token
-5. **Complete**: Call `POST /auth/2fa/login` with temp token and 6-digit code
-
-- **Transactions**: None
-- **Side Effects**:
-  - Failed login attempts tracked (max 5, 15-minute lock)
-  - Rate limiting by IP and email identifier
-  - Refresh token stored in user document (max 10 tokens)
-  - Failed attempts cleared on successful login
-- **Events Triggered**: None
-- **Queue Jobs**: None
-- **Caching**: None
-
-**Rate Limiting Details**
-
-- **Max Attempts**: 5 failed attempts
-- **Window**: 10 minutes
-- **Block Duration**: 15 minutes
-- **Key Format**: `{ip}:{email}`
-
-**Frontend Integration Notes**
-
-```typescript
-// Common mistakes to avoid:
-// 1. Not storing tokens securely
-// 2. Not handling different error types appropriately
-// 3. Not implementing token refresh logic
-// 4. Not clearing failed attempts on successful login
-
-async function login(email: string, password: string) {
-  const response = await fetch(`${BASE_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-
-  const data = await response.json();
-
-  if (response.ok) {
-    // Store tokens securely
-    // WARNING: localStorage is vulnerable to XSS attacks
-    // Consider using HttpOnly, Secure, SameSite cookies instead
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-
-    // Store user data
-    localStorage.setItem('user', JSON.stringify(data.user));
-
-    return { success: true, user: data.user };
-  } else if (response.status === 403) {
-    if (data.message.includes('not confirmed')) {
-      return {
-        success: false,
-        type: 'EMAIL_NOT_CONFIRMED',
-        message: data.message,
-      };
-    } else if (data.message.includes('locked')) {
-      return { success: false, type: 'ACCOUNT_LOCKED', message: data.message };
-    } else if (data.message.includes('deactivated')) {
-      return {
-        success: false,
-        type: 'ACCOUNT_DEACTIVATED',
-        message: data.message,
-      };
-    }
-  } else if (response.status === 429) {
-    return { success: false, type: 'RATE_LIMITED', message: data.message };
-  } else {
-    return {
-      success: false,
-      type: 'INVALID_CREDENTIALS',
-      message: data.message,
-    };
-  }
-}
-```
-
-#### POST `/auth/logout` - Logout a user
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/logout`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `logout`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: Yes
-- **Guard**: `JwtAuthGuard`
-- **Roles/Permissions**: None
-
-**Request Details**
-
-**Headers Required**
-
-```text
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Request Body (RefreshTokenDto)**
-
-```typescript
-interface RefreshTokenDto {
-  refreshToken: string; // Required, valid refresh token
-}
-```
-
-**Validation Rules**
-
-- `refreshToken`: `@IsNotEmpty()`, `@IsString()`
-
-**Example Request Body**
-
-```json
-{
-  "refreshToken": "<refresh_token>"
-}
-```
-
-**Response Documentation**
-
-**Success Response (200 OK)**
-
-- **Type**: `void`
-- **Description**: Logout successful, refresh token invalidated
-- **Content**: No content returned
-
-**Error Responses**
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid or expired access token
-
-```json
-{
-  "statusCode": 401,
-  "message": "Unauthorized",
-  "timestamp": "2024-02-17T16:30:00.000Z"
-}
-```
-
-**Database & Business Logic Insights**
-
-- **Tables Involved**: `users` collection
-- **Relations**: None (single document update)
-- **Transactions**: None
-- **Side Effects**:
-  - Specific refresh token removed from user's refreshTokens array
-  - Other refresh tokens remain valid
-- **Events Triggered**: None
-- **Queue Jobs**: None
-- **Caching**: None
-
-**Frontend Integration Notes**
-
-```typescript
-// Common mistakes to avoid:
-// 1. Not clearing all stored tokens
-// 2. Not calling logout on token refresh failure
-// 3. Not handling network errors during logout
-
-async function logout(accessToken: string, refreshToken: string) {
-  try {
-    const response = await fetch(`${BASE_URL}/auth/logout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    // Clear local storage regardless of response
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-
-    if (response.ok) {
-      return { success: true };
-    } else {
-      // Still clear tokens but indicate server error
-      return { success: false, error: 'Server logout failed' };
-    }
-  } catch (error) {
-    // Network error - still clear local tokens
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    return { success: false, error: 'Network error' };
-  }
-}
-```
-
-#### POST `/auth/refresh` - Refresh authentication tokens
-
-**Basic Information**
-
-- **HTTP Method**: POST
-- **Route**: `/api/auth/refresh`
-- **Module**: Auth
-- **Controller**: AuthController
-- **Method**: `refreshTokenHandler`
-
-**Authentication & Authorization**
-
-- **Authentication Required**: Yes
-- **Guard**: `RefreshJwtGuard`
-- **Roles/Permissions**: None
-
-**Request Details**
-
-**Headers Required**
-
-```text
-Authorization: Bearer <refresh_token>
-```
-
-**Response Documentation**
-
-**Success Response (200 OK)**
-
-- **Type**: `AuthResponseDto`
-- **Description**: Tokens refreshed successfully
-
-```json
-{
-  "accessToken": "<access_token>",
-  "refreshToken": "<refresh_token>",
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
   "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
   "user": {
@@ -874,451 +122,303 @@ Authorization: Bearer <refresh_token>
     "firstName": "John",
     "lastName": "Doe",
     "phoneNumber": "+1234567890",
-    "isAdmin": false
+    "role": "CLIENT"
   }
 }
 ```
 
-**Error Responses**
-
-**Unauthorized Error (401 Unauthorized)**
-
-- **When**: Invalid refresh token
+**200 OK (2FA Required)**
 
 ```json
 {
-  "statusCode": 401,
-  "message": "Invalid refresh token",
-  "timestamp": "2024-02-17T16:30:00.000Z"
+  "tempToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "twoFactorRequired": true
 }
 ```
 
-- **When**: Refresh token expired
+**401 Unauthorized**
 
 ```json
 {
-  "statusCode": 401,
-  "message": "Refresh token has expired",
-  "timestamp": "2024-02-17T16:30:00.000Z"
+  "message": "Invalid credentials"
 }
 ```
 
-**Database & Business Logic Insights**
+**403 Forbidden**
 
-- **Tables Involved**: `users` collection
-- **Relations**: None (single document lookup and update)
-- **Transactions**: None
-- **Side Effects**:
-  - Old refresh token replaced with new one
-  - Expired tokens automatically cleaned up
-  - Max 10 refresh tokens per user maintained
-- **Events Triggered**: None
-- **Queue Jobs**: None
-- **Caching**: None
-
-**Token Management Details**
-
-- **Access Token Expiry**: 24 hours
-- **Refresh Token Expiry**: 7 days
-- **Max Refresh Tokens**: 10 per user
-- **Cleanup**: Expired tokens removed automatically
-
-**Frontend Integration Notes**
-
-```typescript
-// Common mistakes to avoid:
-// 1. Not storing new tokens after refresh
-// 2. Not handling refresh token expiration
-// 3. Not implementing automatic retry logic
-// 4. Not redirecting to login on refresh failure
-
-async function refreshTokens(refreshToken: string) {
-  try {
-    const response = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${refreshToken}`,
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-
-      // Update stored tokens
-      // WARNING: localStorage is vulnerable to XSS attacks
-      // Consider using HttpOnly, Secure, SameSite cookies instead
-      localStorage.setItem('accessToken', data.accessToken);
-      localStorage.setItem('refreshToken', data.refreshToken);
-
-      return { success: true, tokens: data };
-    } else {
-      const error = await response.json();
-
-      // Clear tokens and redirect to login
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
-
-      return {
-        success: false,
-        requiresLogin: true,
-        error: error.message,
-      };
-    }
-  } catch (error) {
-    // Network error - try once more then redirect
-    return { success: false, requiresLogin: true, error: 'Network error' };
-  }
-}
-
-// Automatic token refresh wrapper
-async function makeAuthenticatedRequest(
-  url: string,
-  options: RequestInit = {}
-) {
-  let accessToken = localStorage.getItem('accessToken');
-  let refreshToken = localStorage.getItem('refreshToken');
-
-  if (!accessToken || !refreshToken) {
-    throw new Error('No tokens available');
-  }
-
-  // Try original request
-  let response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  // If unauthorized, try refresh
-  if (response.status === 401) {
-    const refreshResult = await refreshTokens(refreshToken);
-
-    if (refreshResult.success) {
-      // Retry with new token
-      accessToken = localStorage.getItem('accessToken')!;
-      response = await fetch(url, {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-    }
-  }
-
-  return response;
+```json
+{
+  "message": "Account locked or deactivated"
 }
 ```
 
-## Update User Profile
+---
 
-Update your user profile information by sending a PATCH request to `/auth/update` with the following fields:
+### POST /auth/2fa/setup
 
-- **email**: User email address
-- **password**: New password (optional)
-- **firstName**: User's first name
-- **lastName**: User's last name
-- **birthdate**: User's birthdate (YYYY-MM-DD format)
-- **phoneNumber**: Phone number with country code
-- **profilePicture**: Base64 encoded image string
+Setup 2FA (generate secret, QR).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "qrCode": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "secret": "JBSWY3DPEHPK3PXP"
+}
+```
+
+---
+
+### POST /auth/2fa/verify
+
+Verify and enable 2FA.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
 
 **Request Body:**
 
 ```json
 {
-  "email": "john.doe.full@example.com",
-  "password": "new_password",
-  "firstName": "John",
-  "lastName": "Doe",
-  "birthdate": "2000-01-01",
-  "phoneNumber": "+1234567890",
-  "profilePicture": "<base64 string>"
+  "code": "123456"
 }
 ```
 
-**Success Response:**
+**Responses:**
+
+**200 OK**
 
 ```json
 {
-  "message": "Profile updated successfully",
-  "user": {
-    "id": "615f2e0a6c6d5c0e1a1e4a01",
-    "username": "john_doe_full",
-    "firstName": "John",
-    "lastName": "Doe",
-    "birthdate": "2000-01-01",
-    "dateJoined": "2023-10-22T14:48:00Z",
-    "profilePicture": "<base64 string>",
-    "emailConfirmed": false
-  }
+  "enabled": true
 }
 ```
 
-**Validation Error Response:**
+---
+
+### POST /auth/2fa/login
+
+2FA login step (validate temp token + TOTP).
+
+**Request Body:**
 
 ```json
 {
-  "errors": {
-    "email": "invalid email format",
-    "username": "username must be at least 5 characters"
-  }
+  "tempToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "code": "123456"
 }
 ```
 
-**Conflict Response:**
+**Responses:**
+
+**200 OK**
 
 ```json
 {
-  "message": "Username is already taken"
-}
-```
-
-```json
-{
-  "message": "Email is already registered"
-}
-```
-
-**Example Usage:**
-
-```typescript
-const UpdatedUser: User = {
-  username: 'john_doe_full',
-  email: 'john.doe.full@example.com',
-  password: 'new_password',
-  firstName: 'John',
-  lastName: 'Doe',
-};
-
-async function updateUser(accessToken: string, user: User) {
-  const response = await fetch(`${BASE_URL}/auth/update`, {
-    method: 'PUT', // or 'PATCH'
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(user),
-  });
-
-  if (!response.ok) {
-    throw new Error('Update failed');
-  }
-
-  const data = await response.json();
-  return data;
-}
-
-updateUser('your_access_token_here', UpdatedUser)
-  .then((data) => console.log(data))
-  .catch((error) => console.error(error));
-```
-
-**DELETE** `/delete` - Deletes a user
-Deletes a user from the system. Requires authentication.
-
-**Request:**
-
-**_Authorization Header:_**
-`Authorization: Bearer <your_access_token_here>`
-
-**Success Response:**
-
-```json
-{
-  "message": "Account deleted successfully"
-}
-```
-
-**Example Usage:**
-
-```typescript
-async function deleteUser(accessToken: string) {
-  const response = await fetch(`${BASE_URL}/delete`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Delete failed');
-  }
-
-  const data = await response.json();
-  return data;
-}
-
-deleteUser('your_access_token_here')
-  .then((data) => console.log(data))
-  .catch((error) => console.error(error));
-```
-
-**POST** `/refresh` - Refreshes an access token
-Refreshes an access token and returns new tokens. Requires a valid refresh token.
-
-**Request:**
-
-**_Authorization Header:_**
-`Authorization: Bearer <your_refresh_token_here>`
-
-**Success Response:**
-
-```json
-{
-  "accessToken": "<new_access_token>",
-  "refreshToken": "<new_refresh_token>",
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
   "user": {
     "id": "615f2e0a6c6d5c0e1a1e4a01",
     "username": "john_doe",
     "email": "john.doe@example.com",
     "firstName": "John",
     "lastName": "Doe",
-    "phoneNumber": "+1234567890"
+    "phoneNumber": "+1234567890",
+    "role": "CLIENT"
   }
 }
 ```
 
-**Password Reset**
+---
 
-**POST** `/forgot-password` - Initiate password reset
+### POST /auth/logout
+
+Logout user.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
 
 **Request Body:**
 
 ```json
 {
-  "email": "user@example.com"
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
-**Success Response:**
+**Responses:**
 
-```json
-{
-  "message": "If an account exists with this email, a reset link will be sent"
-}
+**200 OK**
+Logout successful (no content).
+
+**401 Unauthorized**
+Invalid or expired access token.
+
+---
+
+### POST /auth/refresh
+
+Refresh authentication tokens.
+
+**Headers:**
+
+```http
+Authorization: Bearer <refresh_token>
 ```
 
-**Validation Error Response:**
+**Responses:**
+
+**200 OK**
 
 ```json
 {
-  "errors": {
-    "email": "invalid email format"
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
+  "user": {
+    "id": "615f2e0a6c6d5c0e1a1e4a01",
+    "username": "john_doe",
+    "email": "john.doe@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "phoneNumber": "+1234567890",
+    "role": "CLIENT"
   }
 }
 ```
 
-**POST** `/reset-password` - Confirm password reset
+**401 Unauthorized**
+Invalid or expired refresh token.
+
+---
+
+### POST /auth/forgot-password
+
+Request password reset.
 
 **Request Body:**
 
 ```json
 {
-  "token": "<reset_token>",
-  "newPassword": "newPassword123!"
+  "email": "john.doe@example.com"
 }
 ```
 
-**Success Response:**
+**Responses:**
+
+**200 OK**
+Password reset email sent (no content).
+
+---
+
+### POST /auth/reset-password
+
+Reset password.
+
+**Request Body:**
 
 ```json
 {
-  "message": "Password reset successfully"
+  "token": "reset_token_here",
+  "newPassword": "NewPassword123!"
 }
 ```
 
-**Validation Error Response:**
+**Responses:**
 
-```json
-{
-  "errors": {
-    "token": "invalid token format",
-    "newPassword": "password must contain at least one uppercase, lowercase, number, or special character"
-  }
-}
-```
+**200 OK**
+Password reset successful (no content).
 
-#### GET `/auth/confirm-email/:token` - Confirm email address
+**400 Bad Request**
+Invalid or expired token.
 
-Confirms a user's email address using a token. Returns HTML page instead of JSON.
+---
+
+### GET /auth/confirm-email/:token
+
+Confirm email address.
 
 **URL Parameters:**
 
 - `token` (string): Email confirmation token
 
-**Success Response (200 OK):**
-Returns HTML confirmation page with success message and styling.
+**Responses:**
 
-**Error Response (200 OK):**
-Returns HTML confirmation page with error message and styling.
+**200 OK (HTML)**
+Returns HTML confirmation page with success/error message.
 
-**Example:**
+**400 Bad Request**
+Invalid or expired token (returns JSON or HTML).
 
+---
+
+### GET /auth/fetchuser
+
+Fetch current user profile.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
 ```
-GET http://localhost:3000/api/auth/confirm-email/abc123def456
-```
 
-**Frontend Integration:**
-This endpoint is designed to be opened directly in a browser from the email confirmation link. It returns a user-friendly HTML page instead of JSON for better user experience.
+**Responses:**
 
-**GET** `/resend-confirmation-email` - Resend confirmation email
-
-**Request:**
-
-**_Authorization Header:_**
-`Authorization: Bearer <your_access_token_here>`
-
-**Success Response:**
+**200 OK**
 
 ```json
 {
-  "message": "Confirmation email sent successfully"
+  "id": "615f2e0a6c6d5c0e1a1e4a01",
+  "username": "john_doe",
+  "email": "john.doe@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "birthdate": "2000-01-01",
+  "dateJoined": "2023-10-22T14:48:00Z",
+  "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "emailConfirmed": true,
+  "phoneNumber": "+1234567890",
+  "role": "CLIENT"
 }
 ```
 
-**Error Response:**
+**401 Unauthorized**
+Invalid access token.
 
-```json
-{
-  "message": "Email is already confirmed"
-}
+**404 Not Found**
+User not found.
+
+---
+
+### POST /auth/fetchuserbyid
+
+Fetch user by ID.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
 ```
-
-**User Profile**
-
-**GET** `/fetchuser` - Fetch current user profile
-
-**Request:**
-
-**_Authorization Header:_**
-`Authorization: Bearer <your_access_token_here>`
-
-**Success Response:**
-
-```json
-{
-  "message": "User profile retrieved successfully",
-  "user": {
-    "username": "john_doe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "birthdate": "2000-01-01",
-    "dateJoined": "2023-10-22T14:48:00Z",
-    "profilePicture": "<base64 string>",
-    "emailConfirmed": true
-  }
-}
-```
-
-**POST** `/fetchuserbyid` - Fetch user by ID
-
-**Request:**
-
-**_Authorization Header:_**
-`Authorization: Bearer <your_access_token_here>`
 
 **Request Body:**
 
@@ -1328,166 +428,915 @@ This endpoint is designed to be opened directly in a browser from the email conf
 }
 ```
 
-**Success Response:**
+**Responses:**
+
+**200 OK**
 
 ```json
 {
-  "message": "User fetched successfully",
-  "user": {
-    "username": "john_doe",
-    "firstName": "John",
-    "lastName": "Doe",
-    "birthdate": "2000-01-01",
-    "dateJoined": "2023-10-22T14:48:00Z",
-    "profilePicture": "<base64 string>",
-    "emailConfirmed": true
-  }
+  "id": "615f2e0a6c6d5c0e1a1e4a01",
+  "username": "john_doe",
+  "firstName": "John",
+  "lastName": "Doe",
+  "birthdate": "2000-01-01",
+  "dateJoined": "2023-10-22T14:48:00Z",
+  "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "phoneNumber": "+1234567890",
+  "role": "CLIENT"
 }
 ```
 
-**POST** `/logout` - Logout a user
+**400 Bad Request**
+Invalid user ID format.
 
-**Request:**
+**401 Unauthorized**
+Invalid access token.
 
-**_Authorization Header:_**
-`Authorization: Bearer <your_access_token_here>`
+**404 Not Found**
+User not found.
+
+---
+
+### PUT /auth/update
+
+Update user profile (full update).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
 
 **Request Body:**
 
 ```json
 {
-  "refreshToken": "<refresh_token>"
+  "username": "john_doe_updated",
+  "firstName": "John Updated",
+  "lastName": "Doe Updated",
+  "phoneNumber": "+1234567890",
+  "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
 }
 ```
 
-**Success Response:**
-No content, successful logout.
+**Responses:**
 
-### Error Handling
-
-All validation errors are returned as an `errors` object mapping field names to error messages. Authentication and other errors are returned as a `message` string.
-
-### Security & Best Practices
-
-- All sensitive endpoints are protected by JWT authentication.
-- Email confirmation is required before login.
-- Brute-force protection is enforced on login (rate limiting by IP and identifier).
-- Passwords must meet complexity requirements.
-- Email and username uniqueness is enforced on registration and update.
-- All error responses are designed for easy frontend parsing.
-
-## TypeScript Interfaces for Frontend Integration
-
-### AuthResponseDto
-
-```typescript
-interface AuthResponseDto {
-  accessToken: string;
-  refreshToken: string;
-  accessTokenExpiresAt: string; // ISO 8601 datetime (e.g., "2024-02-19T14:07:00.000Z")
-  refreshTokenExpiresAt: string; // ISO 8601 datetime (e.g., "2024-02-26T14:07:00.000Z")
-  user: {
-    id: string;
-    username: string;
-    email: string;
-    firstName?: string;
-    lastName?: string;
-    phoneNumber?: string;
-    isAdmin: boolean;
-  };
-}
-```
-
-### RegistrationResponseDto
-
-```typescript
-interface RegistrationResponseDto {
-  message: string;
-  email: string;
-}
-```
-
-### LoginDto
-
-```typescript
-interface LoginDto {
-  email: string;
-  password: string;
-}
-```
-
-### RefreshTokenDto
-
-```typescript
-interface RefreshTokenDto {
-  refreshToken: string;
-}
-```
-
-### Administrative Endpoints
-
-#### GET `/auth/users` - List all users (admin only)
-
-- **HTTP Method**: GET
-- **Route**: `/api/auth/users`
-- **Description**: Retrieves a list of every registered user. Intended for administrative oversight, this endpoint returns basic metadata (username, email, first/last name, birthdate, phone number, profile picture, admin flag, join date) for each account. Only users with `isAdmin` set to `true` may call it.
-- **Authentication Required**: Yes
-- **Guards**: `JwtAuthGuard`, `AdminGuard`
-
-**Success Response (200 OK)**
+**200 OK**
 
 ```json
 {
-  "message": "Users retrieved successfully",
+  "id": "615f2e0a6c6d5c0e1a1e4a01",
+  "username": "john_doe_updated",
+  "email": "john.doe@example.com",
+  "firstName": "John Updated",
+  "lastName": "Doe Updated",
+  "birthdate": "2000-01-01",
+  "dateJoined": "2023-10-22T14:48:00Z",
+  "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "emailConfirmed": true,
+  "phoneNumber": "+1234567890",
+  "role": "CLIENT"
+}
+```
+
+**400 Bad Request**
+Invalid update data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**404 Not Found**
+User not found.
+
+**409 Conflict**
+Username or email already taken.
+
+---
+
+### PATCH /auth/update
+
+Update user profile (partial update).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "firstName": "John Updated"
+}
+```
+
+**Responses:**
+
+**200 OK**
+Same as PUT /auth/update response.
+
+**400 Bad Request**
+Invalid update data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**404 Not Found**
+User not found.
+
+**409 Conflict**
+Username or email already taken.
+
+---
+
+### DELETE /auth/delete
+
+Delete your own user account.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Account deleted successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Cannot delete admin accounts.
+
+**500 Internal Server Error**
+Failed to delete account.
+
+---
+
+### DELETE /auth/users/:id
+
+Admin: delete a user by id.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Required Roles:** Admin (AdminGuard)
+
+**URL Parameters:**
+
+- `id` (string): User ID to delete
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "User removed successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient privileges.
+
+**404 Not Found**
+User not found.
+
+**400 Bad Request**
+Administrators cannot delete themselves.
+
+---
+
+### GET /auth/users
+
+Admin: fetch all users.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Required Roles:** Admin (AdminGuard)
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
   "users": [
     {
-      "id": "507f1f77bcf86cd799439011",
+      "id": "615f2e0a6c6d5c0e1a1e4a01",
       "username": "john_doe",
-      "email": "john@example.com",
       "firstName": "John",
       "lastName": "Doe",
-      "birthdate": "1990-01-01T00:00:00.000Z",
-      "profilePicture": "data:image/png;base64,iVBORw0...",
-      "phoneNumber": "123-456-7890",
-      "isAdmin": false,
-      "dateJoined": "2023-01-01T00:00:00.000Z"
+      "birthdate": "2000-01-01",
+      "dateJoined": "2023-10-22T14:48:00Z",
+      "profilePicture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+      "phoneNumber": "+1234567890",
+      "role": "CLIENT"
     }
   ]
 }
 ```
 
-**Error Responses**
+**401 Unauthorized**
+Invalid access token.
 
-- `401 Unauthorized` – missing/invalid token
-- `403 Forbidden` – authenticated user is not an admin
-
-#### DELETE `/auth/users/:id` - Remove user (admin only)
-
-- **HTTP Method**: DELETE
-- **Route**: `/api/auth/users/:id`
-- **Description**: Deletes an account belonging to another user. Only users with `isAdmin` set to `true` may call this endpoint. Administrators cannot delete themselves via this route.
-- **Authentication Required**: Yes
-- **Guards**: `JwtAuthGuard`, `AdminGuard`
-- **Request Parameters**:
-  - `id` (string) – MongoDB ObjectId of the user to remove
-
-**Success Response (200 OK)**
-
-```json
-{
-  "message": "User deleted successfully"
-}
-```
-
-**Error Responses**
-
-- `401 Unauthorized` – missing/invalid token
-- `403 Forbidden` – authenticated user is not an admin
-- `404 Not Found` – target user does not exist
-- `400 Bad Request` – administrator attempted to delete their own account
+**403 Forbidden**
+Insufficient privileges.
 
 ---
 
-### License
+### POST /auth/resend-confirmation-email
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Resend confirmation email.
+
+**Request Body:**
+
+```json
+{
+  "email": "john.doe@example.com"
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Confirmation email sent successfully"
+}
+```
+
+**404 Not Found**
+User not found.
+
+**409 Conflict**
+Email already confirmed.
+
+**429 Too Many Requests**
+Too many requests.
+
+---
+
+### PATCH /auth/change-role
+
+Change user role (Platform Owner/Admin only).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Required Roles:** `PLATFORM_OWNER`, `PLATFORM_ADMIN`
+
+**Request Body:**
+
+```json
+{
+  "userId": "615f2e0a6c6d5c0e1a1e4a01",
+  "newRole": "BUSINESS_OWNER"
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "User role changed successfully",
+  "userId": "615f2e0a6c6d5c0e1a1e4a01",
+  "newRole": "BUSINESS_OWNER",
+  "previousRole": "CLIENT"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+User not found.
+
+---
+
+## 🏢 Business Management Endpoints
+
+### POST /business/apply
+
+Submit a business application.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "businessName": "Tech Solutions Inc.",
+  "description": "A technology company specializing in software development",
+  "website": "https://techsolutions.com",
+  "phone": "+1-555-0123"
+}
+```
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "businessName": "Tech Solutions Inc.",
+  "description": "A technology company specializing in software development",
+  "website": "https://techsolutions.com",
+  "phone": "+1-555-0123",
+  "applicantId": "615f2e0a6c6d5c0e1a1e4a01",
+  "status": "pending",
+  "createdAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid request data.
+
+**401 Unauthorized**
+Invalid access token.
+
+---
+
+### GET /business/applications
+
+Get all business applications (Platform Admin only).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Required Roles:** `PLATFORM_OWNER`, `PLATFORM_ADMIN`
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "applications": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "businessName": "Tech Solutions Inc.",
+      "description": "A technology company specializing in software development",
+      "website": "https://techsolutions.com",
+      "phone": "+1-555-0123",
+      "applicantId": "615f2e0a6c6d5c0e1a1e4a01",
+      "status": "pending",
+      "createdAt": "2024-02-17T16:30:00.000Z"
+    }
+  ]
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### POST /business/applications/:id/review
+
+Review business application (Platform Admin only).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Required Roles:** `PLATFORM_OWNER`, `PLATFORM_ADMIN`
+
+**URL Parameters:**
+
+- `id` (string): Application ID
+
+**Request Body:**
+
+```json
+{
+  "status": "approved",
+  "reviewNotes": "Application approved - business meets all requirements"
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "businessName": "Tech Solutions Inc.",
+  "status": "approved",
+  "reviewedBy": "507f1f77bcf86cd799439012",
+  "reviewNotes": "Application approved - business meets all requirements",
+  "businessId": "507f1f77bcf86cd799439013",
+  "updatedAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid request data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Application not found.
+
+---
+
+### GET /business/my
+
+Get my businesses.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "businesses": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "Tech Solutions Inc.",
+      "phone": "+1-555-0123",
+      "status": "approved",
+      "isActive": true,
+      "createdAt": "2024-02-17T16:30:00.000Z"
+    }
+  ]
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+---
+
+### GET /business/all
+
+Get all businesses (Platform Admin only).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**Required Roles:** `PLATFORM_OWNER`, `PLATFORM_ADMIN`
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "businesses": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "Tech Solutions Inc.",
+      "phone": "+1-555-0123",
+      "status": "approved",
+      "isActive": true,
+      "createdAt": "2024-02-17T16:30:00.000Z"
+    }
+  ]
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /business/:id
+
+Get business by ID.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "name": "Tech Solutions Inc.",
+  "description": "A technology company specializing in software development",
+  "website": "https://techsolutions.com",
+  "phone": "+1-555-0123",
+  "databaseName": "tech_solutions_inc_1708198200000",
+  "status": "approved",
+  "isActive": true,
+  "tags": ["technology", "software"],
+  "createdAt": "2024-02-17T16:30:00.000Z",
+  "updatedAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business not found.
+
+---
+
+### PUT /business/:id
+
+Update business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+
+**Request Body:**
+
+```json
+{
+  "name": "Updated Business Name",
+  "description": "Updated description",
+  "website": "https://updated-website.com",
+  "tags": ["technology", "software", "innovation"]
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "name": "Updated Business Name",
+  "description": "Updated description",
+  "website": "https://updated-website.com",
+  "phone": "+1-555-0123",
+  "databaseName": "tech_solutions_inc_1708198200000",
+  "status": "approved",
+  "isActive": true,
+  "tags": ["technology", "software", "innovation"],
+  "createdAt": "2024-02-17T16:30:00.000Z",
+  "updatedAt": "2024-02-18T10:15:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid request data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business not found.
+
+---
+
+### DELETE /business/:id
+
+Delete business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Business deleted successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business not found.
+
+---
+
+### POST /business/:id/users
+
+Assign user to business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+
+**Request Body:**
+
+```json
+{
+  "userId": "507f1f77bcf86cd799439012",
+  "role": "admin"
+}
+```
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439013",
+  "businessId": "507f1f77bcf86cd799439011",
+  "userId": "507f1f77bcf86cd799439012",
+  "role": "admin",
+  "assignedBy": "615f2e0a6c6d5c0e1a1e4a01",
+  "isActive": true,
+  "createdAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid request data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business not found.
+
+---
+
+### DELETE /business/:id/users/:userId
+
+Unassign user from business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+- `userId` (string): User ID to unassign
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "User unassigned from business successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business or user assignment not found.
+
+---
+
+## 🏥 Health Check
+
+### GET /health
+
+Check application health.
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-02-17T16:30:00.000Z",
+  "uptime": 3600,
+  "version": "1.0.0"
+}
+```
+
+---
+
+## 📊 Error Response Format
+
+All error responses follow this format:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Error description",
+  "timestamp": "2024-02-17T16:30:00.000Z",
+  "errors": {
+    "field": "validation error message"
+  }
+}
+```
+
+### Common HTTP Status Codes
+
+- **200 OK**: Request successful
+- **201 Created**: Resource created successfully
+- **302 Found**: Redirect (OAuth flows)
+- **400 Bad Request**: Invalid request data
+- **401 Unauthorized**: Authentication required or failed
+- **403 Forbidden**: Insufficient permissions
+- **404 Not Found**: Resource not found
+- **409 Conflict**: Resource conflict
+- **429 Too Many Requests**: Rate limit exceeded
+- **500 Internal Server Error**: Server error
+
+---
+
+## 🔐 Role Permissions
+
+| Role           | Can Submit Application | Can View Own Businesses | Can View All Businesses | Can Review Applications | Can Manage Users  | Can Delete Users |
+| -------------- | ---------------------- | ----------------------- | ----------------------- | ----------------------- | ----------------- | ---------------- |
+| CLIENT         | ✅                     | ✅                      | ❌                      | ❌                      | ❌                | ❌               |
+| BUSINESS_ADMIN | ❌                     | ✅                      | ❌                      | ❌                      | ❌                | ❌               |
+| BUSINESS_OWNER | ✅                     | ✅                      | ❌                      | ❌                      | ✅ (own business) | ❌               |
+| PLATFORM_ADMIN | ❌                     | ✅                      | ✅                      | ✅                      | ✅                | ✅               |
+| PLATFORM_OWNER | ✅                     | ✅                      | ✅                      | ✅                      | ✅                | ✅               |
+
+---
+
+## 📝 Request Headers
+
+### Required Headers for Authenticated Requests
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+### Optional Headers
+
+```http
+Accept: application/json
+X-Request-ID: unique-request-id
+```
+
+---
+
+## 🚀 Quick Start Examples
+
+### 1. Register and Login
+
+```bash
+# Register
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john_doe",
+    "email": "john.doe@example.com",
+    "password": "SecurePass123!",
+    "firstName": "John",
+    "lastName": "Doe",
+    "birthdate": "2000-01-01",
+    "acceptTerms": true
+  }'
+
+# Login
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john.doe@example.com",
+    "password": "SecurePass123!"
+  }'
+```
+
+### 2. Submit Business Application
+
+```bash
+curl -X POST http://localhost:3000/api/business/apply \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "businessName": "Tech Solutions Inc.",
+    "description": "A technology company specializing in software development",
+    "website": "https://techsolutions.com",
+    "phone": "+1-555-0123"
+  }'
+```
+
+### 3. Get My Businesses
+
+```bash
+curl -X GET http://localhost:3000/api/business/my \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### 4. Google OAuth Login
+
+```bash
+# Start OAuth flow
+curl -L http://localhost:3000/api/auth/google?mode=login
+
+# After redirect, callback will handle token exchange
+```
+
+---
+
+## 📞 Support
+
+For support and questions, please create an issue in repository or contact the development team.
+
+---
+
+**Built with ❤️ using NestJS**

@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthenticatedRequest } from '@/auth/types/auth.types';
+import { Role } from '@/auth/enums/role.enum';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -15,7 +16,10 @@ export class AdminGuard implements CanActivate {
     if (!user) {
       throw new UnauthorizedException('No authenticated user found');
     }
-    if (!user.isAdmin) {
+    if (
+      user.role !== Role.PLATFORM_OWNER &&
+      user.role !== Role.PLATFORM_ADMIN
+    ) {
       throw new ForbiddenException('Insufficient privileges');
     }
     return true;
