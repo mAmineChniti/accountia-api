@@ -49,7 +49,6 @@ import { type UserPayload } from '@/auth/types/auth.types';
 import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
 import { TwoFAVerifyDto } from '@/auth/dto/2fa-verify.dto';
 import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
-import { BusinessApplicationDto } from '@/auth/dto/business-application.dto';
 
 @ApiTags('Authentication')
 @ApiExtraModels(AuthResponseDto)
@@ -421,23 +420,4 @@ export class AuthController {
     );
   }
 
-  @Post('business-application')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Apply for Business Owner access' })
-  @ApiResponse({
-    status: 200,
-    description: 'Application received',
-    type: MessageResponseDto,
-  })
-  @ApiResponse({ status: 400, description: 'Invalid application or not a client' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async applyForBusiness(
-    @CurrentUser() user: UserPayload,
-    @Body() dto: BusinessApplicationDto
-  ): Promise<MessageResponseDto> {
-    return this.authService.applyForBusiness(user.id, dto);
-  }
 }
