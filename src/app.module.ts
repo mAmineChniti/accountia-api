@@ -38,7 +38,6 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     StatsModule,
     RevenuesModule,
     ExpensesModule,
-    AuthModule,
     UsersModule,
     InvoicesModule,
     BusinessApplicationModule,
