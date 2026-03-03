@@ -22,7 +22,6 @@ import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
-import { BusinessApplicationDto } from '@/auth/dto/business-application.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
@@ -868,70 +867,5 @@ export class AuthService {
       user.lockUntil = undefined;
       await (user as UserDocument).save();
     }
-  }
-
-  async applyForBusiness(
-    userId: string,
-    dto: BusinessApplicationDto
-  ): Promise<MessageResponseDto> {
-    const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    if (user.role !== Role.CLIENT) {
-      throw new BadRequestException(
-        'Only clients can apply for business access'
-      );
-    }
-
-    if (user.hasApplied) {
-      throw new ConflictException(
-        'You have already submitted a business application. Please wait for our team to review it.'
-      );
-    }
-
-    // Mark application as submitted first
-    user.hasApplied = true;
-    await user.save();
-
-    // Send notification email to admin (in background)
-    try {
-      this.emailService
-        .sendBusinessApplicationEmail(
-          user.email,
-          user.firstName,
-          user.lastName,
-          dto.businessName,
-          dto.businessType,
-          dto.description,
-          dto.website
-        )
-        .catch((error) =>
-          console.error('Failed to send business application email:', error)
-        );
-    } catch (error) {
-      console.error('Error initiating business application email:', error);
-    }
-
-    // Send confirmation email to client (in background)
-    try {
-      this.emailService
-        .sendBusinessApplicationConfirmationEmail(
-          user.email,
-          user.firstName,
-          dto.businessName
-        )
-        .catch((error) =>
-          console.error('Failed to send confirmation email to client:', error)
-        );
-    } catch (error) {
-      console.error('Error initiating confirmation email to client:', error);
-    }
-
-    return {
-      message:
-        'Your business application has been received. Our team will review it and contact you by email.',
-    };
   }
 }

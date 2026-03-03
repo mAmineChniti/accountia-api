@@ -51,6 +51,10 @@ export class InvoicesService {
   // ─── CLIENT: récupérer ses propres factures ─────────────────────────────
 
   async getMyInvoices(clientId: string): Promise<InvoicesListResponseDto> {
+    if (!Types.ObjectId.isValid(clientId)) {
+      throw new BadRequestException('Invalid client ID');
+    }
+
     const invoices = await this.invoiceModel
       .find({ clientId: new Types.ObjectId(clientId) })
       .sort({ createdAt: -1 })
@@ -116,6 +120,10 @@ export class InvoicesService {
   async getMyIssuedInvoices(
     businessOwnerId: string
   ): Promise<InvoicesListResponseDto> {
+    if (!Types.ObjectId.isValid(businessOwnerId)) {
+      throw new BadRequestException('Invalid business owner ID');
+    }
+
     const invoices = await this.invoiceModel
       .find({ businessOwnerId: new Types.ObjectId(businessOwnerId) })
       .sort({ createdAt: -1 })

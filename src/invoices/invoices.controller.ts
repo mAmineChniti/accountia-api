@@ -70,7 +70,9 @@ export class InvoicesController {
       user.role !== Role.BUSINESS_OWNER &&
       user.role !== Role.BUSINESS_ADMIN
     ) {
-      throw new ForbiddenException('Only business owners can access this');
+      throw new ForbiddenException(
+        'Only business owners or business admins can access this'
+      );
     }
     return this.invoicesService.getMyIssuedInvoices(user.id);
   }
@@ -86,7 +88,9 @@ export class InvoicesController {
       user.role !== Role.BUSINESS_OWNER &&
       user.role !== Role.BUSINESS_ADMIN
     ) {
-      throw new ForbiddenException('Only business owners can create invoices');
+      throw new ForbiddenException(
+        'Only business owners or business admins can create invoices'
+      );
     }
     return this.invoicesService.createInvoice(user.id, dto);
   }
@@ -105,7 +109,7 @@ export class InvoicesController {
       user.role !== Role.BUSINESS_ADMIN
     ) {
       throw new ForbiddenException(
-        'Only business owners can update invoice status'
+        'Only business owners or business admins can update invoice status'
       );
     }
     return this.invoicesService.updateInvoiceStatus(user.id, id, dto.status);
@@ -123,7 +127,9 @@ export class InvoicesController {
       user.role !== Role.BUSINESS_OWNER &&
       user.role !== Role.BUSINESS_ADMIN
     ) {
-      throw new ForbiddenException('Only business owners can delete invoices');
+      throw new ForbiddenException(
+        'Only business owners or business admins can delete invoices'
+      );
     }
     await this.invoicesService.deleteInvoice(user.id, id);
     return { message: 'Invoice deleted successfully' };

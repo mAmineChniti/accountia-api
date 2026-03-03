@@ -51,6 +51,7 @@ export class BusinessApplicationService {
     // Vérifier si une candidature existe déjà
     const existing = await this.applicationModel.findOne({
       userId: new Types.ObjectId(userId),
+      status: { $ne: ApplicationStatus.REJECTED },
     });
 
     if (existing) {
@@ -59,22 +60,40 @@ export class BusinessApplicationService {
       );
     }
 
-    // Créer la candidature en base
-    await this.applicationModel.create({
-      userId: new Types.ObjectId(userId),
-      businessName: dto.businessName,
-      businessType: dto.businessType,
-      description: dto.description,
-      website: dto.website,
-      status: ApplicationStatus.PENDING,
-    });
+    // Créer la candidature en base avec transaction
+    const session = await this.applicationModel.db.startSession();
+    session.startTransaction();
 
-    // Marquer l'utilisateur comme ayant postulé
-    user.hasApplied = true;
-    await user.save();
+    try {
+      // Créer la candidature
+      await this.applicationModel.create(
+        [
+          {
+            userId: new Types.ObjectId(userId),
+            businessName: dto.businessName,
+            businessType: dto.businessType,
+            description: dto.description,
+            website: dto.website,
+            status: ApplicationStatus.PENDING,
+          },
+        ],
+        { session }
+      );
+
+      // Marquer l'utilisateur comme ayant postulé
+      user.hasApplied = true;
+      await user.save({ session });
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      await session.endSession();
+    }
 
     // Email admin (en arrière-plan)
-    this.emailService
+    void this.emailService
       .sendBusinessApplicationEmail(
         user.email,
         user.firstName,
@@ -89,7 +108,7 @@ export class BusinessApplicationService {
       );
 
     // Email confirmation client (en arrière-plan)
-    this.emailService
+    await this.emailService
       .sendBusinessApplicationConfirmationEmail(
         user.email,
         user.firstName,

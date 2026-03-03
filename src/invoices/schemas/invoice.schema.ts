@@ -55,3 +55,6 @@ export class Invoice {
 }
 
 export const InvoiceSchema = SchemaFactory.createForClass(Invoice);
+
+// Add compound unique index on invoiceNumber and businessOwnerId
+InvoiceSchema.index({ invoiceNumber: 1, businessOwnerId: 1 }, { unique: true });

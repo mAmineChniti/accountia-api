@@ -2,6 +2,29 @@ import { Injectable } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { createTransport } from 'nodemailer';
 
+// HTML escape utility
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+  };
+  return text.replaceAll(/["&'/<>]/g, (char) => map[char]);
+}
+
+// URL validation utility
+function validateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class EmailService {
   private readonly from: string;
@@ -139,11 +162,11 @@ export class EmailService {
         <h2 style="color: #333;">New Business Application</h2>
         <p>A user has applied for Business Owner access:</p>
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">User</td><td style="padding: 8px; border: 1px solid #ddd;">${firstName} ${lastName} (${userEmail})</td></tr>
-          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Name</td><td style="padding: 8px; border: 1px solid #ddd;">${businessName}</td></tr>
-          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Type</td><td style="padding: 8px; border: 1px solid #ddd;">${businessType}</td></tr>
-          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Description</td><td style="padding: 8px; border: 1px solid #ddd;">${description}</td></tr>
-          ${website ? `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Website</td><td style="padding: 8px; border: 1px solid #ddd;"><a href="${website}">${website}</a></td></tr>` : ''}
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">User</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(firstName)} ${escapeHtml(lastName)} (${escapeHtml(userEmail)})</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Name</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(businessName)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Type</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(businessType)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Description</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(description)}</td></tr>
+          ${website && validateUrl(website) ? `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Website</td><td style="padding: 8px; border: 1px solid #ddd;"><a href="${escapeHtml(website)}">${escapeHtml(website)}</a></td></tr>` : ''}
         </table>
         <p>To approve this application, update the user's role from CLIENT to BUSINESS_OWNER in the admin dashboard.</p>
       </div>
