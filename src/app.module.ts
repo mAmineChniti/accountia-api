@@ -6,6 +6,11 @@ import { AuthModule } from '@/auth/auth.module';
 import { StatsModule } from './stats/stats.module';
 import { RevenuesModule } from './revenues/revenues.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { UsersModule } from '@/users/users.module';
+import { InvoicesModule } from '@/invoices/invoices.module';
+import { BusinessApplicationModule } from '@/business-application/business-application.module';
+import { User, UserSchema } from '@/users/schemas/user.schema';
+
 @Module({
   imports: [
     // Configuration globale avec validation
@@ -21,8 +26,6 @@ import { ExpensesModule } from './expenses/expenses.module';
         FRONTEND_URL: Joi.string().uri().required(),
       }),
     }),
-
-    // Connexion à MongoDB
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -35,6 +38,11 @@ import { ExpensesModule } from './expenses/expenses.module';
     StatsModule,
     RevenuesModule,
     ExpensesModule,
+    AuthModule,
+    UsersModule,
+    InvoicesModule,
+    BusinessApplicationModule,
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [],
   providers: [],

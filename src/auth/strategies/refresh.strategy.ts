@@ -49,10 +49,16 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh') {
       throw new Error('Invalid or expired refresh token');
     }
 
+    // ✅ CORRIGÉ : retourner toutes les infos nécessaires dont role
     return {
       id: user._id.toString(),
       email: user.email,
       username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phoneNumber: user.phoneNumber,
+      isAdmin: !!user.isAdmin,
+      role: user.role,
     };
   }
 }

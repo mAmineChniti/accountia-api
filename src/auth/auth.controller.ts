@@ -12,6 +12,8 @@ import {
   Req,
   Param,
   Res,
+  Query,
+  HttpException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -55,6 +57,59 @@ import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('google')
+  @ApiOperation({ summary: 'Start Google OAuth login/signup flow' })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirects to Google OAuth consent',
+  })
+  googleAuth(
+    @Query('mode') mode: 'login' | 'register' = 'login',
+    @Query('lang') lang = 'en',
+    @Query('redirectUri') redirectUri?: string,
+    @Res() res?: Response
+  ): void {
+    const url = this.authService.getGoogleAuthUrl({
+      mode,
+      lang,
+      redirectUri,
+    });
+    res?.redirect(url);
+  }
+
+  @Get('google/callback')
+  @ApiOperation({
+    summary: 'Handle Google OAuth callback and redirect to frontend',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirects to frontend callback route',
+  })
+  async googleCallback(
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Res() res?: Response
+  ): Promise<void> {
+    try {
+      const redirectUrl = await this.authService.handleGoogleCallback({
+        code,
+        state,
+      });
+      res?.redirect(redirectUrl);
+    } catch (error) {
+      const frontendBase = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      const fallback = new URL('/en/login', frontendBase);
+
+      fallback.searchParams.set('oauthError', 'google_callback_failed');
+
+      if (error instanceof HttpException) {
+        fallback.searchParams.set('statusCode', String(error.getStatus()));
+      }
+
+      res?.redirect(fallback.toString());
+    }
+  }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -211,6 +266,8 @@ export class AuthController {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         isAdmin: !!user.isAdmin,
+        // Ajout du champ role pour respecter le type AuthResponseDto
+        role: user.role,
       },
     };
   }
