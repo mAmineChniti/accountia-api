@@ -38,7 +38,7 @@ async function bootstrap() {
           scheme: 'bearer',
           bearerFormat: 'JWT',
         },
-        'access-token'
+        
       )
       .build();
 

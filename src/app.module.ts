@@ -3,9 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
-
+import { StatsModule } from './stats/stats.module';
+import { RevenuesModule } from './revenues/revenues.module';
+import { ExpensesModule } from './expenses/expenses.module';
 @Module({
   imports: [
+    // Configuration globale avec validation
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
@@ -19,6 +22,7 @@ import { AuthModule } from '@/auth/auth.module';
       }),
     }),
 
+    // Connexion à MongoDB
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -26,7 +30,13 @@ import { AuthModule } from '@/auth/auth.module';
       }),
     }),
 
+    // Modules de l'application
     AuthModule,
+    StatsModule,
+   
+  RevenuesModule,
+  ExpensesModule,
+  StatsModule ,// ajout du module stats si tu veux l'utiliser
   ],
   controllers: [],
   providers: [],
