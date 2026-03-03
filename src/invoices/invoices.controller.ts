@@ -17,7 +17,12 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
-import { CreateInvoiceDto, UpdateInvoiceStatusDto, InvoiceResponseDto, InvoicesListResponseDto } from './dto/invoice.dto';
+import {
+  CreateInvoiceDto,
+  UpdateInvoiceStatusDto,
+  InvoiceResponseDto,
+  InvoicesListResponseDto,
+} from './dto/invoice.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -99,7 +104,9 @@ export class InvoicesController {
       user.role !== Role.BUSINESS_OWNER &&
       user.role !== Role.BUSINESS_ADMIN
     ) {
-      throw new ForbiddenException('Only business owners can update invoice status');
+      throw new ForbiddenException(
+        'Only business owners can update invoice status'
+      );
     }
     return this.invoicesService.updateInvoiceStatus(user.id, id, dto.status);
   }

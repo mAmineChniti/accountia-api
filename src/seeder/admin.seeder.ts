@@ -15,7 +15,9 @@ export class AdminSeeder implements OnApplicationBootstrap {
       Logger.warn('ADMIN_EMAIL or ADMIN_PASSWORD not set in env');
       return;
     }
-    const existing = await this.userModel.findOne({ role: Role.PLATFORM_ADMIN });
+    const existing = await this.userModel.findOne({
+      role: Role.PLATFORM_ADMIN,
+    });
     if (existing) {
       Logger.log('ℹ️ Admin already exists');
       return;

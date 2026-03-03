@@ -1,4 +1,3 @@
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -101,7 +100,6 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-
 
 UserSchema.pre('save', function () {
   if (

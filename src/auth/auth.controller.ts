@@ -54,7 +54,7 @@ import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
 @ApiExtraModels(AuthResponseDto)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
@@ -212,7 +212,7 @@ export class AuthController {
         phoneNumber: user.phoneNumber,
         isAdmin: !!user.isAdmin,
         // Ajout du champ role pour respecter le type AuthResponseDto
-        role: (user as any).role,
+        role: user.role,
       },
     };
   }
@@ -419,5 +419,4 @@ export class AuthController {
       resendConfirmationDto.email
     );
   }
-
 }

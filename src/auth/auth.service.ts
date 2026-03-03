@@ -66,7 +66,7 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
-  ) { }
+  ) {}
 
   check2FAVerificationLimit(email: string, ip: string): void {
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
@@ -245,15 +245,15 @@ export class AuthService {
     if (existingUser) {
       const error = existingUser.emailConfirmed
         ? new ConflictException({
-          type: 'ACCOUNT_EXISTS',
-          message: 'Username or email is already registered',
-        })
+            type: 'ACCOUNT_EXISTS',
+            message: 'Username or email is already registered',
+          })
         : new ConflictException({
-          type: 'EMAIL_NOT_CONFIRMED',
-          message:
-            'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-          email: email,
-        });
+            type: 'EMAIL_NOT_CONFIRMED',
+            message:
+              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
+            email: email,
+          });
       throw error;
     }
 
@@ -807,9 +807,7 @@ export class AuthService {
     refreshToken: string;
   } {
     const isDocument = '_id' in user;
-    const userId = isDocument
-      ? (user as UserDocument)._id.toString()
-      : (user as TokenPayload).id;
+    const userId = isDocument ? user._id.toString() : user.id;
 
     const payload: TokenPayload = {
       sub: userId,
@@ -817,7 +815,7 @@ export class AuthService {
       email: user.email,
       username: user.username,
       isAdmin: !!user.isAdmin,
-      role: user.role,           // ✅ AJOUTÉ
+      role: user.role, // ✅ AJOUTÉ
       firstName: user.firstName,
       lastName: user.lastName,
       phoneNumber: user.phoneNumber,
@@ -899,26 +897,34 @@ export class AuthService {
 
     // Send notification email to admin (in background)
     try {
-      this.emailService.sendBusinessApplicationEmail(
-        user.email,
-        user.firstName,
-        user.lastName,
-        dto.businessName,
-        dto.businessType,
-        dto.description,
-        dto.website
-      ).catch((error) => console.error('Failed to send business application email:', error));
+      this.emailService
+        .sendBusinessApplicationEmail(
+          user.email,
+          user.firstName,
+          user.lastName,
+          dto.businessName,
+          dto.businessType,
+          dto.description,
+          dto.website
+        )
+        .catch((error) =>
+          console.error('Failed to send business application email:', error)
+        );
     } catch (error) {
       console.error('Error initiating business application email:', error);
     }
 
     // Send confirmation email to client (in background)
     try {
-      this.emailService.sendBusinessApplicationConfirmationEmail(
-        user.email,
-        user.firstName,
-        dto.businessName
-      ).catch((error) => console.error('Failed to send confirmation email to client:', error));
+      this.emailService
+        .sendBusinessApplicationConfirmationEmail(
+          user.email,
+          user.firstName,
+          dto.businessName
+        )
+        .catch((error) =>
+          console.error('Failed to send confirmation email to client:', error)
+        );
     } catch (error) {
       console.error('Error initiating confirmation email to client:', error);
     }

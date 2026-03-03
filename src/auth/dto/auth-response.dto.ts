@@ -37,7 +37,8 @@ export class AuthResponseDto {
       birthdate: '1990-01-01T00:00:00.000Z',
       role: Role.BUSINESS_OWNER,
     },
-    description: 'Utilisateur authentifié. Le champ role est l’un des rôles de l’énumération Role.'
+    description:
+      'Utilisateur authentifié. Le champ role est l’un des rôles de l’énumération Role.',
   })
   user: {
     id: string;

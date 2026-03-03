@@ -29,7 +29,11 @@ export class UserSummaryDto {
   @ApiProperty({ example: false })
   isAdmin!: boolean;
 
-  @ApiPropertyOptional({ enum: Role, example: Role.BUSINESS_OWNER })
+  @ApiPropertyOptional({
+    enum: Role,
+    enumName: 'Role',
+    example: Role.BUSINESS_OWNER,
+  })
   role?: Role;
 
   @ApiProperty({ example: '2023-01-01T00:00:00.000Z' })

@@ -62,7 +62,9 @@ export class BusinessApplicationController {
   @Patch(':id/approve')
   @UseGuards(AdminGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'ADMIN — Approve application → user becomes BUSINESS_OWNER' })
+  @ApiOperation({
+    summary: 'ADMIN — Approve application → user becomes BUSINESS_OWNER',
+  })
   @ApiResponse({ status: 200, type: BusinessApplicationResponseDto })
   @ApiResponse({ status: 404, description: 'Application not found' })
   async approve(

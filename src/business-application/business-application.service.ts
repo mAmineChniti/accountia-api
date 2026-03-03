@@ -11,7 +11,10 @@ import {
   BusinessApplicationDocument,
   ApplicationStatus,
 } from './schemas/business-application.schema';
-import { CreateBusinessApplicationDto, BusinessApplicationResponseDto } from './dto/business-application.dto';
+import {
+  CreateBusinessApplicationDto,
+  BusinessApplicationResponseDto,
+} from './dto/business-application.dto';
 import { User, UserDocument } from '@/users/schemas/user.schema';
 import { Role } from '@/users/schemas/user.schema';
 import { EmailService } from '@/auth/email.service';
@@ -25,7 +28,7 @@ export class BusinessApplicationService {
     @InjectModel(User.name)
     private userModel: Model<UserDocument>,
 
-    private readonly emailService: EmailService,
+    private readonly emailService: EmailService
   ) {}
 
   // ─── CLIENT: soumettre une candidature ─────────────────────────────────
@@ -40,7 +43,9 @@ export class BusinessApplicationService {
     }
 
     if (user.role !== Role.CLIENT) {
-      throw new BadRequestException('Only clients can apply for business access');
+      throw new BadRequestException(
+        'Only clients can apply for business access'
+      );
     }
 
     // Vérifier si une candidature existe déjà
@@ -79,7 +84,9 @@ export class BusinessApplicationService {
         dto.description,
         dto.website
       )
-      .catch((err) => console.error('Failed to send admin notification email:', err));
+      .catch((error) =>
+        console.error('Failed to send admin notification email:', error)
+      );
 
     // Email confirmation client (en arrière-plan)
     this.emailService
@@ -88,7 +95,9 @@ export class BusinessApplicationService {
         user.firstName,
         dto.businessName
       )
-      .catch((err) => console.error('Failed to send client confirmation email:', err));
+      .catch((error) =>
+        console.error('Failed to send client confirmation email:', error)
+      );
 
     return {
       message:
@@ -108,7 +117,9 @@ export class BusinessApplicationService {
 
   // ─── ADMIN: approuver une candidature ──────────────────────────────────
 
-  async approve(applicationId: string): Promise<BusinessApplicationResponseDto> {
+  async approve(
+    applicationId: string
+  ): Promise<BusinessApplicationResponseDto> {
     const application = await this.applicationModel.findById(applicationId);
     if (!application) {
       throw new NotFoundException('Application not found');

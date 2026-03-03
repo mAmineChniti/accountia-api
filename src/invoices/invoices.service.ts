@@ -1,15 +1,21 @@
 import {
   Injectable,
   NotFoundException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomUUID } from 'node:crypto';
-import { Invoice, InvoiceDocument, InvoiceStatus } from './schemas/invoice.schema';
-import { CreateInvoiceDto, InvoicesListResponseDto, InvoiceResponseDto } from './dto/invoice.dto';
-import { Role } from '@/users/schemas/user.schema';
+import {
+  Invoice,
+  InvoiceDocument,
+  InvoiceStatus,
+} from './schemas/invoice.schema';
+import {
+  CreateInvoiceDto,
+  InvoicesListResponseDto,
+  InvoiceResponseDto,
+} from './dto/invoice.dto';
 
 @Injectable()
 export class InvoicesService {
@@ -59,7 +65,10 @@ export class InvoicesService {
 
   // ─── CLIENT: récupérer une facture spécifique ───────────────────────────
 
-  async getMyInvoiceById(clientId: string, invoiceId: string): Promise<InvoiceResponseDto> {
+  async getMyInvoiceById(
+    clientId: string,
+    invoiceId: string
+  ): Promise<InvoiceResponseDto> {
     if (!Types.ObjectId.isValid(invoiceId)) {
       throw new BadRequestException('Invalid invoice ID');
     }
@@ -104,7 +113,9 @@ export class InvoicesService {
 
   // ─── BUSINESS_OWNER: voir ses factures émises ──────────────────────────
 
-  async getMyIssuedInvoices(businessOwnerId: string): Promise<InvoicesListResponseDto> {
+  async getMyIssuedInvoices(
+    businessOwnerId: string
+  ): Promise<InvoicesListResponseDto> {
     const invoices = await this.invoiceModel
       .find({ businessOwnerId: new Types.ObjectId(businessOwnerId) })
       .sort({ createdAt: -1 })
@@ -148,7 +159,10 @@ export class InvoicesService {
 
   // ─── BUSINESS_OWNER: supprimer une facture ─────────────────────────────
 
-  async deleteInvoice(businessOwnerId: string, invoiceId: string): Promise<void> {
+  async deleteInvoice(
+    businessOwnerId: string,
+    invoiceId: string
+  ): Promise<void> {
     if (!Types.ObjectId.isValid(invoiceId)) {
       throw new BadRequestException('Invalid invoice ID');
     }
