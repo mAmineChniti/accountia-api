@@ -9,7 +9,7 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
   >();
   private cleanupInterval: NodeJS.Timeout;
 
-  private readonly maxLoginAttempts = 5;
+  private readonly maxLoginAttempts = 50;
   private readonly loginWindow = 10 * 60 * 1000;
   private readonly blockDuration = 15 * 60 * 1000;
   private readonly maxEmailAttempts = 5;

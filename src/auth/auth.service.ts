@@ -22,6 +22,7 @@ import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
+import { BusinessApplicationDto } from '@/auth/dto/business-application.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
@@ -65,7 +66,7 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
-  ) {}
+  ) { }
 
   check2FAVerificationLimit(email: string, ip: string): void {
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
@@ -244,15 +245,15 @@ export class AuthService {
     if (existingUser) {
       const error = existingUser.emailConfirmed
         ? new ConflictException({
-            type: 'ACCOUNT_EXISTS',
-            message: 'Username or email is already registered',
-          })
+          type: 'ACCOUNT_EXISTS',
+          message: 'Username or email is already registered',
+        })
         : new ConflictException({
-            type: 'EMAIL_NOT_CONFIRMED',
-            message:
-              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: email,
-          });
+          type: 'EMAIL_NOT_CONFIRMED',
+          message:
+            'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
+          email: email,
+        });
       throw error;
     }
 
@@ -271,7 +272,7 @@ export class AuthService {
           'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
       }
 
-      // ✅ CONFIRMÉ : role BUSINESS_OWNER par défaut à l'inscription
+      // ✅ CORRIGÉ : role CLIENT par défaut à l'inscription
       const user = new this.userModel({
         username,
         email,
@@ -285,7 +286,7 @@ export class AuthService {
         emailToken,
         emailConfirmed: false,
         isAdmin: false,
-        role: Role.BUSINESS_OWNER,
+        role: Role.CLIENT,
       });
 
       await user.save();
@@ -548,6 +549,8 @@ export class AuthService {
       dateJoined: user.createdAt,
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
+      hasApplied: user.hasApplied ?? false,
+      role: user.role,
     };
 
     return {
@@ -867,5 +870,62 @@ export class AuthService {
       user.lockUntil = undefined;
       await (user as UserDocument).save();
     }
+  }
+
+  async applyForBusiness(
+    userId: string,
+    dto: BusinessApplicationDto
+  ): Promise<MessageResponseDto> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role !== Role.CLIENT) {
+      throw new BadRequestException(
+        'Only clients can apply for business access'
+      );
+    }
+
+    if (user.hasApplied) {
+      throw new ConflictException(
+        'You have already submitted a business application. Please wait for our team to review it.'
+      );
+    }
+
+    // Mark application as submitted first
+    user.hasApplied = true;
+    await user.save();
+
+    // Send notification email to admin (in background)
+    try {
+      this.emailService.sendBusinessApplicationEmail(
+        user.email,
+        user.firstName,
+        user.lastName,
+        dto.businessName,
+        dto.businessType,
+        dto.description,
+        dto.website
+      ).catch((error) => console.error('Failed to send business application email:', error));
+    } catch (error) {
+      console.error('Error initiating business application email:', error);
+    }
+
+    // Send confirmation email to client (in background)
+    try {
+      this.emailService.sendBusinessApplicationConfirmationEmail(
+        user.email,
+        user.firstName,
+        dto.businessName
+      ).catch((error) => console.error('Failed to send confirmation email to client:', error));
+    } catch (error) {
+      console.error('Error initiating confirmation email to client:', error);
+    }
+
+    return {
+      message:
+        'Your business application has been received. Our team will review it and contact you by email.',
+    };
   }
 }

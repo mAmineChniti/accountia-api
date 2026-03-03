@@ -87,8 +87,11 @@ export class User {
   @Prop()
   lockUntil?: Date;
 
-  @Prop({ type: String, enum: Role, default: Role.BUSINESS_OWNER })
+  @Prop({ type: String, enum: Role, default: Role.CLIENT })
   role: Role;
+
+  @Prop({ default: false })
+  hasApplied: boolean;
 
   @Prop()
   createdAt: Date;
