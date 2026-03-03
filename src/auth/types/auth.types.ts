@@ -1,4 +1,5 @@
 import { type Request } from 'express';
+import { type Role } from '@/auth/enums/role.enum';
 
 export interface UserPayload {
   id: string;
@@ -7,7 +8,7 @@ export interface UserPayload {
   firstName: string;
   lastName: string;
   phoneNumber?: string;
-  isAdmin: boolean;
+  role: Role;
 }
 
 export interface AuthenticatedRequest extends Request {

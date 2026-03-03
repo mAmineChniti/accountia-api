@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Role } from '@/auth/enums/role.enum';
 
 export class AuthResponseDto {
   @ApiProperty({ example: '<access_token>' })
@@ -24,7 +25,7 @@ export class AuthResponseDto {
       id: '1',
       username: 'john_doe',
       email: 'john@example.com',
-      isAdmin: true,
+      role: Role.CLIENT,
       firstName: 'John',
       lastName: 'Doe',
       phoneNumber: '+1234567890',
@@ -39,7 +40,7 @@ export class AuthResponseDto {
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
-    isAdmin: boolean;
+    role: Role;
     profilePicture?: string;
     birthdate?: Date;
   };
