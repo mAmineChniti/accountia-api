@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Role } from '@/auth/enums/role.enum';
 
 export class UserSummaryDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
@@ -25,8 +26,8 @@ export class UserSummaryDto {
   @ApiPropertyOptional({ example: '123-456-7890' })
   phoneNumber?: string;
 
-  @ApiProperty({ example: false })
-  isAdmin!: boolean;
+  @ApiProperty({ enum: Role, enumName: 'Role', example: Role.CLIENT })
+  role: Role;
 
   @ApiProperty({ example: '2023-01-01T00:00:00.000Z' })
   dateJoined!: Date;

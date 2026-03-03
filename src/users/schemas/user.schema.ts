@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { Role } from '@/auth/enums/role.enum';
 
 export type UserDocument = User & Document;
 
@@ -26,8 +27,8 @@ export class User {
   @Prop()
   phoneNumber?: string;
 
-  @Prop({ default: false })
-  isAdmin: boolean;
+  @Prop({ type: String, enum: Role, default: Role.CLIENT })
+  role: Role;
 
   @Prop({ default: false })
   emailConfirmed: boolean;

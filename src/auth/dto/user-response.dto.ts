@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Role } from '@/auth/enums/role.enum';
 
 export class PublicUserDto {
   @ApiProperty({ example: 'john_doe' })
@@ -21,6 +22,9 @@ export class PublicUserDto {
 
   @ApiProperty({ example: true })
   emailConfirmed: boolean;
+
+  @ApiProperty({ enum: Role, enumName: 'Role', example: Role.CLIENT })
+  role: Role;
 }
 
 export class PrivateUserDto extends PublicUserDto {
