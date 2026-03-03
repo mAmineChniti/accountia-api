@@ -266,6 +266,8 @@ export class AuthController {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         isAdmin: !!user.isAdmin,
+        // Ajout du champ role pour respecter le type AuthResponseDto
+        role: user.role,
       },
     };
   }

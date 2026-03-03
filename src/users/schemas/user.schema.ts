@@ -1,6 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
+export enum Role {
+  PLATFORM_OWNER = 'PLATFORM_OWNER',
+  PLATFORM_ADMIN = 'PLATFORM_ADMIN',
+  BUSINESS_OWNER = 'BUSINESS_OWNER',
+  BUSINESS_ADMIN = 'BUSINESS_ADMIN',
+  CLIENT = 'CLIENT',
+}
+
 export type UserDocument = User & Document;
 
 @Schema({ collection: 'users', timestamps: true })
@@ -77,6 +85,12 @@ export class User {
 
   @Prop()
   lockUntil?: Date;
+
+  @Prop({ type: String, enum: Role, default: Role.CLIENT })
+  role: Role;
+
+  @Prop({ default: false })
+  hasApplied: boolean;
 
   @Prop()
   createdAt: Date;

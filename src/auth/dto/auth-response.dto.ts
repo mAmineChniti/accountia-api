@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Role } from '../../users/schemas/user.schema';
 
 export class AuthResponseDto {
   @ApiProperty({ example: '<access_token>' })
@@ -19,6 +20,10 @@ export class AuthResponseDto {
   })
   refreshTokenExpiresAt: string;
 
+  /**
+   * Utilisateur authentifié
+   * - role: voir enum Role
+   */
   @ApiProperty({
     example: {
       id: '1',
@@ -30,7 +35,10 @@ export class AuthResponseDto {
       phoneNumber: '+1234567890',
       profilePicture: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
       birthdate: '1990-01-01T00:00:00.000Z',
+      role: Role.BUSINESS_OWNER,
     },
+    description:
+      'Utilisateur authentifié. Le champ role est l’un des rôles de l’énumération Role.',
   })
   user: {
     id: string;
@@ -42,5 +50,6 @@ export class AuthResponseDto {
     isAdmin: boolean;
     profilePicture?: string;
     birthdate?: Date;
+    role: Role;
   };
 }

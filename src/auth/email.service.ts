@@ -2,6 +2,29 @@ import { Injectable } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { createTransport } from 'nodemailer';
 
+// HTML escape utility
+function escapeHtml(text: string): string {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+  };
+  return text.replaceAll(/["&'/<>]/g, (char) => map[char]);
+}
+
+// URL validation utility
+function validateUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class EmailService {
   private readonly from: string;
@@ -121,5 +144,65 @@ export class EmailService {
         `Failed to send email: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  async sendBusinessApplicationEmail(
+    userEmail: string,
+    firstName: string,
+    lastName: string,
+    businessName: string,
+    businessType: string,
+    description: string,
+    website?: string
+  ): Promise<void> {
+    const adminEmail = this.from; // Send to admin (GMAIL_USERNAME)
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333;">New Business Application</h2>
+        <p>A user has applied for Business Owner access:</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">User</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(firstName)} ${escapeHtml(lastName)} (${escapeHtml(userEmail)})</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Name</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(businessName)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Business Type</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(businessType)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Description</td><td style="padding: 8px; border: 1px solid #ddd;">${escapeHtml(description)}</td></tr>
+          ${website && validateUrl(website) ? `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Website</td><td style="padding: 8px; border: 1px solid #ddd;"><a href="${escapeHtml(website)}">${escapeHtml(website)}</a></td></tr>` : ''}
+        </table>
+        <p>To approve this application, update the user's role from CLIENT to BUSINESS_OWNER in the admin dashboard.</p>
+      </div>
+    `;
+
+    await this.sendEmail(
+      adminEmail,
+      `Business Application: ${businessName} — ${firstName} ${lastName}`,
+      html
+    );
+  }
+
+  async sendBusinessApplicationConfirmationEmail(
+    userEmail: string,
+    firstName: string,
+    businessName: string
+  ): Promise<void> {
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+        <div style="background-color: #fff; border-radius: 8px; padding: 30px; border: 1px solid #e0e0e0;">
+          <h2 style="color: #7b2c2c; margin-top: 0;">✅ Application Received!</h2>
+          <p>Hello <strong>${firstName}</strong>,</p>
+          <p>Thank you for applying for Business Owner access on <strong>Accountia</strong>.</p>
+          <p>We have received your application for <strong>${businessName}</strong> and our team will review it within <strong>2–3 business days</strong>.</p>
+          <p>Once approved, your account role will be upgraded to <strong>Business Owner</strong> and you will be notified by email.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+          <p style="color: #888; font-size: 13px;">If you have any questions, please contact our support team.</p>
+          <p style="color: #888; font-size: 13px;">— The Accountia Team</p>
+        </div>
+      </div>
+    `;
+
+    await this.sendEmail(
+      userEmail,
+      `Your Business Application for ${businessName} — Accountia`,
+      html
+    );
   }
 }

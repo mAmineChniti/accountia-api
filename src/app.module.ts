@@ -3,6 +3,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
+import { UsersModule } from '@/users/users.module';
+import { InvoicesModule } from '@/invoices/invoices.module';
+import { BusinessApplicationModule } from '@/business-application/business-application.module';
+import { User, UserSchema } from '@/users/schemas/user.schema';
 
 @Module({
   imports: [
@@ -18,15 +22,17 @@ import { AuthModule } from '@/auth/auth.module';
         FRONTEND_URL: Joi.string().uri().required(),
       }),
     }),
-
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.getOrThrow<string>('MONGO_URI'),
       }),
     }),
-
     AuthModule,
+    UsersModule,
+    InvoicesModule,
+    BusinessApplicationModule,
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [],
   providers: [],

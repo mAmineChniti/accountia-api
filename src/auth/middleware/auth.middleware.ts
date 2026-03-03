@@ -48,6 +48,7 @@ export class AuthMiddleware implements NestMiddleware {
         lastName: user.lastName,
         phoneNumber: user.phoneNumber,
         isAdmin: !!user.isAdmin,
+        role: user.role, // ✅ AJOUTÉ
       };
 
       next();

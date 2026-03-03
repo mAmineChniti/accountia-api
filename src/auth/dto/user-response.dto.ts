@@ -26,6 +26,12 @@ export class PublicUserDto {
 export class PrivateUserDto extends PublicUserDto {
   @ApiProperty({ example: 'john@example.com' })
   email: string;
+
+  @ApiPropertyOptional({ example: false })
+  hasApplied?: boolean;
+
+  @ApiPropertyOptional({ example: 'CLIENT' })
+  role?: string;
 }
 
 export class UserResponseDto {
