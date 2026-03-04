@@ -27,7 +27,7 @@ export class UserSummaryDto {
   phoneNumber?: string;
 
   @ApiProperty({ enum: Role, enumName: 'Role', example: Role.CLIENT })
-  role: Role;
+  role!: Role;
 
   @ApiProperty({ example: '2023-01-01T00:00:00.000Z' })
   dateJoined!: Date;

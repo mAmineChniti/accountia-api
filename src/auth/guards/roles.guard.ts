@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '@/auth/decorators/roles.decorator';
@@ -27,7 +28,7 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user) {
-      throw new ForbiddenException('No authenticated user found');
+      throw new UnauthorizedException('No authenticated user found');
     }
 
     const hasRole = requiredRoles.includes(user.role);

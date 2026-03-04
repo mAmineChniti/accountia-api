@@ -18,7 +18,11 @@ export class BusinessApplication {
   @Prop({ required: true })
   applicantId: string; // User who submitted the application
 
-  @Prop({ default: 'pending' })
+  @Prop({
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending',
+  })
   status: 'pending' | 'approved' | 'rejected';
 
   @Prop({ required: false })
@@ -30,10 +34,7 @@ export class BusinessApplication {
   @Prop({ required: false })
   businessId?: string; // Reference to created business if approved
 
-  @Prop({ default: Date.now })
   createdAt: Date;
-
-  @Prop({ default: Date.now })
   updatedAt: Date;
 }
 

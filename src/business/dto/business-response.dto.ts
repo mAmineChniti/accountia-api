@@ -100,6 +100,8 @@ export class BusinessApplicationListResponseDto {
   applications: {
     id: string;
     businessName: string;
+    description: string;
+    website?: string;
     phone: string;
     applicantId: string;
     status: string;

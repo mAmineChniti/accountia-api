@@ -181,7 +181,7 @@ export class BusinessController {
   async getMyBusinesses(
     @CurrentUser() user: UserPayload
   ): Promise<BusinessesListResponseDto> {
-    return this.businessService.getMyBusinesses(user.id, user.role);
+    return this.businessService.getMyBusinesses(user.id);
   }
 
   @Get('all')

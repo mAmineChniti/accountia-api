@@ -3,6 +3,7 @@ import {
   IsString,
   IsOptional,
   IsDefined,
+  IsIn,
   MinLength,
   MaxLength,
 } from 'class-validator';
@@ -40,6 +41,7 @@ export class ReviewBusinessApplicationDto {
     example: 'approved',
   })
   @IsDefined()
+  @IsIn(['approved', 'rejected'])
   status: 'approved' | 'rejected';
 
   @ApiPropertyOptional({

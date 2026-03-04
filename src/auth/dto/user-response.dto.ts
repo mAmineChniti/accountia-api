@@ -30,6 +30,9 @@ export class PublicUserDto {
 export class PrivateUserDto extends PublicUserDto {
   @ApiProperty({ example: 'john@example.com' })
   email: string;
+
+  @ApiPropertyOptional({ example: '+1234567890' })
+  phoneNumber?: string;
 }
 
 export class UserResponseDto {
