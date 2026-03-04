@@ -35,7 +35,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "joi": "^18.0.2",
-    "mongoose": "^9.2.3",
+    "mongoose": "^9.2.4",
     "multer": "^2.1.0",
     "nodemailer": "^8.0.1",
     "otplib": "^13.3.0",
