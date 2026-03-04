@@ -18,7 +18,11 @@ export class Business {
   @Prop({ required: true, unique: true })
   databaseName: string; // Multi-tenant database identifier
 
-  @Prop({ default: 'pending' })
+  @Prop({
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'suspended'],
+    default: 'pending',
+  })
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
 
   @Prop({ default: false })
@@ -30,10 +34,7 @@ export class Business {
   @Prop([String])
   tags: string[];
 
-  @Prop({ default: Date.now })
   createdAt: Date;
-
-  @Prop({ default: Date.now })
   updatedAt: Date;
 }
 

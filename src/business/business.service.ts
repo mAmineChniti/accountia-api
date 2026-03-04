@@ -4,8 +4,8 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import { Business, BusinessDocument } from './schemas/business.schema';
 import {
   BusinessApplication,
@@ -35,6 +35,7 @@ import { EmailService } from '@/auth/email.service';
 @Injectable()
 export class BusinessService {
   constructor(
+    @InjectConnection() private readonly connection: Connection,
     @InjectModel(Business.name) private businessModel: Model<BusinessDocument>,
     @InjectModel(BusinessApplication.name)
     private businessApplicationModel: Model<BusinessApplicationDocument>,
@@ -109,7 +110,7 @@ export class BusinessService {
     application.reviewNotes = reviewDto.reviewNotes;
 
     if (reviewDto.status === 'approved') {
-      // Create the business
+      // Create the business within a transaction
       const databaseName = this.generateDatabaseName(application.businessName);
       const business = new this.businessModel({
         name: application.businessName,
@@ -121,23 +122,43 @@ export class BusinessService {
         isActive: true,
       });
 
-      const savedBusiness = await business.save();
-      application.businessId = savedBusiness._id.toString();
+      const session = await this.connection.startSession();
+      session.startTransaction();
+      let approvedBusinessName: string;
+      try {
+        const savedBusiness = await business.save({ session });
+        application.businessId = savedBusiness._id.toString();
+        approvedBusinessName = savedBusiness.name;
 
-      // Assign the applicant as business owner
-      await this.businessUserModel.create({
-        businessId: savedBusiness._id.toString(),
-        userId: application.applicantId,
-        role: BusinessUserRole.OWNER,
-        assignedBy: reviewerId,
-      });
+        await this.businessUserModel.create(
+          [
+            {
+              businessId: savedBusiness._id.toString(),
+              userId: application.applicantId,
+              role: BusinessUserRole.OWNER,
+              assignedBy: reviewerId,
+            },
+          ],
+          { session }
+        );
 
-      // Send approval email
+        await application.save({ session });
+        await session.commitTransaction();
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        await session.endSession();
+      }
+
+      // Send approval email after successful commit
       await this.emailService.sendBusinessApprovalEmail(
         application.applicantId,
-        savedBusiness.name
+        approvedBusinessName
       );
     } else {
+      await application.save();
+
       // Send rejection email
       await this.emailService.sendBusinessRejectionEmail(
         application.applicantId,
@@ -146,19 +167,17 @@ export class BusinessService {
       );
     }
 
-    const updatedApplication = await application.save();
-
     return {
       message: `Business application ${reviewDto.status} successfully`,
       application: {
-        id: updatedApplication._id.toString(),
-        businessName: updatedApplication.businessName,
-        description: updatedApplication.description,
-        website: updatedApplication.website,
-        phone: updatedApplication.phone,
-        applicantId: updatedApplication.applicantId,
-        status: updatedApplication.status,
-        createdAt: updatedApplication.createdAt,
+        id: application._id.toString(),
+        businessName: application.businessName,
+        description: application.description,
+        website: application.website,
+        phone: application.phone,
+        applicantId: application.applicantId,
+        status: application.status,
+        createdAt: application.createdAt,
       },
     };
   }
@@ -174,7 +193,9 @@ export class BusinessService {
 
     const applications = await this.businessApplicationModel
       .find()
-      .select('businessName phone applicantId status createdAt')
+      .select(
+        'businessName description website phone applicantId status createdAt'
+      )
       .sort({ createdAt: -1 })
       .lean();
 
@@ -183,6 +204,8 @@ export class BusinessService {
       applications: applications.map((app) => ({
         id: app._id.toString(),
         businessName: app.businessName,
+        description: app.description,
+        website: app.website,
         phone: app.phone,
         applicantId: app.applicantId,
         status: app.status,
@@ -273,31 +296,28 @@ export class BusinessService {
     // Check if user has owner access to this business
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
-    // Delete all business user relationships
-    await this.businessUserModel.deleteMany({ businessId });
-
-    // Delete the business
-    await this.businessModel.findByIdAndDelete(businessId);
+    const session = await this.connection.startSession();
+    session.startTransaction();
+    try {
+      await this.businessUserModel.deleteMany({ businessId }, { session });
+      await this.businessApplicationModel.updateMany(
+        { businessId },
+        { $unset: { businessId: '' } },
+        { session }
+      );
+      await this.businessModel.findByIdAndDelete(businessId, { session });
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      await session.endSession();
+    }
 
     return { message: 'Business deleted successfully' };
   }
 
-  async getMyBusinesses(
-    userId: string,
-    userRole: Role
-  ): Promise<BusinessesListResponseDto> {
-    // Check if user has permission to view businesses
-    if (
-      userRole !== Role.BUSINESS_OWNER &&
-      userRole !== Role.BUSINESS_ADMIN &&
-      userRole !== Role.PLATFORM_OWNER &&
-      userRole !== Role.PLATFORM_ADMIN
-    ) {
-      throw new ForbiddenException(
-        'You do not have permission to view businesses'
-      );
-    }
-
+  async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
     // Get all businesses where user has a role
     const businessUsers = await this.businessUserModel
       .find({ userId, isActive: true })
@@ -365,6 +385,12 @@ export class BusinessService {
     userId: string,
     userRole: Role
   ): Promise<BusinessUserResponseDto> {
+    // Verify the business exists (platform admins bypass checkBusinessAccess, so check explicitly)
+    const businessExists = await this.businessModel.exists({ _id: businessId });
+    if (!businessExists) {
+      throw new NotFoundException('Business not found');
+    }
+
     // Check if assigner has owner access to this business
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 

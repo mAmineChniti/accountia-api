@@ -37,7 +37,6 @@ import { FetchUserByIdDto } from '@/auth/dto/fetch-user-by-id.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
-  UserResponseDto,
   MessageResponseDto,
   PrivateUserResponseDto,
 } from '@/auth/dto/user-response.dto';
@@ -357,14 +356,14 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'User fetched successfully',
-    type: UserResponseDto,
+    type: PrivateUserResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid user ID format' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async fetchUserById(
     @Body() fetchUserDto: FetchUserByIdDto
-  ): Promise<UserResponseDto> {
+  ): Promise<PrivateUserResponseDto> {
     return this.authService.fetchUserById(fetchUserDto.userId);
   }
 

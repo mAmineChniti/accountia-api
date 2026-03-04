@@ -34,7 +34,7 @@ export class AuthMiddleware implements NestMiddleware {
       };
 
       const user = await this.userModel
-        .findById(payload.sub)
+        .findById(payload.id ?? payload.sub)
         .select('-passwordHash -refreshTokens');
 
       if (!user) {

@@ -26,8 +26,6 @@ import { UpdateUserDto } from '@/auth/dto/update-user.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
 import {
-  PublicUserDto,
-  UserResponseDto,
   MessageResponseDto,
   PrivateUserResponseDto,
   PrivateUserDto,
@@ -397,15 +395,20 @@ export class AuthService {
       throw new BadRequestException('You must accept the terms and conditions');
     }
 
-    const existingUser = await this.userModel.findOne({
-      $or: [{ email }, { username }],
-    });
+    const existingUsername = await this.userModel.findOne({ username });
+    if (existingUsername) {
+      throw new ConflictException({
+        type: 'USERNAME_TAKEN',
+        message: 'This username is already taken',
+      });
+    }
 
-    if (existingUser) {
-      const error = existingUser.emailConfirmed
+    const existingEmail = await this.userModel.findOne({ email });
+    if (existingEmail) {
+      throw existingEmail.emailConfirmed
         ? new ConflictException({
             type: 'ACCOUNT_EXISTS',
-            message: 'Username or email is already registered',
+            message: 'This email is already registered',
           })
         : new ConflictException({
             type: 'EMAIL_NOT_CONFIRMED',
@@ -413,7 +416,6 @@ export class AuthService {
               'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
             email: email,
           });
-      throw error;
     }
 
     const passwordHash = await hash(password, 10);
@@ -706,6 +708,7 @@ export class AuthService {
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
       role: user.role,
+      phoneNumber: user.phoneNumber,
     };
 
     return {
@@ -714,15 +717,16 @@ export class AuthService {
     };
   }
 
-  async fetchUserById(userId: string): Promise<UserResponseDto> {
+  async fetchUserById(userId: string): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
       throw new NotFoundException('The specified user could not be found');
     }
 
-    const publicUser: PublicUserDto = {
+    const privateUser: PrivateUserDto = {
       username: user.username,
+      email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       birthdate: user.birthdate,
@@ -730,11 +734,12 @@ export class AuthService {
       profilePicture: user.profilePicture,
       emailConfirmed: user.emailConfirmed,
       role: user.role,
+      phoneNumber: user.phoneNumber,
     };
 
     return {
       message: 'User fetched successfully',
-      user: publicUser,
+      user: privateUser,
     };
   }
 
@@ -888,13 +893,22 @@ export class AuthService {
   }
 
   async deleteUser(userId: string): Promise<MessageResponseDto> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('Your user profile could not be found');
+    }
+
+    if (
+      user.role === Role.PLATFORM_ADMIN ||
+      user.role === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Admin accounts cannot be deleted via self-service'
+      );
+    }
+
     try {
-      const result = await this.userModel.findByIdAndDelete(userId);
-
-      if (!result) {
-        throw new BadRequestException('Failed to delete user');
-      }
-
+      await this.userModel.findByIdAndDelete(userId);
       return { message: 'Account deleted successfully' };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -1207,13 +1221,13 @@ export class AuthService {
       );
     }
 
-    // Only allow PLATFORM_OWNER to change roles of PLATFORM_ADMIN
+    // Only allow PLATFORM_OWNER to assign elevated roles
     if (
       currentUser.role === Role.PLATFORM_ADMIN &&
-      newRole === Role.PLATFORM_OWNER
+      (newRole === Role.PLATFORM_OWNER || newRole === Role.PLATFORM_ADMIN)
     ) {
       throw new ForbiddenException(
-        'Platform Admin cannot assign Platform Owner role'
+        'Platform Admin cannot assign Platform Owner or Platform Admin roles'
       );
     }
 

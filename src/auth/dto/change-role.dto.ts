@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsMongoId } from 'class-validator';
 import { Role } from '@/auth/enums/role.enum';
 
 export class ChangeRoleDto {
@@ -7,8 +7,7 @@ export class ChangeRoleDto {
     description: 'User ID to change role for',
     example: '507f1f77bcf86cd799439011',
   })
-  @IsNotEmpty()
-  @IsString()
+  @IsMongoId()
   userId: string;
 
   @ApiProperty({
