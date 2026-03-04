@@ -100,55 +100,29 @@ export class EmailService {
     userId: string,
     businessName: string
   ): Promise<void> {
-    const userEmail = await this.getUserEmail(userId);
-
-    try {
-      const templatePath = `${process.cwd()}/src/business/templates/business_application_submitted.html`;
-      const template = await readFile(templatePath, 'utf8');
-
-      const year = new Date().getFullYear();
-      const html = template
-        .replaceAll('{{.BusinessName}}', businessName)
-        .replaceAll('{{.Year}}', year.toString());
-
-      await this.sendEmail(
-        userEmail,
-        `Business Application Received: ${businessName}`,
-        html
-      );
-    } catch (error: unknown) {
-      throw new Error(
-        `Failed to send business application email: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    await this.sendBusinessEmailTemplate(
+      userId,
+      'business_application_submitted.html',
+      `Business Application Received: ${businessName}`,
+      {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+      }
+    );
   }
 
   async sendBusinessApprovalEmail(
     userId: string,
     businessName: string
   ): Promise<void> {
-    const userEmail = await this.getUserEmail(userId);
-
-    try {
-      const templatePath = `${process.cwd()}/src/business/templates/business_application_approved.html`;
-      const template = await readFile(templatePath, 'utf8');
-
-      const year = new Date().getFullYear();
-      const html = template
-        .replaceAll('{{.BusinessName}}', businessName)
-        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-        .replaceAll('{{.Year}}', year.toString());
-
-      await this.sendEmail(
-        userEmail,
-        `Business Application Approved: ${businessName}`,
-        html
-      );
-    } catch (error: unknown) {
-      throw new Error(
-        `Failed to send business approval email: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
+    await this.sendBusinessEmailTemplate(
+      userId,
+      'business_application_approved.html',
+      `Business Application Approved: ${businessName}`,
+      {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+        '{{.FrontendUrl}}': this.frontendUrl,
+      }
+    );
   }
 
   async sendBusinessRejectionEmail(
@@ -156,32 +130,50 @@ export class EmailService {
     businessName: string,
     reviewNotes?: string
   ): Promise<void> {
-    const userEmail = await this.getUserEmail(userId);
-
-    try {
-      const templatePath = `${process.cwd()}/src/business/templates/business_application_rejected.html`;
-      const template = await readFile(templatePath, 'utf8');
-
-      const year = new Date().getFullYear();
-      const html = template
-        .replaceAll('{{.BusinessName}}', businessName)
-        .replaceAll(
-          '{{.ReviewNotes}}',
+    await this.sendBusinessEmailTemplate(
+      userId,
+      'business_application_rejected.html',
+      `Business Application Update: ${businessName}`,
+      {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+        '{{.ReviewNotes}}': EmailService.escapeHtml(
           reviewNotes ?? 'No specific reason provided'
-        )
-        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-        .replaceAll('{{.Year}}', year.toString());
+        ),
+        '{{.FrontendUrl}}': this.frontendUrl,
+      }
+    );
+  }
 
-      await this.sendEmail(
-        userEmail,
-        `Business Application Update: ${businessName}`,
-        html
-      );
+  private async sendBusinessEmailTemplate(
+    userId: string,
+    templateFile: string,
+    subject: string,
+    replacements: Record<string, string>
+  ): Promise<void> {
+    const userEmail = await this.getUserEmail(userId);
+    try {
+      const templatePath = `${process.cwd()}/src/business/templates/${templateFile}`;
+      let html = await readFile(templatePath, 'utf8');
+      const year = new Date().getFullYear().toString();
+      const allReplacements = { '{{.Year}}': year, ...replacements };
+      for (const [placeholder, value] of Object.entries(allReplacements)) {
+        html = html.replaceAll(placeholder, value);
+      }
+      await this.sendEmail(userEmail, subject, html);
     } catch (error: unknown) {
       throw new Error(
-        `Failed to send business rejection email: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Failed to send business email: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  private static escapeHtml(value: string): string {
+    return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
   private async getUserEmail(userId: string): Promise<string> {

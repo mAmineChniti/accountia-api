@@ -23,12 +23,10 @@ export class BusinessUser {
   @Prop({ default: true })
   isActive: boolean;
 
-  @Prop({ default: Date.now })
   createdAt: Date;
-
-  @Prop({ default: Date.now })
   updatedAt: Date;
 }
 
 export type BusinessUserDocument = BusinessUser & Document;
 export const BusinessUserSchema = SchemaFactory.createForClass(BusinessUser);
+BusinessUserSchema.index({ businessId: 1, userId: 1 }, { unique: true });
