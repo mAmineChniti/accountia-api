@@ -44,6 +44,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
   controllers: [AuthController],
   exports: [
     AuthService,
+    EmailService,
     JwtStrategy,
     RefreshStrategy,
     RateLimitingService,

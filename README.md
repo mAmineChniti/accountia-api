@@ -4,7 +4,7 @@ Complete API reference for Accountia API endpoints with all possible requests an
 
 ## Base URL
 
-```
+```text
 http://localhost:3000/api
 ```
 
@@ -82,11 +82,31 @@ Register a new user.
 }
 ```
 
-**409 Conflict**
+**409 Conflict — username taken**
 
 ```json
 {
-  "message": "User already exists"
+  "type": "USERNAME_TAKEN",
+  "message": "This username is already taken"
+}
+```
+
+**409 Conflict — email already registered**
+
+```json
+{
+  "type": "ACCOUNT_EXISTS",
+  "message": "This email is already registered"
+}
+```
+
+**409 Conflict — email registered but not confirmed**
+
+```json
+{
+  "type": "EMAIL_NOT_CONFIRMED",
+  "message": "Account exists but email is not confirmed. Please check your email or request a new confirmation.",
+  "email": "john.doe@example.com"
 }
 ```
 
@@ -422,6 +442,8 @@ Content-Type: application/json
 
 **Request Body:**
 
+> `userId` must be a valid MongoDB ObjectId.
+
 ```json
 {
   "userId": "615f2e0a6c6d5c0e1a1e4a01"
@@ -576,7 +598,10 @@ Authorization: Bearer <access_token>
 Invalid access token.
 
 **403 Forbidden**
-Cannot delete admin accounts.
+`PLATFORM_ADMIN` and `PLATFORM_OWNER` accounts cannot be deleted via self-service.
+
+**404 Not Found**
+User not found.
 
 **500 Internal Server Error**
 Failed to delete account.
@@ -711,7 +736,11 @@ Content-Type: application/json
 
 **Required Roles:** `PLATFORM_OWNER`, `PLATFORM_ADMIN`
 
+> **Note:** `PLATFORM_ADMIN` cannot assign `PLATFORM_OWNER` or `PLATFORM_ADMIN` roles — only `PLATFORM_OWNER` may do so.
+
 **Request Body:**
+
+> `userId` must be a valid MongoDB ObjectId.
 
 ```json
 {
@@ -774,14 +803,17 @@ Content-Type: application/json
 
 ```json
 {
-  "id": "507f1f77bcf86cd799439011",
-  "businessName": "Tech Solutions Inc.",
-  "description": "A technology company specializing in software development",
-  "website": "https://techsolutions.com",
-  "phone": "+1-555-0123",
-  "applicantId": "615f2e0a6c6d5c0e1a1e4a01",
-  "status": "pending",
-  "createdAt": "2024-02-17T16:30:00.000Z"
+  "message": "Business application submitted successfully. We will review your application and respond within 2-3 business days.",
+  "application": {
+    "id": "507f1f77bcf86cd799439011",
+    "businessName": "Tech Solutions Inc.",
+    "description": "A technology company specializing in software development",
+    "website": "https://techsolutions.com",
+    "phone": "+1-555-0123",
+    "applicantId": "615f2e0a6c6d5c0e1a1e4a01",
+    "status": "pending",
+    "createdAt": "2024-02-17T16:30:00.000Z"
+  }
 }
 ```
 
@@ -790,6 +822,9 @@ Invalid request data.
 
 **401 Unauthorized**
 Invalid access token.
+
+**409 Conflict**
+User already has a pending application.
 
 ---
 
@@ -811,6 +846,7 @@ Authorization: Bearer <access_token>
 
 ```json
 {
+  "message": "Business applications retrieved successfully",
   "applications": [
     {
       "id": "507f1f77bcf86cd799439011",
@@ -866,15 +902,21 @@ Content-Type: application/json
 
 ```json
 {
-  "id": "507f1f77bcf86cd799439011",
-  "businessName": "Tech Solutions Inc.",
-  "status": "approved",
-  "reviewedBy": "507f1f77bcf86cd799439012",
-  "reviewNotes": "Application approved - business meets all requirements",
-  "businessId": "507f1f77bcf86cd799439013",
-  "updatedAt": "2024-02-17T16:30:00.000Z"
+  "message": "Business application approved successfully",
+  "application": {
+    "id": "507f1f77bcf86cd799439011",
+    "businessName": "Tech Solutions Inc.",
+    "description": "A technology company specializing in software development",
+    "website": "https://techsolutions.com",
+    "phone": "+1-555-0123",
+    "applicantId": "615f2e0a6c6d5c0e1a1e4a01",
+    "status": "approved",
+    "createdAt": "2024-02-17T16:30:00.000Z"
+  }
 }
 ```
+
+> **Note:** `status` must be `"approved"` or `"rejected"`. On approval, the business is automatically created and the applicant is assigned as owner.
 
 **400 Bad Request**
 Invalid request data.
@@ -894,6 +936,8 @@ Application not found.
 
 Get my businesses.
 
+Returns all businesses the authenticated user is a member of (owner or assigned member). No specific role is required — access is determined entirely by business membership.
+
 **Headers:**
 
 ```http
@@ -906,6 +950,7 @@ Authorization: Bearer <access_token>
 
 ```json
 {
+  "message": "Businesses retrieved successfully",
   "businesses": [
     {
       "id": "507f1f77bcf86cd799439011",
@@ -942,6 +987,7 @@ Authorization: Bearer <access_token>
 
 ```json
 {
+  "message": "Businesses retrieved successfully",
   "businesses": [
     {
       "id": "507f1f77bcf86cd799439011",
@@ -983,17 +1029,20 @@ Authorization: Bearer <access_token>
 
 ```json
 {
-  "id": "507f1f77bcf86cd799439011",
-  "name": "Tech Solutions Inc.",
-  "description": "A technology company specializing in software development",
-  "website": "https://techsolutions.com",
-  "phone": "+1-555-0123",
-  "databaseName": "tech_solutions_inc_1708198200000",
-  "status": "approved",
-  "isActive": true,
-  "tags": ["technology", "software"],
-  "createdAt": "2024-02-17T16:30:00.000Z",
-  "updatedAt": "2024-02-17T16:30:00.000Z"
+  "message": "Business retrieved successfully",
+  "business": {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "Tech Solutions Inc.",
+    "description": "A technology company specializing in software development",
+    "website": "https://techsolutions.com",
+    "phone": "+1-555-0123",
+    "databaseName": "tech_solutions_inc_1708198200000",
+    "status": "approved",
+    "isActive": true,
+    "tags": ["technology", "software"],
+    "createdAt": "2024-02-17T16:30:00.000Z",
+    "updatedAt": "2024-02-17T16:30:00.000Z"
+  }
 }
 ```
 
@@ -1040,17 +1089,20 @@ Content-Type: application/json
 
 ```json
 {
-  "id": "507f1f77bcf86cd799439011",
-  "name": "Updated Business Name",
-  "description": "Updated description",
-  "website": "https://updated-website.com",
-  "phone": "+1-555-0123",
-  "databaseName": "tech_solutions_inc_1708198200000",
-  "status": "approved",
-  "isActive": true,
-  "tags": ["technology", "software", "innovation"],
-  "createdAt": "2024-02-17T16:30:00.000Z",
-  "updatedAt": "2024-02-18T10:15:00.000Z"
+  "message": "Business updated successfully",
+  "business": {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "Updated Business Name",
+    "description": "Updated description",
+    "website": "https://updated-website.com",
+    "phone": "+1-555-0123",
+    "databaseName": "tech_solutions_inc_1708198200000",
+    "status": "approved",
+    "isActive": true,
+    "tags": ["technology", "software", "innovation"],
+    "createdAt": "2024-02-17T16:30:00.000Z",
+    "updatedAt": "2024-02-18T10:15:00.000Z"
+  }
 }
 ```
 
@@ -1120,6 +1172,8 @@ Content-Type: application/json
 
 **Request Body:**
 
+> `userId` must be a valid MongoDB ObjectId.
+
 ```json
 {
   "userId": "507f1f77bcf86cd799439012",
@@ -1133,13 +1187,16 @@ Content-Type: application/json
 
 ```json
 {
-  "id": "507f1f77bcf86cd799439013",
-  "businessId": "507f1f77bcf86cd799439011",
-  "userId": "507f1f77bcf86cd799439012",
-  "role": "admin",
-  "assignedBy": "615f2e0a6c6d5c0e1a1e4a01",
-  "isActive": true,
-  "createdAt": "2024-02-17T16:30:00.000Z"
+  "message": "User assigned to business successfully",
+  "businessUser": {
+    "id": "507f1f77bcf86cd799439013",
+    "businessId": "507f1f77bcf86cd799439011",
+    "userId": "507f1f77bcf86cd799439012",
+    "role": "admin",
+    "assignedBy": "615f2e0a6c6d5c0e1a1e4a01",
+    "isActive": true,
+    "createdAt": "2024-02-17T16:30:00.000Z"
+  }
 }
 ```
 
@@ -1248,10 +1305,10 @@ All error responses follow this format:
 
 | Role           | Can Submit Application | Can View Own Businesses | Can View All Businesses | Can Review Applications | Can Manage Users  | Can Delete Users |
 | -------------- | ---------------------- | ----------------------- | ----------------------- | ----------------------- | ----------------- | ---------------- |
-| CLIENT         | ✅                     | ✅                      | ❌                      | ❌                      | ❌                | ❌               |
-| BUSINESS_ADMIN | ❌                     | ✅                      | ❌                      | ❌                      | ❌                | ❌               |
-| BUSINESS_OWNER | ✅                     | ✅                      | ❌                      | ❌                      | ✅ (own business) | ❌               |
-| PLATFORM_ADMIN | ❌                     | ✅                      | ✅                      | ✅                      | ✅                | ✅               |
+| CLIENT         | ✅                     | ✅ (membership-based)   | ❌                      | ❌                      | ❌                | ❌               |
+| BUSINESS_ADMIN | ✅                     | ✅ (membership-based)   | ❌                      | ❌                      | ❌                | ❌               |
+| BUSINESS_OWNER | ✅                     | ✅ (membership-based)   | ❌                      | ❌                      | ✅ (own business) | ❌               |
+| PLATFORM_ADMIN | ✅                     | ✅                      | ✅                      | ✅                      | ✅ (non-owner)    | ✅ (non-owner)   |
 | PLATFORM_OWNER | ✅                     | ✅                      | ✅                      | ✅                      | ✅                | ✅               |
 
 ---
