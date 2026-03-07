@@ -5,141 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Email Confirmed - Accountia</title>
     <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Arial, sans-serif;
         line-height: 1.6;
-        color: #333;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+        min-height: 100vh;
+      }
+      .wrapper {
         max-width: 600px;
         margin: 0 auto;
-        padding: 20px;
-        background-color: #f4f4f4;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+      }
+      .brand {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #2563eb;
+        letter-spacing: -0.5px;
       }
       .container {
         background-color: #ffffff;
-        padding: 40px;
-        border-radius: 10px;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
         text-align: center;
       }
-      .header {
-        margin-bottom: 30px;
+      .header-bar {
+        padding: 32px 40px;
+        text-align: center;
       }
-      .logo {
-        font-size: 32px;
-        font-weight: bold;
-        color: #007bff;
-        margin-bottom: 20px;
+      .header-bar.success {
+        background-color: #16a34a;
       }
-      .success-icon {
-        width: 80px;
-        height: 80px;
-        background-color: #28a745;
+      .header-bar.error {
+        background-color: #dc2626;
+      }
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .status-icon {
+        width: 72px;
+        height: 72px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin: 0 auto 30px;
-      }
-      .success-icon::after {
-        content: '✓';
-        color: white;
-        font-size: 40px;
-        font-weight: bold;
-      }
-      .title {
-        font-size: 24px;
-        color: #28a745;
-        margin-bottom: 15px;
-      }
-      .message {
-        font-size: 16px;
-        color: #666;
-        margin-bottom: 30px;
-        line-height: 1.8;
-      }
-      .button {
-        display: inline-block;
-        background-color: #007bff;
+        margin: 0 auto 24px;
+        font-size: 36px;
+        font-weight: 700;
         color: #ffffff;
-        padding: 12px 30px;
-        text-decoration: none;
-        border-radius: 5px;
-        font-weight: bold;
-        margin: 20px 0;
-        transition: background-color 0.3s ease;
       }
-      .button:hover {
-        background-color: #0056b3;
+      .status-icon.success {
+        background-color: #16a34a;
+      }
+      .status-icon.error {
+        background-color: #dc2626;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 16px;
+      }
+      .error-box {
+        background-color: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        padding: 14px 16px;
+        color: #991b1b;
+        font-size: 14px;
+        margin-bottom: 20px;
+        text-align: left;
+      }
+      .info-box {
+        background-color: #eff6ff;
+        border-left: 4px solid #2563eb;
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        color: #1e40af;
+        margin: 20px 0;
+        text-align: left;
+      }
+      ul {
+        text-align: left;
+        max-width: 380px;
+        margin: 12px auto;
+        padding-left: 20px;
+        color: #374151;
+        font-size: 14px;
+      }
+      ul li {
+        margin-bottom: 6px;
       }
       .footer {
-        margin-top: 40px;
-        padding-top: 20px;
-        border-top: 1px solid #eee;
-        font-size: 14px;
-        color: #666;
-      }
-      .error-message {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
-        border: 1px solid #f5c6cb;
+        text-align: center;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+        line-height: 1.8;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <div class="logo">Accountia</div>
-        {{if .Success}}
-        <div class="success-icon"></div>
-        <h1 class="title">Email Confirmed Successfully!</h1>
-        {{else}}
-        <h1 class="title" style="color: #dc3545">Email Confirmation Failed</h1>
-        {{end}}
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
       </div>
 
-      <div class="content">
+      <div class="container">
         {{if .Success}}
-        <p class="message">
-          Thank you for confirming your email address! Your Accountia account is
-          now active and ready to use. You can now log in and start using all
-          our features.
-        </p>
-
-        <p class="message">
-          You can now close this window and return to the application to log in.
-        </p>
+        <div class="header-bar success">
+          <h1>Email Confirmed Successfully</h1>
+        </div>
         {{else}}
-        <div class="error-message">{{.Message}}</div>
-
-        <p class="message">
-          We're sorry, but we couldn't confirm your email address. This might be
-          because:
-        </p>
-
-        <ul style="text-align: left; max-width: 400px; margin: 0 auto">
-          <li>The confirmation link has expired</li>
-          <li>The link has already been used</li>
-          <li>The link is invalid or corrupted</li>
-        </ul>
-
-        <p class="message">
-          Please try requesting a new confirmation email from your account
-          settings, or contact our support team if you continue to experience
-          issues.
-        </p>
+        <div class="header-bar error">
+          <h1>Email Confirmation Failed</h1>
+        </div>
         {{end}}
-      </div>
 
-      <div class="footer">
-        <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
-        <p>This is an automated confirmation page.</p>
+        <div class="body">
+          {{if .Success}}
+          <div class="status-icon success">&#10003;</div>
+          <p>
+            Your email address has been confirmed and your Accountia account is
+            now active. You can close this window and log in to start using the
+            platform.
+          </p>
+          <div class="info-box">
+            Your account is fully set up and ready to use. All features are now
+            accessible.
+          </div>
+          {{else}}
+          <div class="status-icon error">&#10007;</div>
+          <div class="error-box">{{.Message}}</div>
+          <p>
+            We were unable to confirm your email address. This may be because:
+          </p>
+          <ul>
+            <li>The confirmation link has expired (valid for 24 hours)</li>
+            <li>The link has already been used</li>
+            <li>The link is invalid or corrupted</li>
+          </ul>
+          <p style="margin-top: 16px">
+            Please request a new confirmation email from your account settings,
+            or contact our support team if you continue to experience issues.
+          </p>
+          {{end}}
+        </div>
+
+        <div class="footer">
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>This is an automated confirmation page.</p>
+        </div>
       </div>
     </div>
   </body>
