@@ -3,103 +3,167 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Application Approved!</title>
+    <title>Business Application Approved - Accountia</title>
     <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Arial, sans-serif;
         line-height: 1.6;
-        color: #333;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+      }
+      .wrapper {
         max-width: 600px;
         margin: 0 auto;
-        padding: 20px;
       }
-      .header {
-        background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
-        color: white;
-        padding: 30px;
+      .brand {
         text-align: center;
-        border-radius: 10px 10px 0 0;
+        margin-bottom: 24px;
       }
-      .content {
-        background: #f9f9f9;
-        padding: 30px;
-        border-radius: 0 0 10px 10px;
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #2563eb;
+        letter-spacing: -0.5px;
       }
-      .highlight {
-        background: #e8f5e8;
-        padding: 15px;
-        border-left: 4px solid #4caf50;
-        margin: 20px 0;
+      .container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
       }
-      .cta-button {
+      .header-bar {
+        background-color: #16a34a;
+        padding: 32px 40px;
+        text-align: center;
+      }
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 16px;
+      }
+      .success-box {
+        background-color: #f0fdf4;
+        border-left: 4px solid #16a34a;
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        color: #15803d;
+        margin: 24px 0;
+      }
+      .section-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+        margin: 24px 0 10px;
+      }
+      ol,
+      ul {
+        padding-left: 20px;
+        color: #374151;
+        font-size: 14px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      .cta-wrapper {
+        text-align: center;
+        margin: 32px 0;
+      }
+      .button {
         display: inline-block;
-        background: #4caf50;
-        color: white;
-        padding: 15px 30px;
+        background-color: #16a34a;
+        color: #ffffff !important;
+        padding: 14px 36px;
         text-decoration: none;
-        border-radius: 5px;
-        margin: 20px 0;
-        font-weight: bold;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.2px;
       }
       .footer {
         text-align: center;
-        margin-top: 30px;
-        color: #666;
-        font-size: 14px;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+        line-height: 1.8;
       }
     </style>
   </head>
   <body>
-    <div class="header">
-      <h1>🎉 Congratulations! Business Approved</h1>
-    </div>
-
-    <div class="content">
-      <p>
-        Great news! Your business application for
-        <strong>{{.BusinessName}}</strong> has been <strong>approved</strong>.
-      </p>
-
-      <div class="highlight">
-        <h3>✅ Approval Details</h3>
-        <p>
-          Your business is now live on the Accountia platform. You have been
-          granted Business Owner privileges and can start managing your business
-          immediately.
-        </p>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
       </div>
 
-      <h3>🚀 Get Started</h3>
-      <p>Your business account has been created with the following features:</p>
-      <ul>
-        <li>Multi-tenant database setup</li>
-        <li>Business Owner role privileges</li>
-        <li>Ability to assign Business Admins</li>
-        <li>Full business management capabilities</li>
-      </ul>
+      <div class="container">
+        <div class="header-bar">
+          <h1>Business Application Approved</h1>
+        </div>
 
-      <div style="text-align: center; margin: 30px 0">
-        <a href="{{.FrontendUrl}}" class="cta-button"
-          >Access Your Business Dashboard</a
-        >
-      </div>
+        <div class="body">
+          <p>
+            Congratulations! Your business application for
+            <strong>{{.BusinessName}}</strong> has been
+            <strong>approved</strong>. Your business is now live on the
+            Accountia platform.
+          </p>
 
-      <h3>📋 Next Steps</h3>
-      <ol>
-        <li>Log in to your Accountia account</li>
-        <li>Navigate to your business dashboard</li>
-        <li>Complete your business profile</li>
-        <li>Start inviting team members (if needed)</li>
-      </ol>
+          <div class="success-box">
+            You have been granted <strong>Business Owner</strong> privileges and
+            can start managing your business immediately from the dashboard.
+          </div>
 
-      <p>
-        Welcome to the Accountia business community! We're excited to see your
-        business thrive on our platform.
-      </p>
+          <p class="section-title">What's Included</p>
+          <ul>
+            <li>Dedicated multi-tenant database setup</li>
+            <li>Business Owner role privileges</li>
+            <li>Ability to assign Business Admins and members</li>
+            <li>Full business management capabilities</li>
+          </ul>
 
-      <div class="footer">
-        <p>Best regards,<br />The Accountia Team</p>
-        <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <div class="cta-wrapper">
+            <a href="{{.FrontendUrl}}" class="button"
+              >Access Your Business Dashboard</a
+            >
+          </div>
+
+          <p class="section-title">Next Steps</p>
+          <ol>
+            <li>Log in to your Accountia account</li>
+            <li>Navigate to your business dashboard</li>
+            <li>Complete your business profile</li>
+            <li>Start inviting team members if needed</li>
+          </ol>
+
+          <p style="margin-top: 24px">
+            Welcome to the Accountia business community. We look forward to
+            supporting your growth on our platform.
+          </p>
+        </div>
+
+        <div class="footer">
+          <p>Best regards &mdash; The Accountia Team</p>
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>
+            This is an automated message — please do not reply to this email.
+          </p>
+        </div>
       </div>
     </div>
   </body>

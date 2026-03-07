@@ -738,7 +738,7 @@ export class AuthService {
     };
 
     return {
-      message: 'User fetched successfully',
+      message: 'User retrieved successfully',
       user: privateUser,
     };
   }
@@ -783,7 +783,7 @@ export class AuthService {
         username: updateDto.username,
       });
       if (existingUser) {
-        throw new ConflictException('Username is already taken');
+        throw new ConflictException('This username is already taken');
       }
       updateData.username = updateDto.username;
       hasUpdates = true;
@@ -794,7 +794,7 @@ export class AuthService {
         email: updateDto.email,
       });
       if (existingUser) {
-        throw new ConflictException('Email is already registered');
+        throw new ConflictException('This email is already registered');
       }
       updateData.email = updateDto.email;
       updateData.emailConfirmed = false;
@@ -1055,7 +1055,9 @@ export class AuthService {
   ): string {
     const frontendUrl = process.env.FRONTEND_URL;
     if (!frontendUrl) {
-      throw new BadRequestException('FRONTEND_URL is not configured');
+      throw new InternalServerErrorException(
+        'Service is temporarily unavailable'
+      );
     }
 
     const fallback = new URL(`/${lang}/auth/callback`, frontendUrl).toString();

@@ -17,20 +17,20 @@ import {
   ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
-import { BusinessService } from './business.service';
+import { BusinessService } from '@/business/business.service';
 import {
   CreateBusinessApplicationDto,
   ReviewBusinessApplicationDto,
-} from './dto/business-application.dto';
-import { UpdateBusinessDto } from './dto/update-business.dto';
-import { AssignBusinessUserDto } from './dto/business-user.dto';
+} from '@/business/dto/business-application.dto';
+import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
+import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
-} from './dto/business-response.dto';
-import { BusinessApplicationResponseDto } from './dto/business-application.dto';
-import { BusinessUserResponseDto } from './dto/business-user.dto';
+} from '@/business/dto/business-response.dto';
+import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
+import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
