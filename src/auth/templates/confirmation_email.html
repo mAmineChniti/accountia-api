@@ -3,100 +3,144 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Confirm Your Account</title>
+    <title>Confirm Your Account - Accountia</title>
     <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Arial, sans-serif;
         line-height: 1.6;
-        color: #333;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+      }
+      .wrapper {
         max-width: 600px;
         margin: 0 auto;
-        padding: 20px;
-        background-color: #f4f4f4;
+      }
+      .brand {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #2563eb;
+        letter-spacing: -0.5px;
       }
       .container {
         background-color: #ffffff;
-        padding: 30px;
-        border-radius: 10px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
       }
-      .header {
+      .header-bar {
+        background-color: #2563eb;
+        padding: 32px 40px;
         text-align: center;
-        margin-bottom: 30px;
       }
-      .logo {
-        font-size: 24px;
-        font-weight: bold;
-        color: #007bff;
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
       }
-      .content {
-        margin-bottom: 30px;
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 16px;
+      }
+      .cta-wrapper {
+        text-align: center;
+        margin: 32px 0;
       }
       .button {
         display: inline-block;
-        background-color: #007bff;
-        color: #ffffff;
-        padding: 12px 30px;
+        background-color: #2563eb;
+        color: #ffffff !important;
+        padding: 14px 36px;
         text-decoration: none;
-        border-radius: 5px;
-        font-weight: bold;
-        margin: 20px 0;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.2px;
+      }
+      .link-box {
+        word-break: break-all;
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 13px;
+        color: #475569;
+        margin: 8px 0 20px;
+      }
+      .note {
+        background-color: #eff6ff;
+        border-left: 4px solid #2563eb;
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        color: #1e40af;
+        margin-top: 24px;
       }
       .footer {
         text-align: center;
-        margin-top: 30px;
-        padding-top: 20px;
-        border-top: 1px solid #eee;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
         font-size: 12px;
-        color: #666;
+        color: #94a3b8;
+        line-height: 1.8;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <div class="logo">Accountia</div>
-        <h1>Confirm Your Account</h1>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
       </div>
 
-      <div class="content">
-        <p>
-          Thank you for registering with Accountia! To complete your
-          registration and activate your account, please confirm your email
-          address by clicking the button below:
-        </p>
-
-        <div style="text-align: center">
-          <a href="{{.ConfirmationLink}}" class="button"
-            >Confirm Email Address</a
-          >
+      <div class="container">
+        <div class="header-bar">
+          <h1>Confirm Your Email Address</h1>
         </div>
 
-        <p>
-          Alternatively, you can copy and paste this link into your browser:
-        </p>
-        <p
-          style="
-            word-break: break-all;
-            background-color: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-          "
-        >
-          {{.ConfirmationLink}}
-        </p>
+        <div class="body">
+          <p>
+            Thank you for registering with Accountia! To complete your
+            registration and activate your account, please confirm your email
+            address by clicking the button below.
+          </p>
 
-        <p>
-          <strong>Note:</strong> This confirmation link will expire in 24 hours.
-          If you didn't create an account with Accountia, you can safely ignore
-          this email.
-        </p>
-      </div>
+          <div class="cta-wrapper">
+            <a href="{{.ConfirmationLink}}" class="button"
+              >Confirm Email Address</a
+            >
+          </div>
 
-      <div class="footer">
-        <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
-        <p>This is an automated message, please do not reply to this email.</p>
+          <p>Alternatively, copy and paste this link into your browser:</p>
+          <div class="link-box">{{.ConfirmationLink}}</div>
+
+          <div class="note">
+            This confirmation link will expire in <strong>24 hours</strong>. If
+            you did not create an account with Accountia, you can safely ignore
+            this email.
+          </div>
+        </div>
+
+        <div class="footer">
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>
+            This is an automated message — please do not reply to this email.
+          </p>
+        </div>
       </div>
     </div>
   </body>

@@ -6,29 +6,29 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
-import { Business, BusinessDocument } from './schemas/business.schema';
+import { Business, BusinessDocument } from '@/business/schemas/business.schema';
 import {
   BusinessApplication,
   BusinessApplicationDocument,
-} from './schemas/business-application.schema';
+} from '@/business/schemas/business-application.schema';
 import {
   BusinessUser,
   BusinessUserDocument,
   BusinessUserRole,
-} from './schemas/business-user.schema';
-import { UpdateBusinessDto } from './dto/update-business.dto';
+} from '@/business/schemas/business-user.schema';
+import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
 import {
   CreateBusinessApplicationDto,
   ReviewBusinessApplicationDto,
-} from './dto/business-application.dto';
-import { AssignBusinessUserDto } from './dto/business-user.dto';
+} from '@/business/dto/business-application.dto';
+import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
-} from './dto/business-response.dto';
-import { BusinessApplicationResponseDto } from './dto/business-application.dto';
-import { BusinessUserResponseDto } from './dto/business-user.dto';
+} from '@/business/dto/business-response.dto';
+import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
+import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { EmailService } from '@/auth/email.service';
 
@@ -168,7 +168,10 @@ export class BusinessService {
     }
 
     return {
-      message: `Business application ${reviewDto.status} successfully`,
+      message:
+        reviewDto.status === 'approved'
+          ? 'Business application approved successfully'
+          : 'Business application has been rejected',
       application: {
         id: application._id.toString(),
         businessName: application.businessName,

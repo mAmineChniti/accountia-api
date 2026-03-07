@@ -3,84 +3,138 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Application Received</title>
+    <title>Business Application Received - Accountia</title>
     <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
       body {
-        font-family: Arial, sans-serif;
+        font-family: 'Segoe UI', Arial, sans-serif;
         line-height: 1.6;
-        color: #333;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+      }
+      .wrapper {
         max-width: 600px;
         margin: 0 auto;
-        padding: 20px;
       }
-      .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 30px;
+      .brand {
         text-align: center;
-        border-radius: 10px 10px 0 0;
+        margin-bottom: 24px;
       }
-      .content {
-        background: #f9f9f9;
-        padding: 30px;
-        border-radius: 0 0 10px 10px;
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #2563eb;
+        letter-spacing: -0.5px;
       }
-      .highlight {
-        background: #e8f4fd;
-        padding: 15px;
-        border-left: 4px solid #2196f3;
-        margin: 20px 0;
+      .container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .header-bar {
+        background-color: #2563eb;
+        padding: 32px 40px;
+        text-align: center;
+      }
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 16px;
+      }
+      .info-box {
+        background-color: #eff6ff;
+        border-left: 4px solid #2563eb;
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        color: #1e40af;
+        margin: 24px 0;
+      }
+      .section-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+        margin: 24px 0 10px;
+      }
+      ol,
+      ul {
+        padding-left: 20px;
+        color: #374151;
+        font-size: 14px;
+      }
+      li {
+        margin-bottom: 6px;
       }
       .footer {
         text-align: center;
-        margin-top: 30px;
-        color: #666;
-        font-size: 14px;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+        line-height: 1.8;
       }
     </style>
   </head>
   <body>
-    <div class="header">
-      <h1>🏢 Business Application Received!</h1>
-    </div>
-
-    <div class="content">
-      <p>
-        Thank you for submitting your business application for
-        <strong>{{.BusinessName}}</strong>.
-      </p>
-
-      <div class="highlight">
-        <h3>📋 Application Status</h3>
-        <p>
-          Your application has been received and is currently under review by
-          our platform administrators.
-        </p>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
       </div>
 
-      <h3>⏰ What's Next?</h3>
-      <p>
-        We will carefully review your application and respond within
-        <strong>2-3 business days</strong>. You will receive an email
-        notification once a decision has been made.
-      </p>
+      <div class="container">
+        <div class="header-bar">
+          <h1>Business Application Received</h1>
+        </div>
 
-      <h3>📝 Review Process</h3>
-      <ul>
-        <li>Application verification</li>
-        <li>Business information validation</li>
-        <li>Platform compliance check</li>
-        <li>Final approval decision</li>
-      </ul>
+        <div class="body">
+          <p>
+            Thank you for submitting your business application for
+            <strong>{{.BusinessName}}</strong>. We have received your request
+            and it is currently under review by our platform administrators.
+          </p>
 
-      <p>
-        If you have any questions in the meantime, please don't hesitate to
-        contact our support team.
-      </p>
+          <div class="info-box">
+            Your application is in the queue. We will carefully evaluate your
+            submission and notify you of our decision within
+            <strong>2&ndash;3 business days</strong>.
+          </div>
 
-      <div class="footer">
-        <p>Best regards,<br />The Accountia Team</p>
-        <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p class="section-title">Review Process</p>
+          <ol>
+            <li>Application verification</li>
+            <li>Business information validation</li>
+            <li>Platform compliance check</li>
+            <li>Final approval decision</li>
+          </ol>
+
+          <p style="margin-top: 24px">
+            If you have any questions in the meantime, please do not hesitate to
+            contact our support team.
+          </p>
+        </div>
+
+        <div class="footer">
+          <p>Best regards &mdash; The Accountia Team</p>
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>
+            This is an automated message — please do not reply to this email.
+          </p>
+        </div>
       </div>
     </div>
   </body>
