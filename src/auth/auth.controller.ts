@@ -23,7 +23,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { readFile } from 'node:fs/promises';

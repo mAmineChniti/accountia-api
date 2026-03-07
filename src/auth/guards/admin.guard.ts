@@ -20,7 +20,7 @@ export class AdminGuard implements CanActivate {
       user.role !== Role.PLATFORM_OWNER &&
       user.role !== Role.PLATFORM_ADMIN
     ) {
-      throw new ForbiddenException('Insufficient privileges');
+      throw new ForbiddenException('Insufficient permissions');
     }
     return true;
   }

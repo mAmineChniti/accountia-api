@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsMongoId, IsEnum } from 'class-validator';
-import { BusinessUserRole } from '../schemas/business-user.schema';
+import { BusinessUserRole } from '@/business/schemas/business-user.schema';
 
 export class AssignBusinessUserDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
