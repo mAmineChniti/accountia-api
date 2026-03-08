@@ -55,6 +55,7 @@ import { type UserPayload } from '@/auth/types/auth.types';
 import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
 import { TwoFAVerifyDto } from '@/auth/dto/2fa-verify.dto';
 import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
+import { BanUserDto, BanResponseDto } from '@/auth/dto/ban-user.dto';
 
 @ApiTags('Authentication')
 @ApiExtraModels(AuthResponseDto)
@@ -503,5 +504,54 @@ export class AuthController {
       changeRoleDto.newRole,
       currentUser
     );
+  }
+
+  @Patch('users/:id/ban')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Ban a user (Platform Owner/Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'User banned successfully',
+    type: BanResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async banUser(
+    @CurrentUser() currentUser: UserPayload,
+    @Param('id') id: string,
+    @Body() banDto: BanUserDto
+  ): Promise<BanResponseDto> {
+    return this.authService.banUser(currentUser.id, id, banDto.reason);
+  }
+
+  @Patch('users/:id/unban')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Unban a user (Platform Owner/Admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'User unbanned successfully',
+    type: BanResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async unbanUser(
+    @CurrentUser() currentUser: UserPayload,
+    @Param('id') id: string
+  ): Promise<BanResponseDto> {
+    return this.authService.unbanUser(currentUser.id, id);
   }
 }
