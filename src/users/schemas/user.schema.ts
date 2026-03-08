@@ -79,6 +79,18 @@ export class User {
   @Prop()
   lockUntil?: Date;
 
+  @Prop({ default: false })
+  isBanned: boolean;
+
+  @Prop()
+  bannedAt?: Date;
+
+  @Prop()
+  bannedBy?: string;
+
+  @Prop()
+  bannedReason?: string;
+
   @Prop()
   createdAt: Date;
 

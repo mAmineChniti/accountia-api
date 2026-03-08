@@ -35,6 +35,7 @@ import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 import { Role } from '@/auth/enums/role.enum';
 import { RoleResponseDto } from '@/auth/dto/role-response.dto';
+import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 
 interface TokenPayload {
@@ -499,6 +500,11 @@ export class AuthService {
         'Email not confirmed. Please confirm your email before logging in.'
       );
     }
+    if (user.isBanned) {
+      throw new ForbiddenException(
+        'Your account has been banned. Please contact support.'
+      );
+    }
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
@@ -757,6 +763,8 @@ export class AuthService {
       phoneNumber: u.phoneNumber,
       role: u.role,
       dateJoined: u.createdAt,
+      isBanned: u.isBanned ?? false,
+      bannedReason: u.bannedReason,
     }));
 
     return {
@@ -1194,6 +1202,90 @@ export class AuthService {
     }
 
     return `user-${randomBytes(4).toString('hex')}`;
+  }
+
+  async banUser(
+    adminId: string,
+    userId: string,
+    reason?: string
+  ): Promise<BanResponseDto> {
+    if (adminId === userId) {
+      throw new BadRequestException('You cannot ban yourself');
+    }
+
+    const [admin, user] = await Promise.all([
+      this.userModel.findById(adminId),
+      this.userModel.findById(userId),
+    ]);
+
+    if (!admin) throw new NotFoundException('Admin not found');
+    if (!user) throw new NotFoundException('User not found');
+
+    if (
+      admin.role === Role.PLATFORM_ADMIN &&
+      (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
+    ) {
+      throw new ForbiddenException(
+        'Platform Admin cannot ban Platform Owner or Platform Admin'
+      );
+    }
+
+    if (user.isBanned) {
+      throw new BadRequestException('User is already banned');
+    }
+
+    user.isBanned = true;
+    user.bannedAt = new Date();
+    user.bannedBy = adminId;
+    user.bannedReason = reason;
+    user.refreshTokens = [];
+    await user.save();
+
+    return {
+      message: 'User banned successfully',
+      userId: user._id.toString(),
+      isBanned: true,
+      reason,
+    };
+  }
+
+  async unbanUser(adminId: string, userId: string): Promise<BanResponseDto> {
+    if (adminId === userId) {
+      throw new BadRequestException('You cannot unban yourself');
+    }
+
+    const [admin, user] = await Promise.all([
+      this.userModel.findById(adminId),
+      this.userModel.findById(userId),
+    ]);
+
+    if (!admin) throw new NotFoundException('Admin not found');
+    if (!user) throw new NotFoundException('User not found');
+
+    if (
+      admin.role === Role.PLATFORM_ADMIN &&
+      (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
+    ) {
+      throw new ForbiddenException(
+        'Platform Admin cannot unban Platform Owner or Platform Admin'
+      );
+    }
+
+    if (!user.isBanned) {
+      throw new BadRequestException('User is not banned');
+    }
+
+    user.isBanned = false;
+    user.bannedAt = undefined;
+    user.bannedBy = undefined;
+    user.bannedReason = undefined;
+    await user.save();
+
+    return {
+      message: 'User unbanned successfully',
+      userId: user._id.toString(),
+      isBanned: false,
+    };
   }
 
   async changeUserRole(
