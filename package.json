@@ -47,7 +47,7 @@
     "typeorm": "^0.3.28"
   },
   "devDependencies": {
-    "@darraghor/eslint-plugin-nestjs-typed": "^7.1.24",
+    "@darraghor/eslint-plugin-nestjs-typed": "^7.1.26",
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/swagger": "^11.2.6",
