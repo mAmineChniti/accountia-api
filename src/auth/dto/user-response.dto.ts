@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@/auth/enums/role.enum';
 
-export class PublicUserDto {
+class PublicUserDto {
   @ApiProperty({ example: 'john_doe' })
   username: string;
 
