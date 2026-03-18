@@ -30,7 +30,7 @@
         "typeorm": "^0.3.28",
       },
       "devDependencies": {
-        "@darraghor/eslint-plugin-nestjs-typed": "^7.1.24",
+        "@darraghor/eslint-plugin-nestjs-typed": "^7.1.26",
         "@nestjs/cli": "^11.0.16",
         "@nestjs/schematics": "^11.0.9",
         "@nestjs/swagger": "^11.2.6",
@@ -154,7 +154,7 @@
 
     "@cspotcode/source-map-support": ["@cspotcode/source-map-support@0.8.1", "", { "dependencies": { "@jridgewell/trace-mapping": "0.3.9" } }, "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw=="],
 
-    "@darraghor/eslint-plugin-nestjs-typed": ["@darraghor/eslint-plugin-nestjs-typed@7.1.24", "", { "dependencies": { "@typescript-eslint/scope-manager": "^8.56.0", "@typescript-eslint/type-utils": "^8.56.0", "@typescript-eslint/utils": "^8.56.0", "eslint-module-utils": "2.12.1", "glob": "13.0.0", "reflect-metadata": "0.2.2", "ts-api-utils": "2.4.0" }, "peerDependencies": { "@typescript-eslint/parser": "^7.0.0 || ^8.0.0", "class-validator": "*", "eslint": ">=9.18.0" } }, "sha512-M7Ho9DDfol4X5dw1lIzX1Qig0e26E45KEQ+ztE0uX1sBqg86XmsXuhTFvuCFs8Cq7G2HBtR7fXFFLriSyBxeFg=="],
+    "@darraghor/eslint-plugin-nestjs-typed": ["@darraghor/eslint-plugin-nestjs-typed@7.1.26", "", { "dependencies": { "@typescript-eslint/scope-manager": "^8.56.0", "@typescript-eslint/type-utils": "^8.56.0", "@typescript-eslint/utils": "^8.56.0", "eslint-module-utils": "2.12.1", "glob": "13.0.0", "reflect-metadata": "0.2.2", "ts-api-utils": "2.4.0" }, "peerDependencies": { "@typescript-eslint/parser": "^7.0.0 || ^8.0.0", "class-validator": "*", "eslint": ">=9.18.0" } }, "sha512-r9bQB/G7KLq/ze8zxaCxsn13PauI7dAkoqfEptqtTx4ABKbkFrv/GHYH+IppJG86iFwiGRSGZMdJ5yuAVPKD3A=="],
 
     "@emnapi/core": ["@emnapi/core@1.8.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" } }, "sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg=="],
 
