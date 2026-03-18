@@ -9,10 +9,10 @@ import {
   HttpStatus,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
-import type { JwtPayload } from 'jsonwebtoken';
+import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
 import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -43,10 +43,23 @@ interface TokenPayload {
   id: string;
 }
 
+type TwoFactorChallengeResponse = {
+  tempToken: string;
+  twoFactorRequired: boolean;
+};
+
+type GoogleStateTokenPayload = {
+  type: 'google-oauth-state';
+  mode: 'login' | 'register';
+  lang: string;
+  redirectUri: string;
+  nonce: string;
+  iat?: number;
+  exp?: number;
+};
+
 type GoogleTokenInfo = {
-  aud: string;
   email: string;
-  email_verified?: string;
   given_name?: string;
   family_name?: string;
   name?: string;
@@ -57,6 +70,17 @@ type GoogleOAuthInitParams = {
   mode: 'login' | 'register';
   lang: string;
   redirectUri?: string;
+};
+
+type GoogleStateNonceRecord = {
+  nonce: string;
+  expiresAt: Date;
+};
+
+type GoogleAuthCodeRecord = {
+  code: string;
+  payload: AuthResponseDto | TwoFactorChallengeResponse;
+  expiresAt: Date;
 };
 
 import { generateSecret, verify, generateURI } from 'otplib';
@@ -71,116 +95,85 @@ const getQrcode = async () => {
 
 @Injectable()
 export class AuthService {
+  private oauthIndexesInitialized = false;
+
+  private static readonly GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
+  private static readonly GOOGLE_AUTH_CODE_TTL_MS = 2 * 60 * 1000;
+  private static readonly GOOGLE_STATE_NONCE_COLLECTION =
+    'auth_google_state_nonces';
+  private static readonly GOOGLE_AUTH_CODE_COLLECTION =
+    'auth_google_oauth_codes';
+  private static readonly LANG_PATTERN = /^[a-z]{2}(?:-[A-Z]{2})?$/;
+
   constructor(
+    @InjectConnection() private readonly connection: Connection,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
   ) {}
 
-  getGoogleAuthUrl(params: GoogleOAuthInitParams): string {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
-
-    if (!clientId || !callbackUrl) {
-      throw new BadRequestException(
-        'Google OAuth is not configured on the server'
-      );
-    }
+  async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
+    await this.cleanupExpiredOAuthEntries();
+    const lang = this.normalizeLang(params.lang);
 
     const sanitizedRedirectUri = this.resolveFrontendRedirectUri(
       params.redirectUri,
-      params.lang
+      lang
     );
 
-    const statePayload = Buffer.from(
-      JSON.stringify({
-        mode: params.mode,
-        lang: params.lang,
-        redirectUri: sanitizedRedirectUri,
-      })
-    ).toString('base64url');
+    const nonce = randomBytes(16).toString('hex');
+    const nonceExpiresAt = Date.now() + AuthService.GOOGLE_STATE_TTL_MS;
+    await this.setGoogleStateNonce(nonce, nonceExpiresAt);
 
-    const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    googleUrl.searchParams.set('client_id', clientId);
-    googleUrl.searchParams.set('redirect_uri', callbackUrl);
-    googleUrl.searchParams.set('response_type', 'code');
-    googleUrl.searchParams.set('scope', 'openid email profile');
-    googleUrl.searchParams.set('state', statePayload);
-    googleUrl.searchParams.set('prompt', 'select_account');
+    const payload: GoogleStateTokenPayload = {
+      type: 'google-oauth-state',
+      mode: params.mode,
+      lang,
+      redirectUri: sanitizedRedirectUri,
+      nonce,
+    };
 
-    return googleUrl.toString();
+    return this.jwtService.sign(payload, {
+      expiresIn: '10m',
+      jwtid: randomUUID(),
+    });
   }
 
-  async handleGoogleCallback(params: {
-    code?: string;
+  async handleGooglePassportCallback(params: {
+    googleUser: GoogleTokenInfo;
     state?: string;
   }): Promise<string> {
     try {
-      if (!params.code || !params.state) {
-        throw new BadRequestException(
-          'Missing Google OAuth callback parameters'
-        );
+      if (!params.state) {
+        throw new BadRequestException('Missing Google OAuth state');
       }
-      const authCode = params.code;
+      const stateData = await this.parseGoogleState(params.state);
 
-      const stateData = this.parseGoogleState(params.state);
-      const callbackUrl = process.env.GOOGLE_CALLBACK_URL;
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-      if (!callbackUrl || !clientId || !clientSecret) {
-        throw new BadRequestException(
-          'Google OAuth is not configured on the server'
-        );
-      }
-
-      const tokenResponse = await this.withOptionalInsecureGoogleTls(() =>
-        fetch('https://oauth2.googleapis.com/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            code: authCode,
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uri: callbackUrl,
-            grant_type: 'authorization_code',
-          }).toString(),
-        })
-      );
-
-      if (!tokenResponse.ok) {
-        throw new UnauthorizedException('Failed to exchange Google auth code');
-      }
-
-      const tokenData = (await tokenResponse.json()) as {
-        id_token?: string;
-        access_token?: string;
-      };
-
-      if (!tokenData.id_token || !tokenData.access_token) {
-        throw new UnauthorizedException('Google token response is invalid');
-      }
-      const idToken = tokenData.id_token;
-
-      const tokenInfoResponse = await this.withOptionalInsecureGoogleTls(() =>
-        fetch(
-          `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
-        )
-      );
-
-      if (!tokenInfoResponse.ok) {
-        throw new UnauthorizedException(
-          'Failed to verify Google identity token'
-        );
-      }
-
-      const tokenInfo = (await tokenInfoResponse.json()) as GoogleTokenInfo;
-      if (tokenInfo.aud !== clientId || !tokenInfo.email) {
+      if (!params.googleUser.email) {
         throw new UnauthorizedException('Google identity token is not valid');
       }
 
-      const user = await this.findOrCreateGoogleUser(tokenInfo);
+      const user = await this.findOrCreateGoogleUser(params.googleUser);
+
+      if (user.isBanned) {
+        throw new ForbiddenException(
+          'Your account has been banned. Please contact support.'
+        );
+      }
+
+      if (user.twoFactorEnabled) {
+        const tempToken = this.generateTempToken(user);
+        const oauthCode = await this.createGoogleOAuthCode({
+          tempToken,
+          twoFactorRequired: true,
+        });
+
+        const redirectUrl = new URL(stateData.redirectUri);
+        redirectUrl.searchParams.set('oauthCode', oauthCode);
+        return redirectUrl.toString();
+      }
+
       const tokens = this.generateTokens(user);
 
       await this.userModel.updateOne(
@@ -200,20 +193,10 @@ export class AuthService {
         }
       );
 
-      const role = user.role;
+      const authResponse = this.buildAuthResponse(tokens, user);
+      const oauthCode = await this.createGoogleOAuthCode(authResponse);
       const redirectUrl = new URL(stateData.redirectUri);
-      redirectUrl.searchParams.set('accessToken', tokens.accessToken);
-      redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
-      redirectUrl.searchParams.set(
-        'accessTokenExpiresAt',
-        new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-      );
-      redirectUrl.searchParams.set(
-        'refreshTokenExpiresAt',
-        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      );
-      redirectUrl.searchParams.set('userId', user._id.toString());
-      redirectUrl.searchParams.set('role', role);
+      redirectUrl.searchParams.set('oauthCode', oauthCode);
 
       return redirectUrl.toString();
     } catch (error) {
@@ -292,6 +275,35 @@ export class AuthService {
     user.twoFactorTempSecret = undefined;
     await user.save();
     return true;
+  }
+
+  async disableTwoFactor(
+    userId: string,
+    code: string,
+    context: { email: string; ip: string }
+  ): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.twoFactorEnabled)
+      throw new BadRequestException('2FA is not enabled');
+
+    this.check2FAVerificationLimit(context.email, context.ip);
+
+    const result = await verify({
+      secret: user.twoFactorSecret!,
+      token: code,
+    });
+    if (!result.valid) {
+      this.record2FAAttempt(context.email, context.ip, false);
+      throw new UnauthorizedException('Invalid 2FA code');
+    }
+
+    this.record2FAAttempt(context.email, context.ip, true);
+
+    user.twoFactorEnabled = false;
+    user.twoFactorSecret = undefined;
+    user.twoFactorTempSecret = undefined;
+    await user.save();
   }
 
   generateTempToken(user: UserDocument): string {
@@ -471,9 +483,7 @@ export class AuthService {
   async login(
     loginDto: LoginDto,
     ip: string
-  ): Promise<
-    AuthResponseDto | { tempToken: string; twoFactorRequired: boolean }
-  > {
+  ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     const { email, password } = loginDto;
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
       email,
@@ -703,11 +713,10 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('Your user profile could not be retrieved');
     }
-
-    const publicUser: PrivateUserDto = {
+    const privateUser: PrivateUserDto = {
       username: user.username,
-      firstName: user.firstName,
       email: user.email,
+      firstName: user.firstName,
       lastName: user.lastName,
       birthdate: user.birthdate,
       dateJoined: user.createdAt,
@@ -715,15 +724,19 @@ export class AuthService {
       emailConfirmed: user.emailConfirmed,
       role: user.role,
       phoneNumber: user.phoneNumber,
+      twoFactorEnabled: user.twoFactorEnabled,
     };
 
     return {
       message: 'User profile retrieved successfully',
-      user: publicUser,
+      user: privateUser,
     };
   }
 
-  async fetchUserById(userId: string): Promise<PrivateUserResponseDto> {
+  async fetchUserById(
+    userId: string,
+    requester: { id: string; role: Role }
+  ): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
@@ -742,6 +755,15 @@ export class AuthService {
       role: user.role,
       phoneNumber: user.phoneNumber,
     };
+
+    const canViewTwoFactorStatus =
+      requester.id === user._id.toString() ||
+      requester.role === Role.PLATFORM_ADMIN ||
+      requester.role === Role.PLATFORM_OWNER;
+
+    if (canViewTwoFactorStatus) {
+      privateUser.twoFactorEnabled = user.twoFactorEnabled;
+    }
 
     return {
       message: 'User retrieved successfully',
@@ -884,6 +906,7 @@ export class AuthService {
         profilePicture: updatedUser.profilePicture,
         emailConfirmed: updatedUser.emailConfirmed,
         role: updatedUser.role,
+        twoFactorEnabled: updatedUser.twoFactorEnabled,
       };
 
       return {
@@ -1085,39 +1108,289 @@ export class AuthService {
     }
   }
 
-  private parseGoogleState(state: string): {
+  private async parseGoogleState(state: string): Promise<{
     mode: 'login' | 'register';
     lang: string;
     redirectUri: string;
-  } {
-    try {
-      const decoded = Buffer.from(state, 'base64url').toString('utf8');
-      const parsed = JSON.parse(decoded) as {
-        mode?: 'login' | 'register';
-        lang?: string;
-        redirectUri?: string;
-      };
+  }> {
+    await this.cleanupExpiredOAuthEntries();
 
-      if (
-        !parsed.mode ||
-        !parsed.lang ||
-        !parsed.redirectUri ||
-        (parsed.mode !== 'login' && parsed.mode !== 'register')
-      ) {
+    try {
+      const decoded = this.jwtService.verify<Record<string, unknown>>(state);
+      if (!this.isGoogleStateTokenPayload(decoded)) {
         throw new Error('invalid state');
       }
+      const parsed = decoded;
+      const consumed = await this.consumeGoogleStateNonce(parsed.nonce);
+      if (!consumed) {
+        throw new Error('invalid nonce');
+      }
+
+      const normalizedLang = this.normalizeLang(parsed.lang);
 
       return {
         mode: parsed.mode,
-        lang: parsed.lang,
+        lang: normalizedLang,
         redirectUri: this.resolveFrontendRedirectUri(
           parsed.redirectUri,
-          parsed.lang
+          normalizedLang
         ),
       };
-    } catch {
-      throw new BadRequestException('Invalid Google OAuth state');
+    } catch (error) {
+      if (
+        error instanceof JsonWebTokenError ||
+        (error instanceof Error &&
+          (error.message === 'invalid state' ||
+            error.message === 'invalid nonce'))
+      ) {
+        throw new BadRequestException('Invalid Google OAuth state');
+      }
+
+      throw new InternalServerErrorException({
+        message: 'Failed to validate Google OAuth state',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
+  }
+
+  private isGoogleStateTokenPayload(
+    payload: unknown
+  ): payload is GoogleStateTokenPayload {
+    if (!payload || typeof payload !== 'object') {
+      return false;
+    }
+
+    const candidate = payload as Record<string, unknown>;
+    return (
+      candidate.type === 'google-oauth-state' &&
+      typeof candidate.mode === 'string' &&
+      (candidate.mode === 'login' || candidate.mode === 'register') &&
+      typeof candidate.lang === 'string' &&
+      typeof candidate.redirectUri === 'string' &&
+      typeof candidate.nonce === 'string'
+    );
+  }
+
+  async exchangeGoogleOAuthCode(
+    oauthCode: string
+  ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
+    await this.cleanupExpiredOAuthEntries();
+
+    if (!oauthCode?.trim()) {
+      throw new BadRequestException('OAuth code is required');
+    }
+
+    const payload = await this.consumeGoogleAuthCode(oauthCode);
+    if (!payload) {
+      throw new UnauthorizedException('OAuth code is invalid or expired');
+    }
+
+    return payload;
+  }
+
+  private async createGoogleOAuthCode(
+    payload: AuthResponseDto | TwoFactorChallengeResponse
+  ): Promise<string> {
+    await this.cleanupExpiredOAuthEntries();
+
+    const oauthCode = randomBytes(32).toString('base64url');
+    await this.setGoogleAuthCode(oauthCode, {
+      payload,
+      expiresAt: Date.now() + AuthService.GOOGLE_AUTH_CODE_TTL_MS,
+    });
+
+    return oauthCode;
+  }
+
+  private async cleanupExpiredOAuthEntries(): Promise<void> {
+    const now = Date.now();
+    await this.ensureOAuthIndexes();
+
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+
+    await Promise.all([
+      noncesCollection.deleteMany({ expiresAt: { $lte: new Date(now) } }),
+      codesCollection.deleteMany({ expiresAt: { $lte: new Date(now) } }),
+    ]);
+  }
+
+  private normalizeLang(input: string | undefined): string {
+    if (!input) {
+      return 'en';
+    }
+
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return 'en';
+    }
+
+    const parts = trimmed.replace('_', '-').split('-');
+    const base = parts[0]?.toLowerCase() ?? 'en';
+    const region = parts[1] ? parts[1].toUpperCase() : undefined;
+    const normalized = region ? `${base}-${region}` : base;
+
+    return AuthService.LANG_PATTERN.test(normalized) ? normalized : 'en';
+  }
+
+  private async ensureOAuthIndexes(): Promise<void> {
+    if (this.oauthIndexesInitialized) {
+      return;
+    }
+
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+
+    await Promise.all([
+      noncesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      codesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      noncesCollection.createIndex({ nonce: 1 }, { unique: true }),
+      codesCollection.createIndex({ code: 1 }, { unique: true }),
+    ]);
+
+    this.oauthIndexesInitialized = true;
+  }
+
+  private async setGoogleStateNonce(
+    nonce: string,
+    expiresAtMs: number
+  ): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+
+    await noncesCollection.updateOne(
+      { nonce },
+      {
+        $set: {
+          nonce,
+          expiresAt: new Date(expiresAtMs),
+        },
+      },
+      { upsert: true }
+    );
+  }
+
+  private async getGoogleStateNonceExpiresAt(
+    nonce: string
+  ): Promise<number | undefined> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+
+    const record = await noncesCollection.findOne<GoogleStateNonceRecord>({
+      nonce,
+    });
+
+    if (!record?.expiresAt) {
+      return undefined;
+    }
+
+    return record.expiresAt.getTime();
+  }
+
+  private async consumeGoogleStateNonce(nonce: string): Promise<boolean> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+    const result = await noncesCollection.deleteOne({
+      nonce,
+      expiresAt: { $gt: new Date() },
+    });
+    return result.deletedCount === 1;
+  }
+
+  private async deleteGoogleStateNonce(nonce: string): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+    await noncesCollection.deleteOne({ nonce });
+  }
+
+  private async setGoogleAuthCode(
+    code: string,
+    value: {
+      payload: AuthResponseDto | TwoFactorChallengeResponse;
+      expiresAt: number;
+    }
+  ): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+
+    await codesCollection.updateOne(
+      { code },
+      {
+        $set: {
+          code,
+          payload: value.payload,
+          expiresAt: new Date(value.expiresAt),
+        },
+      },
+      { upsert: true }
+    );
+  }
+
+  private async getGoogleAuthCodeRecord(code: string): Promise<
+    | {
+        payload: AuthResponseDto | TwoFactorChallengeResponse;
+        expiresAt: number;
+      }
+    | undefined
+  > {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+
+    const record = await codesCollection.findOne<GoogleAuthCodeRecord>({
+      code,
+    });
+
+    if (!record?.expiresAt) {
+      return undefined;
+    }
+
+    return {
+      payload: record.payload,
+      expiresAt: record.expiresAt.getTime(),
+    };
+  }
+
+  private async consumeGoogleAuthCode(
+    code: string
+  ): Promise<AuthResponseDto | TwoFactorChallengeResponse | undefined> {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+    const result = await codesCollection.findOneAndDelete({
+      code,
+      expiresAt: { $gt: new Date() },
+    });
+    const record = result?.value as GoogleAuthCodeRecord | undefined;
+    return record?.payload;
+  }
+
+  private async deleteGoogleAuthCode(code: string): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+    await codesCollection.deleteOne({ code });
   }
 
   private async findOrCreateGoogleUser(
@@ -1334,26 +1607,5 @@ export class AuthService {
       newRole: user.role,
       previousRole,
     };
-  }
-
-  private async withOptionalInsecureGoogleTls<T>(
-    task: () => Promise<T>
-  ): Promise<T> {
-    if (process.env.GOOGLE_OAUTH_ALLOW_INSECURE_TLS !== 'true') {
-      return task();
-    }
-
-    const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-    try {
-      return await task();
-    } finally {
-      if (previous === undefined) {
-        delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      } else {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = previous;
-      }
-    }
   }
 }

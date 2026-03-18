@@ -9,10 +9,13 @@ import { EmailService } from '@/auth/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 import { JwtStrategy } from '@/auth/strategies/jwt.strategy';
 import { RefreshStrategy } from '@/auth/strategies/refresh.strategy';
+import { GoogleStrategy } from '@/auth/strategies/google.strategy';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
+import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
+import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
 import { User, UserSchema } from '@/users/schemas/user.schema';
 
 @Module({
@@ -36,10 +39,13 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     RateLimitingService,
     JwtStrategy,
     RefreshStrategy,
+    GoogleStrategy,
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
     RolesGuard,
+    GoogleAuthGuard,
+    GoogleCallbackGuard,
   ],
   controllers: [AuthController],
   exports: [
@@ -47,11 +53,14 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     EmailService,
     JwtStrategy,
     RefreshStrategy,
+    GoogleStrategy,
     RateLimitingService,
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
     RolesGuard,
+    GoogleAuthGuard,
+    GoogleCallbackGuard,
   ],
 })
 export class AuthModule {}

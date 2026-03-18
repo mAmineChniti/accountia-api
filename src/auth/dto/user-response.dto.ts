@@ -33,6 +33,9 @@ export class PrivateUserDto extends PublicUserDto {
 
   @ApiPropertyOptional({ example: '+1234567890' })
   phoneNumber?: string;
+
+  @ApiPropertyOptional({ example: false })
+  twoFactorEnabled?: boolean;
 }
 
 export class UserResponseDto {
