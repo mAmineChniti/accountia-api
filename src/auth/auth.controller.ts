@@ -12,8 +12,8 @@ import {
   Req,
   Param,
   Res,
-  Query,
   HttpException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,6 +36,7 @@ import { UpdateUserDto } from '@/auth/dto/update-user.dto';
 import { FetchUserByIdDto } from '@/auth/dto/fetch-user-by-id.dto';
 import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
 import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
+import { GoogleOAuthExchangeDto } from '@/auth/dto/google-oauth-exchange.dto';
 import {
   MessageResponseDto,
   PrivateUserResponseDto,
@@ -56,6 +57,9 @@ import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
 import { TwoFAVerifyDto } from '@/auth/dto/2fa-verify.dto';
 import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
 import { BanUserDto, BanResponseDto } from '@/auth/dto/ban-user.dto';
+import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
+import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
+import { type GoogleAuthUser } from '@/auth/strategies/google.strategy';
 
 @ApiTags('Authentication')
 @ApiExtraModels(AuthResponseDto)
@@ -64,26 +68,18 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Get('google')
+  @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Start Google OAuth login/signup flow' })
   @ApiResponse({
     status: 302,
     description: 'Redirects to Google OAuth consent',
   })
-  googleAuth(
-    @Query('mode') mode: 'login' | 'register' = 'login',
-    @Query('lang') lang = 'en',
-    @Query('redirectUri') redirectUri?: string,
-    @Res() res?: Response
-  ): void {
-    const url = this.authService.getGoogleAuthUrl({
-      mode,
-      lang,
-      redirectUri,
-    });
-    res?.redirect(url);
+  googleAuth(): void {
+    // Passport guard handles redirect to Google OAuth consent page.
   }
 
   @Get('google/callback')
+  @UseGuards(GoogleCallbackGuard)
   @ApiOperation({
     summary: 'Handle Google OAuth callback and redirect to frontend',
   })
@@ -92,14 +88,20 @@ export class AuthController {
     description: 'Redirects to frontend callback route',
   })
   async googleCallback(
-    @Query('code') code?: string,
-    @Query('state') state?: string,
+    @Req() req: Request,
     @Res() res?: Response
   ): Promise<void> {
     try {
-      const redirectUrl = await this.authService.handleGoogleCallback({
-        code,
-        state,
+      const googleUser = req.user as GoogleAuthUser | undefined;
+      if (!googleUser) {
+        throw new BadRequestException(
+          'Google authentication failed: no user returned'
+        );
+      }
+
+      const redirectUrl = await this.authService.handleGooglePassportCallback({
+        googleUser,
+        state: googleUser.state,
       });
       res?.redirect(redirectUrl);
     } catch (error) {
@@ -114,6 +116,37 @@ export class AuthController {
 
       res?.redirect(fallback.toString());
     }
+  }
+
+  @Post('google/exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Exchange one-time Google OAuth code for login response',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OAuth code exchanged successfully',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(AuthResponseDto) },
+        {
+          type: 'object',
+          properties: {
+            tempToken: { type: 'string' },
+            twoFactorRequired: { type: 'boolean' },
+          },
+          required: ['tempToken', 'twoFactorRequired'],
+        },
+      ],
+    },
+  })
+  @ApiResponse({ status: 401, description: 'OAuth code is invalid or expired' })
+  async exchangeGoogleOAuthCode(
+    @Body() dto: GoogleOAuthExchangeDto
+  ): Promise<
+    AuthResponseDto | { tempToken: string; twoFactorRequired: boolean }
+  > {
+    return this.authService.exchangeGoogleOAuthCode(dto.oauthCode);
   }
 
   @Post('register')
@@ -195,6 +228,27 @@ export class AuthController {
     const enabled = await this.authService.verifyTwoFactor(user.id, dto.code);
     this.authService.record2FAAttempt(user.email, ip, enabled);
     return { enabled };
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Disable 2FA' })
+  @ApiResponse({ status: 200, description: '2FA disabled' })
+  @ApiResponse({ status: 400, description: '2FA is not enabled' })
+  @ApiResponse({ status: 401, description: 'Invalid 2FA code' })
+  async disable2FA(
+    @CurrentUser() user: UserPayload,
+    @Body() dto: TwoFAVerifyDto,
+    @Req() req: Request
+  ): Promise<{ disabled: boolean }> {
+    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    await this.authService.disableTwoFactor(user.id, dto.code, {
+      email: user.email,
+      ip,
+    });
+    return { disabled: true };
   }
 
   @Post('2fa/login')
@@ -363,9 +417,13 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async fetchUserById(
+    @CurrentUser() requester: UserPayload,
     @Body() fetchUserDto: FetchUserByIdDto
   ): Promise<PrivateUserResponseDto> {
-    return this.authService.fetchUserById(fetchUserDto.userId);
+    return this.authService.fetchUserById(fetchUserDto.userId, {
+      id: requester.id,
+      role: requester.role,
+    });
   }
 
   @Put('update')
