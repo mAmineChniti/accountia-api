@@ -3,9 +3,11 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
+import { randomBytes } from 'node:crypto';
 import { Business, BusinessDocument } from '@/business/schemas/business.schema';
 import {
   BusinessApplication,
@@ -31,6 +33,11 @@ import { BusinessApplicationResponseDto } from '@/business/dto/business-applicat
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { EmailService } from '@/auth/email.service';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+import {
+  type TenantContext,
+  type TenantMetadata,
+} from '@/common/tenant/tenant.types';
 
 @Injectable()
 export class BusinessService {
@@ -41,7 +48,8 @@ export class BusinessService {
     private businessApplicationModel: Model<BusinessApplicationDocument>,
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUserDocument>,
-    private emailService: EmailService
+    private emailService: EmailService,
+    private tenantConnectionService: TenantConnectionService
   ) {}
 
   // Business Application Flow
@@ -111,7 +119,17 @@ export class BusinessService {
 
     if (reviewDto.status === 'approved') {
       // Create the business within a transaction
-      const databaseName = this.generateDatabaseName(application.businessName);
+      const databaseName = await this.generateUniqueDatabaseName(
+        application.businessName
+      );
+
+      await this.provisionBusinessTenantDatabase(
+        databaseName,
+        application.businessName,
+        application.applicantId,
+        reviewerId
+      );
+
       const business = new this.businessModel({
         name: application.businessName,
         description: application.description,
@@ -146,6 +164,10 @@ export class BusinessService {
         await session.commitTransaction();
       } catch (error) {
         await session.abortTransaction();
+
+        // Roll back tenant DB provisioning if business creation fails.
+        await this.dropTenantDatabase(databaseName);
+
         throw error;
       } finally {
         await session.endSession();
@@ -301,6 +323,7 @@ export class BusinessService {
 
     const session = await this.connection.startSession();
     session.startTransaction();
+    let transactionCommitted = false;
     try {
       await this.businessUserModel.deleteMany({ businessId }, { session });
       await this.businessApplicationModel.updateMany(
@@ -310,11 +333,22 @@ export class BusinessService {
       );
       await this.businessModel.findByIdAndDelete(businessId, { session });
       await session.commitTransaction();
+      transactionCommitted = true;
     } catch (error) {
-      await session.abortTransaction();
+      if (!transactionCommitted) {
+        await session.abortTransaction();
+      }
       throw error;
     } finally {
       await session.endSession();
+    }
+
+    try {
+      await this.tenantConnectionService.dropTenantDatabase(
+        business.databaseName
+      );
+    } catch {
+      // Best-effort cleanup: platform deletion should not be blocked if DB drop fails.
     }
 
     return { message: 'Business deleted successfully' };
@@ -381,6 +415,26 @@ export class BusinessService {
     };
   }
 
+  async getTenantMetadata(tenantContext: TenantContext): Promise<{
+    message: string;
+    tenant: TenantContext;
+    metadata: TenantMetadata;
+  }> {
+    const metadata = await this.tenantConnectionService.getTenantMetadata(
+      tenantContext.databaseName
+    );
+
+    if (!metadata) {
+      throw new NotFoundException('Tenant metadata not found');
+    }
+
+    return {
+      message: 'Tenant metadata retrieved successfully',
+      tenant: tenantContext,
+      metadata,
+    };
+  }
+
   // Business User Management
   async assignBusinessUser(
     businessId: string,
@@ -388,9 +442,10 @@ export class BusinessService {
     userId: string,
     userRole: Role
   ): Promise<BusinessUserResponseDto> {
-    // Verify the business exists (platform admins bypass checkBusinessAccess, so check explicitly)
-    const businessExists = await this.businessModel.exists({ _id: businessId });
-    if (!businessExists) {
+    const business = await this.businessModel
+      .findById(businessId)
+      .select('databaseName');
+    if (!business) {
       throw new NotFoundException('Business not found');
     }
 
@@ -418,6 +473,23 @@ export class BusinessService {
     });
 
     const savedBusinessUser = await businessUser.save();
+
+    try {
+      await this.tenantConnectionService.upsertTenantUser(
+        business.databaseName,
+        {
+          userId: assignDto.userId,
+          role: assignDto.role,
+          assignedBy: userId,
+          isActive: true,
+        }
+      );
+    } catch {
+      await this.businessUserModel.findByIdAndDelete(savedBusinessUser._id);
+      throw new InternalServerErrorException(
+        'Failed to sync tenant user assignment'
+      );
+    }
 
     return {
       message: 'User assigned to business successfully',
@@ -457,24 +529,104 @@ export class BusinessService {
       throw new BadRequestException('Cannot unassign business owner');
     }
 
+    const business = await this.businessModel
+      .findById(businessId)
+      .select('databaseName');
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
     await this.businessUserModel.findByIdAndUpdate(businessUser._id, {
       isActive: false,
     });
+
+    try {
+      await this.tenantConnectionService.deactivateTenantUser(
+        business.databaseName,
+        targetUserId,
+        userId
+      );
+    } catch {
+      await this.businessUserModel.findByIdAndUpdate(businessUser._id, {
+        isActive: true,
+      });
+      throw new InternalServerErrorException(
+        'Failed to sync tenant user unassignment'
+      );
+    }
 
     return { message: 'User unassigned from business successfully' };
   }
 
   // Helper methods
-  private generateDatabaseName(businessName: string): string {
-    return (
-      businessName
-        .toLowerCase()
-        .replaceAll(/[^\da-z]/g, '_')
-        .replaceAll(/_+/g, '_')
-        .slice(0, 50) +
-      '_' +
-      Date.now()
+  private async generateUniqueDatabaseName(
+    businessName: string
+  ): Promise<string> {
+    const slug = this.generateDatabaseSlug(businessName);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const suffix = `${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`;
+      const databaseName = `${slug}_${suffix}`.slice(0, 63);
+
+      // Atomically reserve the database name
+      const reservation = await this.businessModel.findOneAndUpdate(
+        { databaseName },
+        {
+          $setOnInsert: {
+            databaseName,
+            // Add a temporary flag to identify this as a reservation
+            _isReservation: true,
+            createdAt: new Date(),
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          lean: true,
+        }
+      );
+
+      if (reservation) {
+        return databaseName;
+      }
+    }
+
+    throw new InternalServerErrorException(
+      'Failed to allocate a unique tenant database name'
     );
+  }
+
+  private generateDatabaseSlug(businessName: string): string {
+    const slug = businessName
+      .toLowerCase()
+      .replaceAll(/[^\da-z]/g, '_')
+      .replaceAll(/_+/g, '_')
+      .replaceAll(/^_+|_+$/g, '')
+      .slice(0, 40);
+
+    return slug || 'tenant';
+  }
+
+  private async provisionBusinessTenantDatabase(
+    databaseName: string,
+    businessName: string,
+    ownerUserId: string,
+    assignedBy: string
+  ): Promise<void> {
+    await this.tenantConnectionService.initializeTenantDatabase({
+      databaseName,
+      businessName,
+      ownerUserId,
+      assignedBy,
+    });
+  }
+
+  private async dropTenantDatabase(databaseName: string): Promise<void> {
+    try {
+      await this.tenantConnectionService.dropTenantDatabase(databaseName);
+    } catch {
+      // Best-effort cleanup: provisioning rollback should not mask root failure.
+    }
   }
 
   private async checkBusinessAccess(
