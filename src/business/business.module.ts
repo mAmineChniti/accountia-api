@@ -12,6 +12,9 @@ import {
   BusinessUser,
   BusinessUserSchema,
 } from '@/business/schemas/business-user.schema';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+import { TenantContextService } from '@/common/tenant/tenant-context.service';
+import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 
 @Module({
   imports: [
@@ -23,7 +26,17 @@ import {
     ]),
   ],
   controllers: [BusinessController],
-  providers: [BusinessService],
-  exports: [BusinessService],
+  providers: [
+    BusinessService,
+    TenantConnectionService,
+    TenantContextService,
+    TenantContextGuard,
+  ],
+  exports: [
+    BusinessService,
+    TenantConnectionService,
+    TenantContextService,
+    TenantContextGuard,
+  ],
 })
 export class BusinessModule {}

@@ -6,7 +6,7 @@ export enum BusinessUserRole {
   ADMIN = 'admin',
 }
 
-@Schema({ timestamps: true })
+@Schema({ collection: 'business_users', timestamps: true })
 export class BusinessUser {
   @Prop({ required: true })
   businessId: string;

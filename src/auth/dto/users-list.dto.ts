@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@/auth/enums/role.enum';
 
-export class UserSummaryDto {
+class UserSummaryDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
   id!: string;
 
