@@ -1377,12 +1377,12 @@ export class AuthService {
     const codesCollection = this.connection.collection(
       AuthService.GOOGLE_AUTH_CODE_COLLECTION
     );
-    const result = await codesCollection.findOneAndDelete({
+    const result = (await codesCollection.findOneAndDelete({
       code,
       expiresAt: { $gt: new Date() },
-    });
-    const record = result?.value as GoogleAuthCodeRecord | undefined;
-    return record?.payload;
+    })) as GoogleAuthCodeRecord | null;
+
+    return result?.payload;
   }
 
   private async deleteGoogleAuthCode(code: string): Promise<void> {

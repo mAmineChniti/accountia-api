@@ -37,6 +37,12 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { Role } from '@/auth/enums/role.enum';
+import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
+import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
+import {
+  type TenantContext,
+  type TenantMetadata,
+} from '@/common/tenant/tenant.types';
 
 @ApiTags('Business')
 @Controller('business')
@@ -213,8 +219,45 @@ export class BusinessController {
     return this.businessService.getAllBusinesses(user.role);
   }
 
+  @Get(':id/tenant/metadata')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get tenant metadata for business',
+    description:
+      'Resolve tenant context from the business route and fetch tenant database metadata.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Tenant metadata retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to access this tenant',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business or tenant metadata not found',
+  })
+  async getTenantMetadata(@CurrentTenant() tenant: TenantContext): Promise<{
+    message: string;
+    tenant: TenantContext;
+    metadata: TenantMetadata;
+  }> {
+    return this.businessService.getTenantMetadata(tenant);
+  }
+
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get business by ID',
@@ -251,7 +294,7 @@ export class BusinessController {
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update business',
@@ -298,7 +341,7 @@ export class BusinessController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete business' })
@@ -321,7 +364,7 @@ export class BusinessController {
 
   // Business User Management Endpoints
   @Post(':id/users')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assign user to business',
@@ -370,7 +413,7 @@ export class BusinessController {
   }
 
   @Delete(':id/users/:userId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
