@@ -26,10 +26,10 @@ export class UpdateUserDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ example: 'NewP@ssw0rd!', minLength: 6 })
+  @ApiPropertyOptional({ example: 'NewP@ssw0rd!Secure', minLength: 12 })
   @IsOptional()
   @IsString()
-  @MinLength(6)
+  @MinLength(12)
   password?: string;
 
   @ApiPropertyOptional({
@@ -65,4 +65,12 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   profilePicture?: string;
+
+  @ApiPropertyOptional({
+    example: 'CurrentP@ssw0rd!',
+    description: 'Current password - required when updating email or password',
+  })
+  @IsOptional()
+  @IsString()
+  currentPassword?: string;
 }

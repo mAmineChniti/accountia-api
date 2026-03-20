@@ -27,7 +27,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
       useFactory: (cfg: ConfigService) => ({
         secret: cfg.get('JWT_SECRET'),
         signOptions: {
-          expiresIn: '24h',
+          expiresIn: '15m',
         },
       }),
       inject: [ConfigService],
