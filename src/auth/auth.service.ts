@@ -72,11 +72,6 @@ type GoogleOAuthInitParams = {
   redirectUri?: string;
 };
 
-type GoogleStateNonceRecord = {
-  nonce: string;
-  expiresAt: Date;
-};
-
 type GoogleAuthCodeRecord = {
   code: string;
   payload: AuthResponseDto | TwoFactorChallengeResponse;
@@ -95,6 +90,11 @@ const getQrcode = async () => {
 
 @Injectable()
 export class AuthService {
+  static readonly TOKEN_EXPIRY_DURATIONS = {
+    accessMs: 15 * 60 * 1000, // 15 minutes
+    refreshMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+  };
+
   private oauthIndexesInitialized = false;
 
   private static readonly GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
@@ -371,9 +371,7 @@ export class AuthService {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      accessTokenExpiresAt: new Date(
-        Date.now() + 24 * 60 * 60 * 1000
-      ).toISOString(),
+      accessTokenExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       refreshTokenExpiresAt: new Date(
         Date.now() + 7 * 24 * 60 * 60 * 1000
       ).toISOString(),
@@ -433,6 +431,8 @@ export class AuthService {
 
     const passwordHash = await hash(password, 10);
     const emailToken = this.generateEmailToken();
+    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const emailTokenGeneratedAt = new Date();
     try {
       const birthdateDate = new Date(birthdate);
       if (Number.isNaN(birthdateDate.getTime())) {
@@ -457,6 +457,8 @@ export class AuthService {
         acceptTerms,
         profilePicture: finalProfilePicture,
         emailToken,
+        emailTokenExpiresAt,
+        emailTokenGeneratedAt,
         emailConfirmed: false,
       });
 
@@ -651,20 +653,45 @@ export class AuthService {
     token: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const user = await this.userModel.findOne({ emailToken: token });
+      // Use atomic update to prevent race conditions
+      const now = new Date();
+      const result = await this.userModel.findOneAndUpdate(
+        {
+          emailToken: token,
+          emailConfirmed: false,
+          $or: [
+            { emailTokenExpiresAt: { $gt: now } },
+            { emailTokenExpiresAt: { $exists: false } },
+          ],
+        },
+        {
+          $set: {
+            emailConfirmed: true,
+            emailConfirmationAttempts: 0,
+          },
+          $unset: {
+            emailToken: '',
+            emailTokenExpiresAt: '',
+            emailTokenGeneratedAt: '',
+          },
+        },
+        { new: true }
+      );
 
-      if (!user) {
+      if (!result) {
+        // Check why it failed for better error messaging
+        const user = await this.userModel.findOne({ emailToken: token });
+        if (!user) {
+          return { success: false, message: 'Invalid confirmation token' };
+        }
+        if (user.emailConfirmed) {
+          return { success: false, message: 'Email is already confirmed' };
+        }
+        if (!user.emailTokenExpiresAt || user.emailTokenExpiresAt < now) {
+          return { success: false, message: 'Confirmation token has expired' };
+        }
         return { success: false, message: 'Invalid confirmation token' };
       }
-
-      if (user.emailConfirmed) {
-        return { success: false, message: 'Email is already confirmed' };
-      }
-
-      user.emailConfirmed = true;
-      user.emailToken = undefined;
-      user.emailConfirmationAttempts = 0;
-      await user.save();
 
       return { success: true, message: 'Email confirmed successfully' };
     } catch {
@@ -695,7 +722,11 @@ export class AuthService {
     }
 
     const newEmailToken = this.generateEmailToken();
+    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const emailTokenGeneratedAt = new Date();
     user.emailToken = newEmailToken;
+    user.emailTokenExpiresAt = emailTokenExpiresAt;
+    user.emailTokenGeneratedAt = emailTokenGeneratedAt;
     await user.save();
 
     try {
@@ -803,6 +834,33 @@ export class AuthService {
 
     if (!user) {
       throw new NotFoundException('Your user profile could not be found');
+    }
+
+    const isEmailChanging = updateDto.email && updateDto.email !== user.email;
+    const isPasswordChanging = !!updateDto.password;
+    // Check if user has a local password (not just an OAuth-generated random one)
+    // For now, we assume all users have passwordHash. If a provider/isOAuthOnly field exists,
+    // this logic should be updated to skip verification for OAuth-only users setting their first password.
+    const hasLocalPassword = !!user.passwordHash;
+
+    if (
+      (isEmailChanging || isPasswordChanging) &&
+      hasLocalPassword &&
+      !updateDto.currentPassword
+    ) {
+      throw new UnauthorizedException(
+        'Current password is required to update email or password'
+      );
+    }
+
+    if (updateDto.currentPassword && hasLocalPassword) {
+      const isPasswordValid = await compare(
+        updateDto.currentPassword,
+        user.passwordHash
+      );
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
     }
 
     const updateData: Partial<User> = {};
@@ -1032,7 +1090,7 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '24h',
+      expiresIn: '15m',
       jwtid: randomUUID(),
     });
 
@@ -1280,25 +1338,6 @@ export class AuthService {
     );
   }
 
-  private async getGoogleStateNonceExpiresAt(
-    nonce: string
-  ): Promise<number | undefined> {
-    await this.ensureOAuthIndexes();
-    const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
-    );
-
-    const record = await noncesCollection.findOne<GoogleStateNonceRecord>({
-      nonce,
-    });
-
-    if (!record?.expiresAt) {
-      return undefined;
-    }
-
-    return record.expiresAt.getTime();
-  }
-
   private async consumeGoogleStateNonce(nonce: string): Promise<boolean> {
     await this.ensureOAuthIndexes();
     const noncesCollection = this.connection.collection(
@@ -1309,14 +1348,6 @@ export class AuthService {
       expiresAt: { $gt: new Date() },
     });
     return result.deletedCount === 1;
-  }
-
-  private async deleteGoogleStateNonce(nonce: string): Promise<void> {
-    await this.ensureOAuthIndexes();
-    const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
-    );
-    await noncesCollection.deleteOne({ nonce });
   }
 
   private async setGoogleAuthCode(
@@ -1344,32 +1375,6 @@ export class AuthService {
     );
   }
 
-  private async getGoogleAuthCodeRecord(code: string): Promise<
-    | {
-        payload: AuthResponseDto | TwoFactorChallengeResponse;
-        expiresAt: number;
-      }
-    | undefined
-  > {
-    await this.ensureOAuthIndexes();
-    const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
-    );
-
-    const record = await codesCollection.findOne<GoogleAuthCodeRecord>({
-      code,
-    });
-
-    if (!record?.expiresAt) {
-      return undefined;
-    }
-
-    return {
-      payload: record.payload,
-      expiresAt: record.expiresAt.getTime(),
-    };
-  }
-
   private async consumeGoogleAuthCode(
     code: string
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse | undefined> {
@@ -1383,14 +1388,6 @@ export class AuthService {
     })) as GoogleAuthCodeRecord | null;
 
     return result?.payload;
-  }
-
-  private async deleteGoogleAuthCode(code: string): Promise<void> {
-    await this.ensureOAuthIndexes();
-    const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
-    );
-    await codesCollection.deleteOne({ code });
   }
 
   private async findOrCreateGoogleUser(
