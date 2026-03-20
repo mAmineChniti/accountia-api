@@ -52,6 +52,12 @@ export class User {
   @Prop()
   emailToken?: string;
 
+  @Prop()
+  emailTokenExpiresAt?: Date;
+
+  @Prop()
+  emailTokenGeneratedAt?: Date;
+
   @Prop({ default: 0 })
   emailConfirmationAttempts: number;
 

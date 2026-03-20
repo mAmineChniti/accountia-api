@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -26,19 +30,28 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh') {
     payload: {
       jti: string;
       sub: string;
-      email: string;
-      username: string;
+      type?: string;
     }
   ) {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
-      throw new Error('Invalid token format');
+      throw new BadRequestException('Invalid token format');
     }
+
+    // Verify token type is 'refresh'
+    if (payload.type !== 'refresh') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
     const rawToken = authHeader.slice(7);
 
     const user = await this.userModel.findById(payload.sub);
     if (!user) {
-      throw new Error('User not found or inactive');
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    if (user.isBanned) {
+      throw new UnauthorizedException('Your account has been banned');
     }
 
     const tokenExists = user.refreshTokens.some(
@@ -46,13 +59,17 @@ export class RefreshStrategy extends PassportStrategy(Strategy, 'refresh') {
     );
 
     if (!tokenExists) {
-      throw new Error('Invalid or expired refresh token');
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
     return {
       id: user._id.toString(),
       email: user.email,
       username: user.username,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
     };
   }
 }

@@ -24,6 +24,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
+import { RefreshResponseDto } from '@/auth/dto/refresh-response.dto';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { readFile } from 'node:fs/promises';
@@ -288,17 +289,22 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Tokens refreshed successfully',
-    type: AuthResponseDto,
+    type: RefreshResponseDto,
   })
+  @ApiResponse({ status: 400, description: 'Invalid token format' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async refreshTokenHandler(
     @CurrentUser() user: UserPayload,
     @Req() req: Request
-  ): Promise<AuthResponseDto> {
+  ): Promise<RefreshResponseDto> {
     const authHeader = req.headers.authorization;
     const oldRefreshToken = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
       : '';
+
+    if (!oldRefreshToken) {
+      throw new BadRequestException('Invalid token format');
+    }
 
     const tokens = this.authService.generateTokens(user);
 
@@ -308,24 +314,18 @@ export class AuthController {
       tokens.refreshToken
     );
 
+    const accessTokenExpiresAt = new Date(
+      Date.now() + AuthService.TOKEN_EXPIRY_DURATIONS.accessMs
+    ).toISOString();
+    const refreshTokenExpiresAt = new Date(
+      Date.now() + AuthService.TOKEN_EXPIRY_DURATIONS.refreshMs
+    ).toISOString();
+
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      accessTokenExpiresAt: new Date(
-        Date.now() + 24 * 60 * 60 * 1000
-      ).toISOString(),
-      refreshTokenExpiresAt: new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000
-      ).toISOString(),
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-      },
+      accessTokenExpiresAt,
+      refreshTokenExpiresAt,
     };
   }
 
