@@ -179,7 +179,7 @@ export class EmailService {
   private async getUserEmail(userId: string): Promise<string> {
     try {
       const user = await this.userModel.findById(userId).select('email').lean();
-      if (!user || !user.email) {
+      if (!user?.email) {
         throw new Error(
           `User not found or email not available for user ID: ${userId}`
         );
