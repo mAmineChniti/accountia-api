@@ -18,6 +18,8 @@ import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { User, UserDocument } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
+import { AuditService } from '@/audit/audit.service';
+import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { LoginDto } from '@/auth/dto/login.dto';
 import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
 import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
@@ -110,7 +112,8 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private emailService: EmailService,
-    private rateLimitingService: RateLimitingService
+    private rateLimitingService: RateLimitingService,
+    private auditService: AuditService
   ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -466,6 +469,14 @@ export class AuthService {
 
       await this.emailService.sendConfirmationEmail(email, emailToken);
 
+      this.auditService.logAction({
+        action: AuditAction.REGISTER,
+        userId: user._id.toString(),
+        userEmail: user.email,
+        userRole: user.role || 'CLIENT',
+        details: { method: 'standard' },
+      });
+
       return {
         message:
           'Registration successful! Please check your email to confirm your account.',
@@ -546,6 +557,16 @@ export class AuthService {
         },
       }
     );
+
+    this.auditService.logAction({
+      action: AuditAction.LOGIN,
+      userId: user._id.toString(),
+      userEmail: user.email,
+      userRole: user.role || 'Unknown',
+      ipAddress: ip,
+      details: { method: 'standard' },
+    });
+
     return this.buildAuthResponse(tokens, user);
   }
 
@@ -1510,6 +1531,15 @@ export class AuthService {
     user.bannedReason = reason;
     user.refreshTokens = [];
     await user.save();
+
+    this.auditService.logAction({
+      action: AuditAction.BAN_USER,
+      userId: adminId,
+      userEmail: admin.email,
+      userRole: admin.role || 'ADMIN',
+      target: user.email,
+      details: { targetUserId: userId, reason },
+    });
 
     return {
       message: 'User banned successfully',

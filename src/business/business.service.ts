@@ -8,6 +8,8 @@ import {
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
+import { AuditService } from '@/audit/audit.service';
+import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { Business, BusinessDocument } from '@/business/schemas/business.schema';
 import {
   BusinessApplication,
@@ -18,6 +20,7 @@ import {
   BusinessUserDocument,
   BusinessUserRole,
 } from '@/business/schemas/business-user.schema';
+import { User, UserDocument } from '@/users/schemas/user.schema';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
 import {
   CreateBusinessApplicationDto,
@@ -32,12 +35,15 @@ import {
 import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
+import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/auth/email.service';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import {
   type TenantContext,
   type TenantMetadata,
 } from '@/common/tenant/tenant.types';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationType } from '@/notifications/schemas/notification.schema';
 
 @Injectable()
 export class BusinessService {
@@ -48,8 +54,11 @@ export class BusinessService {
     private businessApplicationModel: Model<BusinessApplicationDocument>,
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUserDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private emailService: EmailService,
-    private tenantConnectionService: TenantConnectionService
+    private tenantConnectionService: TenantConnectionService,
+    private auditService: AuditService,
+    private notificationsService: NotificationsService
   ) {}
 
   // Business Application Flow
@@ -76,11 +85,22 @@ export class BusinessService {
 
     const savedApplication = await application.save();
 
-    // Send email notification about application submission
-    await this.emailService.sendBusinessApplicationEmail(
+    // Send email notification about application submission (non-blocking)
+    this.emailService.sendBusinessApplicationEmail(
       userId,
       savedApplication.businessName
-    );
+    ).catch(err => console.error('Failed to send application email in background:', err));
+
+    // Send real-time admin notification (non-blocking)
+    this.notificationsService.createNotification({
+      type: NotificationType.NEW_BUSINESS_APPLICATION,
+      message: `New business application: "${savedApplication.businessName}"`,
+      payload: {
+        applicationId: savedApplication._id.toString(),
+        businessName: savedApplication.businessName,
+        applicantId: userId,
+      },
+    }).catch(err => console.error('Failed to create notification:', err));
 
     return {
       message:
@@ -101,16 +121,17 @@ export class BusinessService {
   async reviewBusinessApplication(
     applicationId: string,
     reviewDto: ReviewBusinessApplicationDto,
-    reviewerId: string
+    reviewer: UserPayload
   ): Promise<BusinessApplicationResponseDto> {
+    const reviewerId = reviewer.id;
     const application =
       await this.businessApplicationModel.findById(applicationId);
     if (!application) {
       throw new NotFoundException('Business application not found');
     }
 
-    if (application.status !== 'pending') {
-      throw new BadRequestException('Application has already been reviewed');
+    if (application.status === 'approved') {
+      throw new BadRequestException('Application has already been approved');
     }
 
     application.status = reviewDto.status;
@@ -160,6 +181,13 @@ export class BusinessService {
           { session }
         );
 
+        // Upgrade the applicant's role from CLIENT to BUSINESS_OWNER
+        await this.userModel.updateOne(
+          { _id: application.applicantId, role: Role.CLIENT },
+          { $set: { role: Role.BUSINESS_OWNER } },
+          { session }
+        );
+
         await application.save({ session });
         await session.commitTransaction();
       } catch (error) {
@@ -173,25 +201,45 @@ export class BusinessService {
         await session.endSession();
       }
 
-      // Send approval email after successful commit
-      await this.emailService.sendBusinessApprovalEmail(
+      // Send approval email (non-blocking)
+      this.emailService.sendBusinessApprovalEmail(
         application.applicantId,
         approvedBusinessName
-      );
+      ).catch(err => console.error('Failed to send approval email in background:', err));
+
+      this.auditService.logAction({
+        action: AuditAction.APPROVE_BUSINESS,
+        userId: reviewer.id,
+        userEmail: reviewer.email || 'Unknown',
+        userRole: reviewer.role || 'ADMIN',
+        target: approvedBusinessName,
+        details: { applicationId },
+      });
+
     } else {
       await application.save();
 
-      // Send rejection email
-      await this.emailService.sendBusinessRejectionEmail(
+      // Send rejection email (non-blocking)
+      this.emailService.sendBusinessRejectionEmail(
         application.applicantId,
         application.businessName,
         reviewDto.reviewNotes
-      );
+      ).catch(err => console.error('Failed to send rejection email in background:', err));
+
+      this.auditService.logAction({
+        action: AuditAction.REJECT_BUSINESS,
+        userId: reviewer.id,
+        userEmail: reviewer.email || 'Unknown',
+        userRole: reviewer.role || 'ADMIN',
+        target: application.businessName,
+        details: { applicationId, reason: reviewDto.reviewNotes },
+      });
+
     }
 
     return {
       message:
-        reviewDto.status === 'approved'
+        application.status === 'approved'
           ? 'Business application approved successfully'
           : 'Business application has been rejected',
       application: {
@@ -568,25 +616,10 @@ export class BusinessService {
       const suffix = `${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`;
       const databaseName = `${slug}_${suffix}`.slice(0, 63);
 
-      // Atomically reserve the database name
-      const reservation = await this.businessModel.findOneAndUpdate(
-        { databaseName },
-        {
-          $setOnInsert: {
-            databaseName,
-            // Add a temporary flag to identify this as a reservation
-            _isReservation: true,
-            createdAt: new Date(),
-          },
-        },
-        {
-          upsert: true,
-          new: true,
-          lean: true,
-        }
-      );
+      // Just check if it's available, no need to upsert and create dup keys
+      const existing = await this.businessModel.findOne({ databaseName });
 
-      if (reservation) {
+      if (!existing) {
         return databaseName;
       }
     }

@@ -68,6 +68,8 @@ export class BusinessApplicationResponseDto {
       website: 'https://techsolutions.com',
       phone: '+1-555-0123',
       applicantId: '615f2e0a6c6d5c0e1a1e4a01',
+      applicantEmail: 'john@example.com',
+      applicantName: 'John Doe',
       status: 'pending',
       createdAt: '2024-02-17T16:30:00.000Z',
     },
@@ -79,6 +81,8 @@ export class BusinessApplicationResponseDto {
     website?: string;
     phone: string;
     applicantId: string;
+    applicantEmail?: string;
+    applicantName?: string;
     status: string;
     createdAt: Date;
   };

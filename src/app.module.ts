@@ -4,6 +4,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
 import { BusinessModule } from '@/business/business.module';
+import { EmailModule } from '@/email/email.module';
+import { AuditModule } from '@/audit/audit.module';
+import { NotificationsModule } from '@/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -29,6 +32,9 @@ import { BusinessModule } from '@/business/business.module';
 
     AuthModule,
     BusinessModule,
+    EmailModule,
+    AuditModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [],
