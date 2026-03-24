@@ -88,6 +88,11 @@ export class BusinessController {
     @Body() createApplicationDto: CreateBusinessApplicationDto,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessApplicationResponseDto> {
+    console.log('🔐 submitBusinessApplication - Current User:', {
+      id: user?.id,
+      email: user?.email,
+      role: user?.role,
+    });
     return this.businessService.submitBusinessApplication(
       createApplicationDto,
       user.id
@@ -162,7 +167,7 @@ export class BusinessController {
     return this.businessService.reviewBusinessApplication(
       id,
       reviewDto,
-      user.id
+      user
     );
   }
 

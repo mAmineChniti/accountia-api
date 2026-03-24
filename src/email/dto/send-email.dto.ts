@@ -1,0 +1,85 @@
+import { IsEmail, IsString, IsEnum, IsNotEmpty } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export enum EmailType {
+  BUSINESS_APPROVAL = 'business_approval',
+  BUSINESS_REJECTION = 'business_rejection',
+}
+
+export class SendEmailDto {
+  @ApiProperty({
+    description: 'Recipient email address',
+    example: 'applicant@example.com',
+  })
+  @IsEmail()
+  @IsNotEmpty()
+  to: string;
+
+  @ApiProperty({
+    description: 'Email subject',
+    example: 'Your Business Application Has Been Approved',
+  })
+  @IsString()
+  @IsNotEmpty()
+  subject: string;
+
+  @ApiProperty({
+    description: 'HTML email content',
+    example: '<html><body>Your business has been approved</body></html>',
+  })
+  @IsString()
+  @IsNotEmpty()
+  html: string;
+
+  @ApiProperty({
+    description: 'Plain text email content',
+    example: 'Your business has been approved',
+  })
+  @IsString()
+  @IsNotEmpty()
+  text: string;
+
+  @ApiProperty({
+    enum: EmailType,
+    description: 'Type of email being sent',
+    example: EmailType.BUSINESS_APPROVAL,
+  })
+  @IsEnum(EmailType)
+  @IsNotEmpty()
+  type: EmailType;
+
+  @ApiProperty({
+    description: 'Metadata for email tracking',
+    example: {
+      businessName: 'Acme Corp',
+      applicantEmail: 'applicant@example.com',
+    },
+  })
+  metadata?: {
+    businessName?: string;
+    applicantEmail?: string;
+    [key: string]: unknown;
+  };
+}
+
+export class SendEmailResponseDto {
+  @ApiProperty({
+    description: 'Whether email was sent successfully',
+    example: true,
+  })
+  success: boolean;
+
+  @ApiProperty({
+    description: 'Email service message ID (optional)',
+    example: 'msg_xyz123',
+    required: false,
+  })
+  messageId?: string;
+
+  @ApiProperty({
+    description: 'Error message if sending failed',
+    example: 'SMTP connection failed',
+    required: false,
+  })
+  error?: string;
+}
