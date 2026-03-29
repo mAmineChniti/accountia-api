@@ -36,7 +36,10 @@ export class NotificationsController {
    * so we accept the token as a query param instead.
    */
   @Sse('sse')
-  async stream(@Query('token') tokenParam?: string): Promise<Observable<MessageEvent>> {
+  async stream(
+    @Query('token') tokenParam?: string,
+    @Query('businessId') businessIdParam?: string,
+  ): Promise<Observable<MessageEvent>> {
     if (!tokenParam) {
       throw new UnauthorizedException('Missing token');
     }
@@ -49,18 +52,24 @@ export class NotificationsController {
     }
 
     const user = await this.userModel.findById(payload.sub).lean();
-    if (!user || (user.role !== Role.PLATFORM_OWNER && user.role !== Role.PLATFORM_ADMIN)) {
+    
+    // Admins or Business Owners
+    if (!user || (![Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN].includes(user.role as Role))) {
       throw new UnauthorizedException('Insufficient role');
     }
 
-    return this.notificationsService.getEventStream();
+    // Business owners get a stream filtered by their businessId
+    const isBusinessOwner = [Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN].includes(user.role as Role);
+    const filterBusinessId = isBusinessOwner ? (businessIdParam || undefined) : undefined;
+
+    return this.notificationsService.getEventStream(filterBusinessId);
   }
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
-  async getRecent() {
-    const notifications = await this.notificationsService.getRecent();
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
+  async getRecent(@Query('businessId') businessId?: string) {
+    const notifications = await this.notificationsService.getRecent(businessId);
     return {
       notifications: notifications.map((n: any) => ({
         id: n._id.toString(),
@@ -76,7 +85,7 @@ export class NotificationsController {
 
   @Patch(':id/read')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
   async markAsRead(@Param('id') id: string) {
     await this.notificationsService.markAsRead(id);
     return { message: 'Notification marked as read' };
@@ -84,9 +93,9 @@ export class NotificationsController {
 
   @Patch('read-all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
-  async markAllAsRead() {
-    await this.notificationsService.markAllAsRead();
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
+  async markAllAsRead(@Query('businessId') businessId?: string) {
+    await this.notificationsService.markAllAsRead(businessId);
     return { message: 'All notifications marked as read' };
   }
 }

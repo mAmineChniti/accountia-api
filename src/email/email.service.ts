@@ -218,6 +218,46 @@ export class EmailService {
   }
 
   /**
+   * Send onboarding email for a new business client
+   */
+  async sendClientOnboardingEmail(
+    to: string,
+    clientName: string,
+    businessName: string,
+    password: string
+  ): Promise<SendEmailResponseDto> {
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+        <h2 style="color: #2563eb;">Welcome to Accountia!</h2>
+        <p>Dear ${clientName},</p>
+        <p>You have been onboarded as a client for <strong>${businessName}</strong> on Accountia.</p>
+        <p>You can now log in to view and manage your invoices using the following credentials:</p>
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 5px 0;"><strong>Email:</strong> ${to}</p>
+          <p style="margin: 5px 0;"><strong>Password:</strong> <code style="background: #e5e7eb; padding: 2px 4px; border-radius: 4px;">${password}</code></p>
+        </div>
+        <p>Please change your password after your first login for security reasons.</p>
+        <a href="${this.configService.get('FRONTEND_URL')}/login" 
+           style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin-top: 20px;">
+           Go to Login
+        </a>
+        <br/><br/>
+        <p>Best regards,<br/>The Accountia Team</p>
+      </div>
+    `;
+    const text = `Welcome ${clientName}! You have been added as a client for ${businessName}. Your credentials: Email: ${to}, Password: ${password}. Log in at Accountia.`;
+
+    return this.sendEmail({
+      to,
+      subject: `Welcome to Accountia - Your Client Account for ${businessName}`,
+      html,
+      text,
+      type: EmailType.BUSINESS_APPROVAL,
+      metadata: { businessName, applicantEmail: to },
+    });
+  }
+
+  /**
    * Test email sending (for debugging)
    */
   async testEmail(to: string): Promise<SendEmailResponseDto> {

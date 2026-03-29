@@ -7,9 +7,14 @@ import { BusinessModule } from '@/business/business.module';
 import { EmailModule } from '@/email/email.module';
 import { AuditModule } from '@/audit/audit.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
+import { ChatModule } from '@/chat/chat.module';
+import { InvoicesModule } from '@/invoices/invoices.module';
+
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
@@ -35,6 +40,8 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     EmailModule,
     AuditModule,
     NotificationsModule,
+    ChatModule,
+    InvoicesModule,
   ],
   controllers: [],
   providers: [],
