@@ -3,9 +3,11 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -20,17 +22,21 @@ import {
 import { BusinessService } from '@/business/business.service';
 import {
   CreateBusinessApplicationDto,
+  BusinessApplicationResponseDto,
   ReviewBusinessApplicationDto,
 } from '@/business/dto/business-application.dto';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
-import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
+import {
+  AssignBusinessUserDto,
+  OnboardClientDto,
+  UpdateClientDto,
+  BusinessUserResponseDto,
+} from '@/business/dto/business-user.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
 } from '@/business/dto/business-response.dto';
-import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
-import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -97,6 +103,59 @@ export class BusinessController {
       createApplicationDto,
       user.id
     );
+  }
+
+  /* 
+  @Get(':id/invoices')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all invoices for a business',
+    description: 'Retrieve invoices. Strictly isolated for clients.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  async getBusinessInvoices(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload,
+    @Query('clientId') clientId?: string
+  ) {
+    return this.businessService.getBusinessInvoices(id, user.id, user.role, clientId);
+  }
+  */
+
+  @Post('setup')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BUSINESS_OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Directly setup a business profile (Business Owners only)',
+    description:
+      'Allow users with the BUSINESS_OWNER role to create their business profile directly if they do not have one yet.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Business profile created successfully',
+    type: BusinessResponseDto,
+  })
+  async setupInitialBusiness(
+    @Body() setupDto: CreateBusinessApplicationDto,
+    @CurrentUser() user: UserPayload
+  ): Promise<BusinessResponseDto> {
+    return this.businessService.setupInitialBusiness(setupDto, user.id);
+  }
+
+  @Post('auto-provision')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.BUSINESS_OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Auto-provision a business for an approved owner',
+    description: 'Silently links or creates a business for an approved BUSINESS_OWNER.',
+  })
+  async autoProvisionBusiness(
+    @CurrentUser() user: UserPayload
+  ): Promise<{ businessId: string }> {
+    return this.businessService.autoProvisionBusiness(user.id);
   }
 
   @Get('applications')
@@ -463,6 +522,143 @@ export class BusinessController {
       userId,
       user.id,
       user.role
+    );
+  }
+
+  @Post(':id/onboard-client')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Onboard a new client for a business',
+    description:
+      'Create a new client user account and link it to the business. Only accessible by business owners.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Client onboarded successfully',
+    type: BusinessUserResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid client data or already assigned',
+  })
+  async onboardClient(
+    @Param('id') id: string,
+    @Body() onboardDto: OnboardClientDto,
+    @CurrentUser() user: UserPayload
+  ): Promise<BusinessUserResponseDto> {
+    return this.businessService.onboardClient(
+      id,
+      onboardDto,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get(':id/clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all clients for a business',
+    description:
+      'Retrieve all users linked to this business with the role client. Only accessible by business owners.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Clients retrieved successfully',
+  })
+  async getBusinessClients(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; clients: any[] }> {
+    return this.businessService.getBusinessClients(id, user.id, user.role);
+  }
+
+  @Patch(':id/clients/:clientId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Update a client profile and billing info',
+    description: 'Update user data and billing fields for a specific client.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiParam({ name: 'clientId', description: 'Client User ID' })
+  async updateClient(
+    @Param('id') id: string,
+    @Param('clientId') clientId: string,
+    @Body() updateClientDto: UpdateClientDto,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.updateClient(
+      id,
+      clientId,
+      updateClientDto,
+      user.id,
+      user.role
+    );
+  }
+
+  @Delete(':id/clients/:clientId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Remove a client from the business',
+    description: 'Unlink a client from this business.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiParam({ name: 'clientId', description: 'Client User ID' })
+  async deleteClient(
+    @Param('id') id: string,
+    @Param('clientId') clientId: string,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.deleteClient(id, clientId, user.id, user.role);
+  }
+
+  @Post(':id/import-financials')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @Roles(Role.BUSINESS_OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Import financial data from CSV' })
+  async importFinancials(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload
+  ) {
+    // For now, we use the local path to accounting_data.csv provided by the user
+    const csvPath = 'C:\\Users\\Asus\\Downloads\\accounting_data.csv';
+    return this.businessService.importFinancialData(
+      businessId,
+      csvPath,
+      user.id,
+      user.role as any
+    );
+  }
+
+  @Get(':id/managed-financials')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @Roles(Role.BUSINESS_OWNER, Role.CLIENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get financial data for managed clients' })
+  async getManagedFinancials(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload,
+    @Query('clientId') clientId?: string
+  ) {
+    return this.businessService.getManagedFinancials(
+      businessId,
+      user.id,
+      user.role as any,
+      clientId
     );
   }
 }

@@ -98,6 +98,15 @@ export class User {
   bannedReason?: string;
 
   @Prop()
+  address?: string;
+
+  @Prop()
+  vatNumber?: string;
+
+  @Prop()
+  iban?: string;
+
+  @Prop()
   createdAt: Date;
 
   @Prop()
