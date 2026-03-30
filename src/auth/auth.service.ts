@@ -33,7 +33,7 @@ import {
   PrivateUserDto,
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
-import { EmailService } from '@/auth/email.service';
+import { EmailService } from '@/email/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 import { Role } from '@/auth/enums/role.enum';
 import { RoleResponseDto } from '@/auth/dto/role-response.dto';

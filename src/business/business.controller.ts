@@ -661,4 +661,20 @@ export class BusinessController {
       clientId
     );
   }
+
+  @Get(':id/dashboard')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @Roles(Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get business dashboard statistics' })
+  async getBusinessDashboard(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.getBusinessDashboard(
+      businessId,
+      user.id,
+      user.role as any
+    );
+  }
 }

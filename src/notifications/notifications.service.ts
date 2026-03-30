@@ -13,6 +13,7 @@ export interface NotificationEvent {
   message: string;
   payload: Record<string, any>;
   targetBusinessId?: string;
+  targetUserEmail?: string;
   createdAt: Date;
 }
 
@@ -30,12 +31,14 @@ export class NotificationsService {
     message: string;
     payload?: Record<string, any>;
     targetBusinessId?: string;
+    targetUserEmail?: string;
   }): Promise<void> {
     const notification = new this.notificationModel({
       type: data.type,
       message: data.message,
       payload: data.payload ?? {},
       targetBusinessId: data.targetBusinessId,
+      targetUserEmail: data.targetUserEmail,
       isRead: false,
     });
     const saved = await notification.save();
@@ -47,28 +50,36 @@ export class NotificationsService {
       message: saved.message,
       payload: saved.payload,
       targetBusinessId: saved.targetBusinessId,
+      targetUserEmail: saved.targetUserEmail,
       createdAt: saved.createdAt,
     });
   }
 
   /**
    * Returns an SSE-compatible Observable for the controller.
-   * If businessId is provided, only sends events targeted to that business (or global admin events).
+   * If businessId or userEmail is provided, only sends events targeted to that business/user.
    */
-  getEventStream(businessId?: string): Observable<MessageEvent> {
+  getEventStream(businessId?: string, userEmail?: string): Observable<MessageEvent> {
     return this.eventSubject.pipe(
       (source) => new Observable<MessageEvent>((observer) => {
         const subscription = source.subscribe({
           next: (event) => {
-            // If businessId provided → only deliver events for this business
+            // Logic:
+            // 1. If businessId provided: deliver if event matched businessId
+            // 2. If userEmail provided: deliver if event matched userEmail
+            // 3. Admin (no businessId/userEmail): deliver if NO targetBusinessId and NO targetUserEmail
+            
             if (businessId) {
               if (event.targetBusinessId === businessId) {
                 observer.next({ data: event } as MessageEvent);
               }
-              // skip events without targetBusinessId (admin events)
+            } else if (userEmail) {
+              if (event.targetUserEmail === userEmail) {
+                observer.next({ data: event } as MessageEvent);
+              }
             } else {
-              // Admin: only deliver events WITHOUT targetBusinessId
-              if (!event.targetBusinessId) {
+              // Admin: global events
+              if (!event.targetBusinessId && !event.targetUserEmail) {
                 observer.next({ data: event } as MessageEvent);
               }
             }
@@ -81,12 +92,15 @@ export class NotificationsService {
     );
   }
 
-  async getUnread(businessId?: string): Promise<Notification[]> {
+  async getUnread(businessId?: string, userEmail?: string): Promise<Notification[]> {
     const filter: any = { isRead: false };
     if (businessId) {
       filter.targetBusinessId = businessId;
+    } else if (userEmail) {
+      filter.targetUserEmail = userEmail;
     } else {
       filter.targetBusinessId = { $exists: false }; // Admins see global
+      filter.targetUserEmail = { $exists: false };
     }
     
     return this.notificationModel
@@ -97,12 +111,15 @@ export class NotificationsService {
       .exec() as unknown as Notification[];
   }
 
-  async getRecent(businessId?: string): Promise<Notification[]> {
+  async getRecent(businessId?: string, userEmail?: string): Promise<Notification[]> {
     const filter: any = {};
     if (businessId) {
       filter.targetBusinessId = businessId;
+    } else if (userEmail) {
+      filter.targetUserEmail = userEmail;
     } else {
       filter.targetBusinessId = { $exists: false }; // Admins see global
+      filter.targetUserEmail = { $exists: false };
     }
 
     return this.notificationModel
@@ -117,12 +134,15 @@ export class NotificationsService {
     await this.notificationModel.findByIdAndUpdate(id, { isRead: true });
   }
 
-  async markAllAsRead(businessId?: string): Promise<void> {
+  async markAllAsRead(businessId?: string, userEmail?: string): Promise<void> {
     const filter: any = { isRead: false };
     if (businessId) {
       filter.targetBusinessId = businessId;
+    } else if (userEmail) {
+      filter.targetUserEmail = userEmail;
     } else {
       filter.targetBusinessId = { $exists: false };
+      filter.targetUserEmail = { $exists: false };
     }
     await this.notificationModel.updateMany(filter, { isRead: true });
   }

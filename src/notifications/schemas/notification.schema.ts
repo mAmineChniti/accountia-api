@@ -8,6 +8,7 @@ export enum NotificationType {
   USER_BANNED = 'USER_BANNED',
   INVOICE_PAID = 'INVOICE_PAID',
   INVOICE_OVERDUE = 'INVOICE_OVERDUE',
+  INVOICE_REMINDED = 'INVOICE_REMINDED',
 }
 
 @Schema({ timestamps: true, collection: 'notifications' })
@@ -20,6 +21,9 @@ export class Notification extends Document {
 
   @Prop({ type: String, required: false })
   targetBusinessId?: string; // If set, this notification is targeted specifically to a business owner
+
+  @Prop({ type: String, required: false })
+  targetUserEmail?: string; // If set, this notification is targeted to a specific user (e.g. managed client)
 
   @Prop({ type: Object, default: {} })
   payload: Record<string, any>;
@@ -34,3 +38,4 @@ export class Notification extends Document {
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 NotificationSchema.index({ isRead: 1, createdAt: -1 });
 NotificationSchema.index({ targetBusinessId: 1, createdAt: -1 });
+NotificationSchema.index({ targetUserEmail: 1, createdAt: -1 });

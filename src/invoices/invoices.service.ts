@@ -14,7 +14,7 @@ import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
 import * as crypto from 'crypto';
-import { EmailService } from '@/auth/email.service';
+import { EmailService } from '@/email/email.service';
 import { BusinessService } from '@/business/business.service';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
@@ -110,6 +110,35 @@ export class InvoicesService {
     try {
       await invoice.save();
       console.log('[InvoicesService.createInvoice] ✅ Invoice saved to DB:', invoice._id);
+      
+      // If status is not DRAFT, trigger email notification immediately
+      if (invoice.status !== InvoiceStatus.DRAFT) {
+        invoice.sentAt = new Date();
+        await invoice.save();
+        
+        const business = await this.businessService.findOne(businessOwnerId).catch(() => null);
+        const businessName = business?.name || 'Accountia Professional';
+
+        this.emailService.sendInvoiceNotification(
+          invoice.clientEmail,
+          invoice.invoiceNumber,
+          invoice.total,
+          invoice.currency || 'TND',
+          invoice.dueDate,
+          businessName,
+        ).catch(err => console.error('Failed to send invoice notification on create:', err));
+        
+        // Also send confirmation to BO
+        this.emailService.sendInvoiceSentConfirmation(
+          businessOwnerId,
+          invoice.invoiceNumber,
+          invoice.clientName,
+          invoice.clientEmail,
+          invoice.total,
+          invoice.currency || 'TND',
+        ).catch(err => console.error('Failed to send BO confirmation on create:', err));
+      }
+
     } catch (error: any) {
       console.error('[InvoicesService.createInvoice] ❌ Error saving invoice:', error);
       if (error.code === 11000) {
@@ -170,11 +199,24 @@ export class InvoicesService {
     const total = await this.invoiceModel.countDocuments(query);
     console.log(`[InvoicesService.getInvoicesByBusinessId] Found ${total} total invoices`);
 
+    const now = new Date();
     const invoices = await this.invoiceModel
       .find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
+
+    // Dynamic update: If an invoice is SENT/PENDING but the dueDate has passed, mark it OVERDUE
+    for (const inv of invoices) {
+      if (
+        (inv.status === InvoiceStatus.SENT || inv.status === InvoiceStatus.PENDING) &&
+        inv.dueDate < now
+      ) {
+        inv.status = InvoiceStatus.OVERDUE;
+        await inv.save();
+        console.log(`[InvoicesService.getInvoicesByBusinessId] Dynamic Status Update: Invoice ${inv.invoiceNumber} marked as OVERDUE`);
+      }
+    }
 
     console.log(`[InvoicesService.getInvoicesByBusinessId] Returning ${invoices.length} invoices for page ${page}`);
 
@@ -453,46 +495,159 @@ export class InvoicesService {
   }
 
   /**
-   * Cron Job to automatically mark invoices as OVERDUE
+   * Active ou désactive les rappels pour une facture spécifique
+   */
+  async toggleInvoiceReminders(id: string, businessOwnerId: string, muted: boolean): Promise<InvoiceResponseDto> {
+    const invoice = await this.invoiceModel.findById(id);
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
+      throw new ForbiddenException('You do not have access to this invoice');
+    }
+
+    invoice.remindersMuted = muted;
+    await invoice.save();
+
+    return this.formatInvoiceResponse(invoice);
+  }
+
+  /**
+   * Envoie manuellement un rappel de paiement
+   */
+  async sendManualReminder(id: string, businessOwnerId: string): Promise<InvoiceResponseDto> {
+    const invoice = await this.invoiceModel.findById(id);
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
+      throw new ForbiddenException('You do not have access to this invoice');
+    }
+
+    // Autorisé pour SENT, PENDING, OVERDUE
+    if ([InvoiceStatus.DRAFT, InvoiceStatus.PAID].includes(invoice.status as any)) {
+      throw new BadRequestException('Can only remind for sent, pending or overdue invoices');
+    }
+
+    const business = await this.businessService.findOne(businessOwnerId).catch(() => null);
+    const businessName = business?.name || 'Accountia Professional';
+
+    // 1. Send Email
+    await this.emailService.sendInvoiceReminderEmail(
+      invoice.clientEmail,
+      invoice.clientName,
+      businessName,
+      invoice.invoiceNumber,
+      `${invoice.total.toFixed(2)} ${invoice.currency}`,
+      invoice.dueDate.toLocaleDateString(),
+      0 // 0 means manual reminder
+    ).catch(err => console.error('Failed to send manual reminder email:', err));
+
+    // 2. Create In-App Notification for Client
+    await this.notificationsService.createNotification({
+      type: NotificationType.INVOICE_REMINDED,
+      message: `Reminder: Invoice ${invoice.invoiceNumber} from ${businessName} is awaiting payment.`,
+      targetUserEmail: invoice.clientEmail,
+      payload: {
+        invoiceId: invoice._id.toString(),
+        businessName,
+        amount: invoice.total,
+      }
+    }).catch(err => console.error('Failed to create in-app notification for client:', err));
+
+    // 3. Record in history
+    if (!invoice.reminderHistory) invoice.reminderHistory = [];
+    invoice.reminderHistory.push({
+      sentAt: new Date(),
+      intervalDays: 0, // Manual
+    });
+    await invoice.save();
+
+    return this.formatInvoiceResponse(invoice);
+  }
+
+  /**
+   * Cron Job to automatically mark invoices as OVERDUE and send reminders
    * Runs every day at midnight.
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleOverdueInvoices() {
-    console.log('[Cron Job] Checking for overdue invoices...');
+    console.log('[Cron Job] Starting daily overdue invoice check...');
     const now = new Date();
     
-    // Find all invoices that are not PAID or DRAFT, and past the due date
-    const overdueInvoices = await this.invoiceModel.find({
+    // 1. Sync Status: Mark PENDING/SENT invoices as OVERDUE if dueDate is passed
+    const justOverdueInvoices = await this.invoiceModel.find({
       status: { $in: [InvoiceStatus.PENDING, InvoiceStatus.SENT] },
       dueDate: { $lt: now },
-      $or: [
-        { deletedAt: { $exists: false } },
-        { deletedAt: null }
-      ]
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }]
     });
 
-    if (overdueInvoices.length === 0) {
-      console.log('[Cron Job] No overdue invoices found.');
-      return;
-    }
-
-    console.log(`[Cron Job] Found ${overdueInvoices.length} overdue invoices. Updating...`);
-
-    for (const invoice of overdueInvoices) {
+    for (const invoice of justOverdueInvoices) {
       invoice.status = InvoiceStatus.OVERDUE;
       await invoice.save();
 
-      // Notify the business owner
+      // Notify owner in-app
       this.notificationsService.createNotification({
         type: NotificationType.INVOICE_OVERDUE,
-        message: `Warning: Invoice ${invoice.invoiceNumber} for ${invoice.clientName} is now OVERDUE.`,
+        message: `Status: Invoice ${invoice.invoiceNumber} for ${invoice.clientName} is now OVERDUE.`,
         targetBusinessId: invoice.businessOwnerId.toString(),
-        payload: {
-          invoiceId: invoice._id.toString(),
-          dueDate: invoice.dueDate,
-        }
-      }).catch(err => console.log('Error creating alert notification for overdue invoice', err));
+        payload: { invoiceId: invoice._id.toString(), dueDate: invoice.dueDate }
+      }).catch(err => console.log('Error creating alert notification', err));
     }
+
+    // 2. Automated Reminders: Check all OVERDUE invoices for 5, 10, 20 day intervals
+    const overdueInvoices = await this.invoiceModel.find({
+      status: InvoiceStatus.OVERDUE,
+      remindersMuted: { $ne: true },
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }]
+    });
+
+    for (const invoice of overdueInvoices) {
+      const business = await this.businessService.findOne(invoice.businessOwnerId.toString()).catch(() => null);
+      
+      // Skip if business exists but reminders are explicitly disabled
+      if (business?.automationSettings?.remindersEnabled === false) continue;
+
+      const diffTime = Math.abs(now.getTime() - new Date(invoice.dueDate).getTime());
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      // Professional intervals: 5, 10, 20
+      const targetIntervals = [5, 10, 20];
+      const intervalToRemind = targetIntervals.find(i => diffDays >= i);
+
+      if (intervalToRemind) {
+        // Check if reminder was already sent for this specific interval
+        const alreadySent = invoice.reminderHistory?.some(h => h.intervalDays === intervalToRemind);
+        
+        if (!alreadySent) {
+          console.log(`[Cron Job] Sending ${intervalToRemind}-day reminder for invoice ${invoice.invoiceNumber}`);
+          
+          await this.emailService.sendInvoiceReminderEmail(
+            invoice.clientEmail,
+            invoice.clientName,
+            business?.name || 'Accountia Business',
+            invoice.invoiceNumber,
+            `${invoice.total.toFixed(2)} ${invoice.currency}`,
+            invoice.dueDate.toLocaleDateString(),
+            intervalToRemind
+          ).catch(err => console.error(`Failed to send ${intervalToRemind}-day reminder:`, err));
+
+          // Record history
+          if (!invoice.reminderHistory) invoice.reminderHistory = [];
+          invoice.reminderHistory.push({
+            sentAt: new Date(),
+            intervalDays: intervalToRemind
+          });
+          await invoice.save();
+        }
+      }
+    }
+    
+    console.log('[Cron Job] Daily overdue invoice check completed.');
   }
 
   /**
@@ -524,6 +679,11 @@ export class InvoicesService {
       currency: invoice.currency,
       sentAt: invoice.sentAt,
       paidAt: invoice.paidAt,
+      remindersMuted: invoice.remindersMuted,
+      reminderHistory: invoice.reminderHistory ? invoice.reminderHistory.map(h => ({
+        sentAt: h.sentAt,
+        intervalDays: h.intervalDays,
+      })) : [],
       createdAt: invoice.createdAt || new Date(),
       updatedAt: invoice.updatedAt || new Date(),
     };

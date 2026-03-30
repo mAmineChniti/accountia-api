@@ -36,7 +36,7 @@ import { BusinessApplicationResponseDto } from '@/business/dto/business-applicat
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
-import { EmailService } from '@/auth/email.service';
+import { EmailService } from '@/email/email.service';
 import { Transaction, TransactionDocument } from '@/business/schemas/transaction.schema';
 import { Invoice, InvoiceDocument, InvoiceStatus } from '@/business/schemas/invoice.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
@@ -94,10 +94,14 @@ export class BusinessService {
     const savedApplication = await application.save();
 
     // Send email notification about application submission (non-blocking)
-    this.emailService.sendBusinessApplicationEmail(
-      userId,
-      savedApplication.businessName
-    ).catch(err => console.error('Failed to send application email in background:', err));
+    const applicant = await this.userModel.findById(userId).catch(() => null);
+    if (applicant) {
+      this.emailService.sendBusinessApplicationEmail(
+        applicant.email,
+        `${applicant.firstName} ${applicant.lastName}`,
+        savedApplication.businessName
+      ).catch(err => console.error('Failed to send application email in background:', err));
+    }
 
     // Send real-time admin notification (non-blocking)
     this.notificationsService.createNotification({
@@ -210,10 +214,14 @@ export class BusinessService {
       }
 
       // Send approval email (non-blocking)
-      this.emailService.sendBusinessApprovalEmail(
-        application.applicantId,
-        approvedBusinessName
-      ).catch(err => console.error('Failed to send approval email in background:', err));
+      const appUser = await this.userModel.findById(application.applicantId).catch(() => null);
+      if (appUser) {
+        this.emailService.sendBusinessApprovalEmail(
+          appUser.email,
+          `${appUser.firstName} ${appUser.lastName}`,
+          approvedBusinessName
+        ).catch(err => console.error('Failed to send approval email in background:', err));
+      }
 
       this.auditService.logAction({
         action: AuditAction.APPROVE_BUSINESS,
@@ -228,11 +236,15 @@ export class BusinessService {
       await application.save();
 
       // Send rejection email (non-blocking)
-      this.emailService.sendBusinessRejectionEmail(
-        application.applicantId,
-        application.businessName,
-        reviewDto.reviewNotes
-      ).catch(err => console.error('Failed to send rejection email in background:', err));
+      const appUser = await this.userModel.findById(application.applicantId).catch(() => null);
+      if (appUser) {
+        this.emailService.sendBusinessRejectionEmail(
+          appUser.email,
+          `${appUser.firstName} ${appUser.lastName}`,
+          application.businessName,
+          reviewDto.reviewNotes ?? 'No specific reason provided'
+        ).catch(err => console.error('Failed to send rejection email in background:', err));
+      }
 
       this.auditService.logAction({
         action: AuditAction.REJECT_BUSINESS,
@@ -346,6 +358,7 @@ export class BusinessService {
         status: savedBusiness.status as string,
         isActive: savedBusiness.isActive,
         tags: savedBusiness.tags || [],
+        automationSettings: savedBusiness.automationSettings,
         createdAt: savedBusiness.createdAt,
         updatedAt: savedBusiness.updatedAt,
       },
@@ -500,6 +513,7 @@ export class BusinessService {
         isActive: business.isActive,
         logo: business.logo,
         tags: business.tags,
+        automationSettings: business.automationSettings,
         createdAt: business.createdAt,
         updatedAt: business.updatedAt,
       },
@@ -536,6 +550,7 @@ export class BusinessService {
         isActive: updatedBusiness.isActive,
         logo: updatedBusiness.logo,
         tags: updatedBusiness.tags,
+        automationSettings: updatedBusiness.automationSettings,
         createdAt: updatedBusiness.createdAt,
         updatedAt: updatedBusiness.updatedAt,
       },
@@ -973,9 +988,23 @@ export class BusinessService {
       clientUser.email,
       `${clientUser.firstName} ${clientUser.lastName}`,
       business.name,
-      displayPassword,
-      clientUser.email
+      displayPassword
     ).catch(err => console.error('Failed to send onboarding email:', err));
+
+    // Sync to tenant database
+    try {
+      await this.tenantConnectionService.upsertTenantUser(
+        business.databaseName,
+        {
+          userId: clientUser._id.toString(),
+          role: BusinessUserRole.CLIENT,
+          assignedBy: userId,
+          isActive: true,
+        }
+      );
+    } catch (err) {
+      console.error('Failed to sync client to tenant database:', err);
+    }
 
 
     return {
@@ -1421,6 +1450,104 @@ export class BusinessService {
         paidAt: inv.paidAt,
         notes: inv.notes,
       })),
+    };
+  }
+
+  async getBusinessDashboard(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<any> {
+    const business = await this.businessModel.findById(businessId).select('databaseName');
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    await this.checkBusinessAccess(businessId, userId, userRole);
+
+    const now = new Date();
+    
+    // 1. Total Revenue (Current Month) - Sum of PAID/SENT invoices issues this month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    const currentMonthInvoices = await this.invoiceModel.find({
+      businessOwnerId: businessId,
+      issueDate: { $gte: startOfMonth, $lte: endOfMonth },
+      status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] }
+    });
+    
+    const totalRevenueCurrentMonth = currentMonthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
+    // 2. Invoice Statistics
+    const allInvoices = await this.invoiceModel.find({ businessOwnerId: businessId }).lean();
+    let totalInvoices = 0;
+    let paidInvoices = 0;
+    let pendingInvoices = 0;
+    let overdueInvoices = 0;
+
+    for (const inv of allInvoices) {
+      totalInvoices++;
+      if (inv.status === InvoiceStatus.PAID) paidInvoices++;
+      if (inv.status === InvoiceStatus.PENDING || inv.status === InvoiceStatus.SENT) pendingInvoices++;
+      if (inv.status === InvoiceStatus.OVERDUE) overdueInvoices++;
+    }
+
+    // 3. Active Clients Count
+    const activeClientsCount = await this.businessUserModel.countDocuments({
+      businessId,
+      role: BusinessUserRole.CLIENT,
+      isActive: true,
+    });
+
+    // 4. Revenue Trend Chart (12 months)
+    const trendData: { month: string; year: number; revenue: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      const monthInvoices = await this.invoiceModel.find({
+        businessOwnerId: businessId,
+        issueDate: { $gte: monthStart, $lte: monthEnd },
+        status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] }
+      });
+      
+      const revenue = monthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+      trendData.push({
+        month: d.toLocaleString('en-US', { month: 'short' }),
+        year: d.getFullYear(),
+        revenue
+      });
+    }
+
+    // 5. Recent Invoices
+    const recentInvoices = await this.invoiceModel
+      .find({ businessOwnerId: businessId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean();
+
+    return {
+      revenueCurrentMonth: totalRevenueCurrentMonth,
+      statistics: {
+        total: totalInvoices,
+        paid: paidInvoices,
+        pending: pendingInvoices,
+        overdue: overdueInvoices,
+      },
+      activeClients: activeClientsCount,
+      trendData,
+      recentInvoices: recentInvoices.map(inv => ({
+        id: inv._id.toString(),
+        invoiceNumber: inv.invoiceNumber,
+        clientName: inv.clientName,
+        total: inv.total,
+        status: inv.status,
+        issueDate: inv.issueDate,
+        dueDate: inv.dueDate,
+        currency: inv.currency
+      }))
     };
   }
 }

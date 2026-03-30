@@ -12,13 +12,14 @@ export class ChatController {
   async handleMessage(
     @Body() body: {
       query: string;
-      context?: string;
+      context?: string; // used for role override
+      systemContext?: any; // used for passing data like financial stats
       history?: Array<{ role: string; content: string }>;
     },
     @CurrentUser() user: any,
   ) {
     const roleContext = body.context || user.role;
     const history = body.history || [];
-    return this.chatService.getAiResponse(roleContext, body.query, history);
+    return this.chatService.getAiResponse(roleContext, body.query, history, body.systemContext);
   }
 }

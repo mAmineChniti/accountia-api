@@ -8,11 +8,13 @@ import { FlouciService } from './flouci.service';
 import { Invoice, InvoiceSchema } from '@/business/schemas/invoice.schema';
 import { AuthModule } from '@/auth/auth.module';
 import { BusinessModule } from '@/business/business.module';
+import { EmailModule } from '@/email/email.module';
 
 @Module({
   imports: [
     AuthModule,
     BusinessModule,
+    EmailModule,
     MongooseModule.forFeature([
       { name: Invoice.name, schema: InvoiceSchema },
     ]),

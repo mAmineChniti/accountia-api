@@ -119,7 +119,7 @@ export class ManagedInvoicesController {
       // 1. Fetch the invoice to check if it's PENDING and get the amount
       const invoice = await this.invoicesService.getInvoiceByClientEmailAndId(id, clientEmail);
       
-      if (invoice.status !== 'PENDING' && invoice.status !== 'SENT') {
+      if (invoice.status !== 'PENDING' && invoice.status !== 'SENT' && invoice.status !== 'OVERDUE') {
         return { success: false, error: 'Invoice is not pending payment' };
       }
 

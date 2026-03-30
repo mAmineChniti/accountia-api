@@ -91,6 +91,19 @@ export class Invoice {
   @Prop({ default: null })
   deletedAt?: Date;
 
+  @Prop({ default: false })
+  remindersMuted: boolean;
+
+  @Prop({
+    type: [{
+      sentAt: { type: Date, default: Date.now },
+      intervalDays: Number,
+    }],
+    _id: false,
+    default: [],
+  })
+  reminderHistory: { sentAt: Date; intervalDays: number }[];
+
   @Prop({ index: true })
   createdAt?: Date;
 

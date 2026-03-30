@@ -4,6 +4,9 @@ import { ApiProperty } from '@nestjs/swagger';
 export enum EmailType {
   BUSINESS_APPROVAL = 'business_approval',
   BUSINESS_REJECTION = 'business_rejection',
+  INVOICE_REMINDER = 'invoice_reminder',
+  SYSTEM = 'system',
+  ONBOARDING = 'onboarding',
 }
 
 export class SendEmailDto {

@@ -18,6 +18,7 @@ export enum InvoiceStatusDto {
   SENT = 'SENT',
   PAID = 'PAID',
   PENDING = 'PENDING',
+  OVERDUE = 'OVERDUE',
 }
 
 export class CreateInvoiceItemDto {

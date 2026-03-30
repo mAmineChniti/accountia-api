@@ -67,12 +67,13 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     role: string,
     query: string,
     history: Array<{ role: string; content: string }> = [],
+    systemContext?: any,
   ): Promise<AiResponse> {
     try {
       const response = await fetch(`${this.AI_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, query, history }),
+        body: JSON.stringify({ role, query, history, context: systemContext }),
       });
       const data = await response.json() as AiResponse;
       return data;

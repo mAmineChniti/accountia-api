@@ -27,6 +27,8 @@ export class InvoiceResponseDto {
   currency: string;
   sentAt?: Date;
   paidAt?: Date;
+  remindersMuted?: boolean;
+  reminderHistory?: { sentAt: Date; intervalDays: number }[];
   createdAt: Date;
   updatedAt: Date;
 }
