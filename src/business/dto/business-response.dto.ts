@@ -35,6 +35,10 @@ export class BusinessResponseDto {
     isActive: boolean;
     logo?: string;
     tags: string[];
+    automationSettings?: {
+      remindersEnabled: boolean;
+      reminderIntervals: number[];
+    };
     createdAt: Date;
     updatedAt: Date;
   };

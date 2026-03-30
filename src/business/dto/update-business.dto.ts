@@ -8,4 +8,11 @@ export class UpdateBusinessDto extends PartialType(CreateBusinessDto) {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  automationSettings?: {
+    remindersEnabled?: boolean;
+    reminderIntervals?: number[];
+  };
 }

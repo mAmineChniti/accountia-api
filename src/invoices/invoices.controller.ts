@@ -211,4 +211,46 @@ export class InvoicesController {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Active ou désactive les rappels pour une facture spécifique
+   * PATCH /business/:businessId/invoices/:id/reminders
+   */
+  @Patch(':id/reminders')
+  async toggleReminders(
+    @Param('businessId') businessId: string,
+    @Param('id') invoiceId: string,
+    @Body() body: { muted: boolean },
+    @Req() req: any,
+  ): Promise<{ success: boolean; data?: InvoiceResponseDto; error?: string }> {
+    try {
+      await this.businessService.checkBusinessAccess(businessId, req.user.id, req.user.role);
+
+      const invoice = await this.invoicesService.toggleInvoiceReminders(invoiceId, businessId, body.muted);
+      return { success: true, data: invoice };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Envoie manuellement un rappel de paiement
+   * POST /business/:businessId/invoices/:id/remind
+   */
+  @Post(':id/remind')
+  async sendReminder(
+    @Param('businessId') businessId: string,
+    @Param('id') invoiceId: string,
+    @Req() req: any,
+  ): Promise<{ success: boolean; data?: InvoiceResponseDto; error?: string }> {
+    try {
+      await this.businessService.checkBusinessAccess(businessId, req.user.id, req.user.role);
+
+      const invoice = await this.invoicesService.sendManualReminder(invoiceId, businessId);
+      return { success: true, data: invoice };
+    } catch (error: any) {
+      console.error('[InvoicesController.sendReminder] Error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
 }

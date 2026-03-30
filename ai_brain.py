@@ -66,37 +66,38 @@ Le JSON doit etre parfaitement valide.
 - link peut etre null si pas de lien pertinent
 - type est text, choices ou analysis""",
 
-    "BUSINESS_OWNER": """Tu es un conseiller financier expert pour Accountia Business, specialise dans la gestion des PME tunisiennes.
+    "BUSINESS_OWNER": """Tu es un conseiller financier expert (CFO virtuel) pour Accountia Business, specialise dans la gestion des PME tunisiennes.
 
 TON EXPERTISE :
-- Fiscalite tunisienne : TVA (19% standard, 7% reduit, 0% exonere), IS (Impot sur les Societes 25%), IRPP
-- Gestion de tresorerie, cash-flow, delai de recouvrement
-- Analyse de performance financiere et marge commerciale
-- Strategie de croissance pour PME
-- Facturation et recouvrement clients
+- Analyse de donnees financieres en temps reel (revenus, factures en retard)
+- Prevision (forecasting) des revenus sur 3 mois
+- Detection d'anomalies (chute de CA, ratio impayes eleve)
+- Fiscalite tunisienne : TVA (19% standard, 7% reduit, 0% exonere), IS (25%)
+- Strategie de croissance et optimisation de cash-flow
+
+GROUNDING RULES (CRITIQUE) :
+- Analyse UNIQUEMENT les donnees de 'context' fournies. 
+- Ne cite JAMAIS un chiffre qui n'est pas present ou derivable mathematiquement du contexte. 
+- Si on te demande une prevision, base-toi sur 'trendData'.
+- Si les donnees sont manquantes, dis-le poliment au lieu d'inventer.
 
 REGLES ABSOLUES :
-- Ne jamais inventer de donnees reelles (montants, noms de clients, numeros)
-- Donner des conseils bases sur les bonnes pratiques, pas sur des donnees fictives
-- Toujours proposer des options concretes et actionnables
-- Quand tu proposes plusieurs options, les mettre dans choices[]
-- Reponds TOUJOURS en francais, de facon professionnelle et precise
+- Analyse UNIQUEMENT les donnees de contexte fournies avec la requete. Informe-toi grace aux chiffres en directs fournis. Ne jamais inventer de chiffres financiers.
+- Pour les previsions (forecasts), base-toi sur la tendance (trendData) historique et donne des projections coherentes.
+- Si le taux de factures en retard (overdue) est eleve, alerte l'utilisateur et conseille d'activer les relances automatiques.
+- Reponds TOUJOURS en francais, de facon professionnelle, claire et structuree.
+- Utilise Markdown a l'interieur du champ 'response' (puces, gras) pour une lisibilite maximale.
 
 LIENS DISPONIBLES :
-- Dashboard : /dashboard/business
+- Relances automatiques : /dashboard/business
 - Mes clients : /dashboard/business/clients
-- Mes finances : /dashboard/business/financials
+- Analyser mes finances : /dashboard/business/financials
 
 FORMAT DE REPONSE STRICT - CRITIQUE:
 Retourne UNIQUEMENT du JSON valide. JAMAIS de texte avant ou apres le JSON.
 Si tu dois repondre, encapsule TOUT dans ce JSON:
-{"response": "Ta reponse ici", "choices": ["Option 1"], "link": {"text": "...", "url": "/dashboard/business"}, "type": "choices"}
-REGLE ABSOLUE: N'INCLUS AUCUN TEXTE EN DEHORS DU JSON.
-Pas de texte explicatif avant le JSON.
-Pas de phrase apres le JSON.
-Le JSON doit etre parfaitement valide.
-- choices doit etre rempli quand tu proposes plusieurs axes d analyse (max 4 options)
-- type est text, choices ou analysis pour les analyses detaillees""",
+{"response": "Ta reponse au format Markdown ici...", "choices": ["Analyser TVA", "Prevision MS+1"], "link": {"text": "Activer relances", "url": "/dashboard/business"}, "type": "analysis"}
+REGLE ABSOLUE: N'INCLUS AUCUN TEXTE EN DEHORS DU JSON. Le JSON doit etre parfaitement valide.""",
 
     "MANAGED_CLIENT": """Tu es un assistant simple et rassurant pour les clients d Accountia geres par un business owner.
 
@@ -326,7 +327,7 @@ def keyword_fallback(role: str, query: str) -> dict:
     return DEFAULT_RESPONSES.get(role, DEFAULT_RESPONSES["CLIENT"])
 
 
-def gemini_chat(role: str, query: str, history: list) -> dict:
+def gemini_chat(role: str, query: str, history: list, context: dict = None) -> dict:
     system_prompt = SYSTEM_PROMPTS.get(role, SYSTEM_PROMPTS["CLIENT"])
 
     contents = []
@@ -335,33 +336,34 @@ def gemini_chat(role: str, query: str, history: list) -> dict:
         role_label = "user" if msg.get("role") == "user" else "model"
         content_text = msg.get("content", "")
         
-        # If history is empty, it must start with a 'user' message
         if not contents:
             if role_label == "model":
                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text="Context initialization")]))
             contents.append(types.Content(role=role_label, parts=[types.Part.from_text(text=content_text)]))
         else:
-            # If the current role equals the last role, merge to avoid consecutive same-role messages
             if contents[-1].role == role_label:
-                # Merge the text of the new part with the last part
                 part = contents[-1].parts[0]
                 if part.text:
                     part.text += f"\n\n{content_text}"
             else:
                 contents.append(types.Content(role=role_label, parts=[types.Part.from_text(text=content_text)]))
 
-    # Before appending query, the history must end with 'model'
     if contents and contents[-1].role == "user":
         contents.append(types.Content(role="model", parts=[types.Part.from_text(text="Je suis à l'écoute.")]))
+
+    # Inject context if available
+    final_query = query
+    if context and bool(context):
+        context_str = json.dumps(context, ensure_ascii=False)
+        final_query = f"[SYSTEM CONTEXT: {context_str}]\n\nUser Message: {query}"
 
     contents.append(
         types.Content(
             role="user",
-            parts=[types.Part.from_text(text=query)]
+            parts=[types.Part.from_text(text=final_query)]
         )
     )
 
-    # Use GenerateContentConfig to properly set system_instruction on Gemini 2.0
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
     )
@@ -457,12 +459,13 @@ class AIHandler(BaseHTTPRequestHandler):
             role    = data.get("role", "CLIENT")
             query   = data.get("query", "")
             history = data.get("history", [])
+            context = data.get("context", None)
 
-            print(f"[AI] Role={role} | Query='{query[:80]}' | History={len(history)} msgs")
+            print(f"[AI] Role={role} | Query='{query[:80]}' | Context Given: {bool(context)}")
 
             try:
                 if USE_GEMINI:
-                    result = gemini_chat(role, query, history)
+                    result = gemini_chat(role, query, history, context)
                 else:
                     result = keyword_fallback(role, query)
             except Exception as e:

@@ -8,6 +8,7 @@ import {
   MessageEvent,
   Query,
   UnauthorizedException,
+  Req,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { JwtService } from '@nestjs/jwt';
@@ -52,24 +53,35 @@ export class NotificationsController {
     }
 
     const user = await this.userModel.findById(payload.sub).lean();
+    if (!user) throw new UnauthorizedException('User not found');
     
-    // Admins or Business Owners
-    if (!user || (![Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN].includes(user.role as Role))) {
+    // Admins, Business Owners, or Clients
+    const allowedRoles = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN, Role.CLIENT];
+    if (!allowedRoles.includes(user.role as Role)) {
       throw new UnauthorizedException('Insufficient role');
     }
 
-    // Business owners get a stream filtered by their businessId
     const isBusinessOwner = [Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN].includes(user.role as Role);
-    const filterBusinessId = isBusinessOwner ? (businessIdParam || undefined) : undefined;
+    const isClient = user.role === Role.CLIENT;
 
-    return this.notificationsService.getEventStream(filterBusinessId);
+    return this.notificationsService.getEventStream(
+      isBusinessOwner ? (businessIdParam || undefined) : undefined,
+      isClient ? user.email : undefined
+    );
   }
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
-  async getRecent(@Query('businessId') businessId?: string) {
-    const notifications = await this.notificationsService.getRecent(businessId);
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN, Role.CLIENT)
+  async getRecent(@Req() req: any, @Query('businessId') businessId?: string) {
+    const userRole = req.user.role;
+    const userEmail = req.user.email;
+
+    const isClient = userRole === Role.CLIENT;
+    const filterEmail = isClient ? userEmail : undefined;
+    const filterBusinessId = isClient ? undefined : businessId;
+
+    const notifications = await this.notificationsService.getRecent(filterBusinessId, filterEmail);
     return {
       notifications: notifications.map((n: any) => ({
         id: n._id.toString(),
@@ -85,7 +97,7 @@ export class NotificationsController {
 
   @Patch(':id/read')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN, Role.CLIENT)
   async markAsRead(@Param('id') id: string) {
     await this.notificationsService.markAsRead(id);
     return { message: 'Notification marked as read' };
@@ -93,9 +105,16 @@ export class NotificationsController {
 
   @Patch('read-all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
-  async markAllAsRead(@Query('businessId') businessId?: string) {
-    await this.notificationsService.markAllAsRead(businessId);
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN, Role.CLIENT)
+  async markAllAsRead(@Req() req: any, @Query('businessId') businessId?: string) {
+    const userRole = req.user.role;
+    const userEmail = req.user.email;
+
+    const isClient = userRole === Role.CLIENT;
+    const filterEmail = isClient ? userEmail : undefined;
+    const filterBusinessId = isClient ? undefined : businessId;
+
+    await this.notificationsService.markAllAsRead(filterBusinessId, filterEmail);
     return { message: 'All notifications marked as read' };
   }
 }
