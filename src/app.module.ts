@@ -4,6 +4,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import * as Joi from 'joi';
 import { AuthModule } from '@/auth/auth.module';
 import { BusinessModule } from '@/business/business.module';
+import { StatisticsModule } from '@/statistics/statistics.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { BusinessModule } from '@/business/business.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
+        ADMIN_EMAIL: Joi.string().email().required(),
+        ADMIN_PASSWORD: Joi.string().required(),
       }),
     }),
 
@@ -26,9 +30,11 @@ import { BusinessModule } from '@/business/business.module';
         uri: config.getOrThrow<string>('MONGO_URI'),
       }),
     }),
+    ScheduleModule.forRoot(),
 
     AuthModule,
     BusinessModule,
+    StatisticsModule,
   ],
   controllers: [],
   providers: [],

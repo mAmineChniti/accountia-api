@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -18,9 +18,13 @@ import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
 import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
 import { User, UserSchema } from '@/users/schemas/user.schema';
 
+import { AdminSeederService } from '@/auth/admin-seeder.service';
+import { StatisticsModule } from '@/statistics/statistics.module';
+
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    forwardRef(() => StatisticsModule),
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -40,6 +44,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     JwtStrategy,
     RefreshStrategy,
     GoogleStrategy,
+    AdminSeederService,
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
@@ -55,6 +60,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     RefreshStrategy,
     GoogleStrategy,
     RateLimitingService,
+    AdminSeederService,
     JwtAuthGuard,
     RefreshJwtGuard,
     AdminGuard,
@@ -63,4 +69,4 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     GoogleCallbackGuard,
   ],
 })
-export class AuthModule {}
+export class AuthModule { }

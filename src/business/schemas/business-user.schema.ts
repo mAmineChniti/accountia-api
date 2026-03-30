@@ -4,6 +4,7 @@ import { Document } from 'mongoose';
 export enum BusinessUserRole {
   OWNER = 'owner',
   ADMIN = 'admin',
+  CLIENT = 'client',
 }
 
 @Schema({ collection: 'business_users', timestamps: true })

@@ -27,12 +27,27 @@ export class Business {
 
   @Prop({ default: false })
   isActive: boolean;
+  
+  @Prop({ default: false })
+  _isReservation?: boolean;
 
   @Prop()
   logo?: string;
 
   @Prop([String])
   tags: string[];
+
+  @Prop({ type: Object, default: { currency: 'USD' } })
+  templateSettings: {
+    currency: string;
+    themeColor?: string;
+    fontFamily?: string;
+    companyName?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    logo?: string;
+  };
 
   createdAt: Date;
   updatedAt: Date;

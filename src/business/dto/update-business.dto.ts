@@ -8,4 +8,17 @@ export class UpdateBusinessDto extends PartialType(CreateBusinessDto) {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  templateSettings?: {
+    currency: string;
+    themeColor?: string;
+    fontFamily?: string;
+    companyName?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    logo?: string;
+  };
 }

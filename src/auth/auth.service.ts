@@ -72,6 +72,11 @@ type GoogleOAuthInitParams = {
   redirectUri?: string;
 };
 
+type GoogleStateNonceRecord = {
+  nonce: string;
+  expiresAt: Date;
+};
+
 type GoogleAuthCodeRecord = {
   code: string;
   payload: AuthResponseDto | TwoFactorChallengeResponse;
@@ -90,11 +95,6 @@ const getQrcode = async () => {
 
 @Injectable()
 export class AuthService {
-  static readonly TOKEN_EXPIRY_DURATIONS = {
-    accessMs: 15 * 60 * 1000, // 15 minutes
-    refreshMs: 7 * 24 * 60 * 60 * 1000, // 7 days
-  };
-
   private oauthIndexesInitialized = false;
 
   private static readonly GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
@@ -105,13 +105,18 @@ export class AuthService {
     'auth_google_oauth_codes';
   private static readonly LANG_PATTERN = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 
+  static readonly TOKEN_EXPIRY_DURATIONS = {
+    accessMs: 24 * 60 * 60 * 1000,   // 24h
+    refreshMs: 7 * 24 * 60 * 60 * 1000, // 7d
+  };
+
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
-  ) {}
+  ) { }
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
@@ -371,7 +376,9 @@ export class AuthService {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      accessTokenExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      accessTokenExpiresAt: new Date(
+        Date.now() + 24 * 60 * 60 * 1000
+      ).toISOString(),
       refreshTokenExpiresAt: new Date(
         Date.now() + 7 * 24 * 60 * 60 * 1000
       ).toISOString(),
@@ -387,6 +394,46 @@ export class AuthService {
         role: user.role,
       },
     };
+  }
+
+  async createClientUser(
+    email: string,
+    firstName: string,
+    lastName: string,
+    phoneNumber?: string,
+    password?: string
+  ): Promise<UserDocument> {
+    const existingEmail = await this.userModel.findOne({ email });
+    if (existingEmail) {
+      if (!existingEmail.emailConfirmed) {
+        existingEmail.emailConfirmed = true;
+        await existingEmail.save();
+      }
+      return existingEmail;
+    }
+
+    const unHashedPassword = password || randomBytes(8).toString('hex');
+    const passwordHash = await hash(unHashedPassword, 10);
+    const username = `client_${randomBytes(4).toString('hex')}`;
+    const emailToken = this.generateEmailToken();
+
+    const user = new this.userModel({
+      username,
+      email,
+      passwordHash,
+      firstName,
+      lastName,
+      birthdate: new Date('1970-01-01'),
+      phoneNumber,
+      acceptTerms: true,
+      role: Role.CLIENT,
+      emailConfirmed: true,
+      emailToken,
+      emailTokenGeneratedAt: new Date(),
+    });
+
+    await user.save();
+    return user;
   }
 
   async register(registerDto: RegisterDto): Promise<RegistrationResponseDto> {
@@ -418,21 +465,19 @@ export class AuthService {
     if (existingEmail) {
       throw existingEmail.emailConfirmed
         ? new ConflictException({
-            type: 'ACCOUNT_EXISTS',
-            message: 'This email is already registered',
-          })
+          type: 'ACCOUNT_EXISTS',
+          message: 'This email is already registered',
+        })
         : new ConflictException({
-            type: 'EMAIL_NOT_CONFIRMED',
-            message:
-              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: email,
-          });
+          type: 'EMAIL_NOT_CONFIRMED',
+          message:
+            'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
+          email: email,
+        });
     }
 
     const passwordHash = await hash(password, 10);
     const emailToken = this.generateEmailToken();
-    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    const emailTokenGeneratedAt = new Date();
     try {
       const birthdateDate = new Date(birthdate);
       if (Number.isNaN(birthdateDate.getTime())) {
@@ -457,8 +502,6 @@ export class AuthService {
         acceptTerms,
         profilePicture: finalProfilePicture,
         emailToken,
-        emailTokenExpiresAt,
-        emailTokenGeneratedAt,
         emailConfirmed: false,
       });
 
@@ -653,45 +696,20 @@ export class AuthService {
     token: string
   ): Promise<{ success: boolean; message: string }> {
     try {
-      // Use atomic update to prevent race conditions
-      const now = new Date();
-      const result = await this.userModel.findOneAndUpdate(
-        {
-          emailToken: token,
-          emailConfirmed: false,
-          $or: [
-            { emailTokenExpiresAt: { $gt: now } },
-            { emailTokenExpiresAt: { $exists: false } },
-          ],
-        },
-        {
-          $set: {
-            emailConfirmed: true,
-            emailConfirmationAttempts: 0,
-          },
-          $unset: {
-            emailToken: '',
-            emailTokenExpiresAt: '',
-            emailTokenGeneratedAt: '',
-          },
-        },
-        { new: true }
-      );
+      const user = await this.userModel.findOne({ emailToken: token });
 
-      if (!result) {
-        // Check why it failed for better error messaging
-        const user = await this.userModel.findOne({ emailToken: token });
-        if (!user) {
-          return { success: false, message: 'Invalid confirmation token' };
-        }
-        if (user.emailConfirmed) {
-          return { success: false, message: 'Email is already confirmed' };
-        }
-        if (!user.emailTokenExpiresAt || user.emailTokenExpiresAt < now) {
-          return { success: false, message: 'Confirmation token has expired' };
-        }
+      if (!user) {
         return { success: false, message: 'Invalid confirmation token' };
       }
+
+      if (user.emailConfirmed) {
+        return { success: false, message: 'Email is already confirmed' };
+      }
+
+      user.emailConfirmed = true;
+      user.emailToken = undefined;
+      user.emailConfirmationAttempts = 0;
+      await user.save();
 
       return { success: true, message: 'Email confirmed successfully' };
     } catch {
@@ -722,11 +740,7 @@ export class AuthService {
     }
 
     const newEmailToken = this.generateEmailToken();
-    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-    const emailTokenGeneratedAt = new Date();
     user.emailToken = newEmailToken;
-    user.emailTokenExpiresAt = emailTokenExpiresAt;
-    user.emailTokenGeneratedAt = emailTokenGeneratedAt;
     await user.save();
 
     try {
@@ -762,6 +776,25 @@ export class AuthService {
       message: 'User profile retrieved successfully',
       user: privateUser,
     };
+  }
+
+  async fetchUsers(userIds: string[]): Promise<PrivateUserDto[]> {
+    const users = await this.userModel
+      .find({ _id: { $in: userIds } })
+      .lean();
+
+    return users.map((u) => ({
+      username: u.username,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      birthdate: u.birthdate,
+      dateJoined: u.createdAt,
+      profilePicture: u.profilePicture,
+      emailConfirmed: u.emailConfirmed,
+      role: u.role,
+      phoneNumber: u.phoneNumber,
+    }));
   }
 
   async fetchUserById(
@@ -834,33 +867,6 @@ export class AuthService {
 
     if (!user) {
       throw new NotFoundException('Your user profile could not be found');
-    }
-
-    const isEmailChanging = updateDto.email && updateDto.email !== user.email;
-    const isPasswordChanging = !!updateDto.password;
-    // Check if user has a local password (not just an OAuth-generated random one)
-    // For now, we assume all users have passwordHash. If a provider/isOAuthOnly field exists,
-    // this logic should be updated to skip verification for OAuth-only users setting their first password.
-    const hasLocalPassword = !!user.passwordHash;
-
-    if (
-      (isEmailChanging || isPasswordChanging) &&
-      hasLocalPassword &&
-      !updateDto.currentPassword
-    ) {
-      throw new UnauthorizedException(
-        'Current password is required to update email or password'
-      );
-    }
-
-    if (updateDto.currentPassword && hasLocalPassword) {
-      const isPasswordValid = await compare(
-        updateDto.currentPassword,
-        user.passwordHash
-      );
-      if (!isPasswordValid) {
-        throw new UnauthorizedException('Current password is incorrect');
-      }
     }
 
     const updateData: Partial<User> = {};
@@ -1041,6 +1047,32 @@ export class AuthService {
     return { message: 'User deleted successfully' };
   }
 
+  async reactivateUserByAdmin(
+    adminId: string,
+    userId: string
+  ): Promise<MessageResponseDto> {
+    if (adminId === userId) {
+      throw new BadRequestException('Administrators cannot reactivate themselves');
+    }
+
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('The specified user could not be found');
+    }
+
+    if (!user.isBanned && user.emailConfirmed) {
+      throw new BadRequestException('User account is already active');
+    }
+
+    user.isBanned = false;
+    user.bannedReason = undefined;
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save();
+
+    return { message: 'User reactivated successfully' };
+  }
+
   async updateRefreshToken(
     userId: string,
     oldRefreshToken: string,
@@ -1090,7 +1122,7 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '15m',
+      expiresIn: '24h',
       jwtid: randomUUID(),
     });
 
@@ -1338,6 +1370,25 @@ export class AuthService {
     );
   }
 
+  private async getGoogleStateNonceExpiresAt(
+    nonce: string
+  ): Promise<number | undefined> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+
+    const record = await noncesCollection.findOne<GoogleStateNonceRecord>({
+      nonce,
+    });
+
+    if (!record?.expiresAt) {
+      return undefined;
+    }
+
+    return record.expiresAt.getTime();
+  }
+
   private async consumeGoogleStateNonce(nonce: string): Promise<boolean> {
     await this.ensureOAuthIndexes();
     const noncesCollection = this.connection.collection(
@@ -1348,6 +1399,14 @@ export class AuthService {
       expiresAt: { $gt: new Date() },
     });
     return result.deletedCount === 1;
+  }
+
+  private async deleteGoogleStateNonce(nonce: string): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const noncesCollection = this.connection.collection(
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+    );
+    await noncesCollection.deleteOne({ nonce });
   }
 
   private async setGoogleAuthCode(
@@ -1375,6 +1434,32 @@ export class AuthService {
     );
   }
 
+  private async getGoogleAuthCodeRecord(code: string): Promise<
+    | {
+      payload: AuthResponseDto | TwoFactorChallengeResponse;
+      expiresAt: number;
+    }
+    | undefined
+  > {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+
+    const record = await codesCollection.findOne<GoogleAuthCodeRecord>({
+      code,
+    });
+
+    if (!record?.expiresAt) {
+      return undefined;
+    }
+
+    return {
+      payload: record.payload,
+      expiresAt: record.expiresAt.getTime(),
+    };
+  }
+
   private async consumeGoogleAuthCode(
     code: string
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse | undefined> {
@@ -1388,6 +1473,14 @@ export class AuthService {
     })) as GoogleAuthCodeRecord | null;
 
     return result?.payload;
+  }
+
+  private async deleteGoogleAuthCode(code: string): Promise<void> {
+    await this.ensureOAuthIndexes();
+    const codesCollection = this.connection.collection(
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+    );
+    await codesCollection.deleteOne({ code });
   }
 
   private async findOrCreateGoogleUser(

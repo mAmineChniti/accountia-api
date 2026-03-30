@@ -24,6 +24,7 @@ import {
 } from '@/business/dto/business-application.dto';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
 import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
+import { CreateClientDto } from '@/business/dto/create-client.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
@@ -56,7 +57,7 @@ import {
 })
 @ApiResponse({ status: 500, description: 'Internal Server Error' })
 export class BusinessController {
-  constructor(private readonly businessService: BusinessService) {}
+  constructor(private readonly businessService: BusinessService) { }
 
   // Business Application Endpoints
   @Post('apply')
@@ -162,7 +163,8 @@ export class BusinessController {
     return this.businessService.reviewBusinessApplication(
       id,
       reviewDto,
-      user.id
+      user.id,
+      user.username
     );
   }
 
@@ -410,6 +412,58 @@ export class BusinessController {
       user.id,
       user.role
     );
+  }
+
+  @Post(':id/clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Create and assign a client to business',
+    description:
+      'Creates a new user account (if it does not exist) and assigns them to the business as a CLIENT. Only accessible by business owners.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Client created and assigned successfully',
+  })
+  async createBusinessClient(
+    @Param('id') id: string,
+    @Body() createClientDto: CreateClientDto,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.createAndAssignClient(
+      id,
+      createClientDto,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get(':id/clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all clients for a business',
+    description: 'Retrieve all users assigned to the business with the CLIENT role.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Clients retrieved successfully',
+  })
+  async getBusinessClients(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.getBusinessClients(id, user.id, user.role);
   }
 
   @Delete(':id/users/:userId')

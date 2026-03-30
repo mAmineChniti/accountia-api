@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BusinessController } from '@/business/business.controller';
 import { BusinessService } from '@/business/business.service';
@@ -15,15 +15,17 @@ import {
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
+import { StatisticsModule } from '@/statistics/statistics.module';
 
 @Module({
   imports: [
-    AuthModule,
+    forwardRef(() => AuthModule),
     MongooseModule.forFeature([
       { name: Business.name, schema: BusinessSchema },
       { name: BusinessApplication.name, schema: BusinessApplicationSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
     ]),
+    forwardRef(() => StatisticsModule),
   ],
   controllers: [BusinessController],
   providers: [
@@ -39,4 +41,4 @@ import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
     TenantContextGuard,
   ],
 })
-export class BusinessModule {}
+export class BusinessModule { }

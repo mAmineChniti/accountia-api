@@ -35,6 +35,16 @@ export class BusinessResponseDto {
     isActive: boolean;
     logo?: string;
     tags: string[];
+    templateSettings: {
+      currency: string;
+      themeColor?: string;
+      fontFamily?: string;
+      companyName?: string;
+      address?: string;
+      phone?: string;
+      email?: string;
+      logo?: string;
+    };
     createdAt: Date;
     updatedAt: Date;
   };

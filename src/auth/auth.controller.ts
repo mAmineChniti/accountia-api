@@ -466,31 +466,31 @@ export class AuthController {
     return this.authService.updateUser(user.id, updateDto);
   }
 
-  @Delete('delete')
+  @Patch('deactivate')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete your own user account' })
+  @ApiOperation({ summary: 'Deactivate your own user account (Soft Delete)' })
   @ApiResponse({
     status: 200,
-    description: 'Account deleted successfully',
+    description: 'Account deactivated successfully',
     type: MessageResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Cannot delete admin accounts' })
-  @ApiResponse({ status: 500, description: 'Failed to delete account' })
-  async deleteUser(
+  @ApiResponse({ status: 403, description: 'Cannot deactivate admin accounts' })
+  @ApiResponse({ status: 500, description: 'Failed to deactivate account' })
+  async deactivateUser(
     @CurrentUser() user: UserPayload
   ): Promise<MessageResponseDto> {
     return this.authService.deleteUser(user.id);
   }
 
-  @Delete('users/:id')
+  @Patch('users/:id/deactivate')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Admin: delete a user by id' })
+  @ApiOperation({ summary: 'Admin: deactivate a user by id (Soft Delete)' })
   @ApiResponse({
     status: 200,
-    description: 'User removed successfully',
+    description: 'User deactivated successfully',
     type: MessageResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -498,13 +498,32 @@ export class AuthController {
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({
     status: 400,
-    description: 'Administrators cannot delete themselves',
+    description: 'Administrators cannot deactivate themselves',
   })
-  async deleteUserByAdmin(
+  async deactivateUserByAdmin(
     @CurrentUser() user: UserPayload,
     @Param('id') id: string
   ): Promise<MessageResponseDto> {
     return this.authService.deleteUserByAdmin(user.id, id);
+  }
+
+  @Patch('users/:id/reactivate')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin: reactivate a deactivated user' })
+  @ApiResponse({
+    status: 200,
+    description: 'User reactivated successfully',
+    type: MessageResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Insufficient privileges' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async reactivateUserByAdmin(
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string
+  ): Promise<MessageResponseDto> {
+    return this.authService.reactivateUserByAdmin(user.id, id);
   }
 
   @Get('users')
