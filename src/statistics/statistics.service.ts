@@ -60,14 +60,14 @@ export class StatisticsService implements OnModuleInit {
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$Revenue' },
-          totalExpenditure: { $sum: '$Expenditure' },
-          netIncome: { $sum: '$Net Income' },
-          avgProfitMargin: { $avg: '$Profit Margin' },
-          avgAccuracyScore: { $avg: '$Accuracy Score' },
+          totalRevenue: { $sum: { $ifNull: ['$Revenue', '$revenue'] } },
+          totalExpenditure: { $sum: { $ifNull: ['$Expenditure', '$expenditure'] } },
+          netIncome: { $sum: { $ifNull: ['$Net Income', '$netIncome'] } },
+          avgProfitMargin: { $avg: { $ifNull: ['$Profit Margin', '$profitMargin'] } },
+          avgAccuracyScore: { $avg: { $ifNull: ['$Accuracy Score', '$accuracyScore'] } },
           totalTransactions: { $sum: 1 },
           successCount: {
-            $sum: { $cond: [{ $eq: ['$Transaction Outcome', 1] }, 1, 0] }
+            $sum: { $cond: [{ $eq: [{ $ifNull: ['$Transaction Outcome', '$transactionOutcome'] }, 1] }, 1, 0] }
           }
         }
       }
@@ -92,12 +92,12 @@ export class StatisticsService implements OnModuleInit {
       {
         $group: {
           _id: {
-            month: { $month: { $toDate: "$Date" } },
-            year: { $year: { $toDate: "$Date" } }
+            month: { $month: { $toDate: { $ifNull: ['$Date', '$date'] } } },
+            year: { $year: { $toDate: { $ifNull: ['$Date', '$date'] } } }
           },
-          revenue: { $sum: '$Revenue' },
-          expenditure: { $sum: '$Expenditure' },
-          netIncome: { $sum: '$Net Income' }
+          revenue: { $sum: { $ifNull: ['$Revenue', '$revenue'] } },
+          expenditure: { $sum: { $ifNull: ['$Expenditure', '$expenditure'] } },
+          netIncome: { $sum: { $ifNull: ['$Net Income', '$netIncome'] } }
         }
       },
       { $sort: { "_id.year": 1 as 1, "_id.month": 1 as 1 } }
@@ -114,9 +114,9 @@ export class StatisticsService implements OnModuleInit {
     const accountTypePipeline = [
       {
         $group: {
-          _id: '$Account Type',
+          _id: { $ifNull: ['$Account Type', '$accountType'] },
           count: { $sum: 1 },
-          amount: { $sum: '$Transaction Amount' }
+          amount: { $sum: { $ifNull: ['$Transaction Amount', '$amount'] } }
         }
       }
     ];
@@ -135,7 +135,7 @@ export class StatisticsService implements OnModuleInit {
     const marginDistributionPipeline = [
       {
         $bucket: {
-          groupBy: "$Profit Margin",
+          groupBy: { $ifNull: ['$Profit Margin', '$profitMargin'] },
           boundaries: [0, 0.25, 0.5, 0.75, 1],
           default: "Other",
           output: { count: { $sum: 1 } }
@@ -312,32 +312,45 @@ export class StatisticsService implements OnModuleInit {
   async getFilteredTransactions(query: TransactionQueryDto): Promise<any[]> {
     const { startDate, endDate, type, limit = 50, offset = 0 } = query;
     const filter: any = {};
+    const conditions: any[] = [];
 
     if (startDate || endDate) {
-      filter.Date = {};
-      if (startDate) filter.Date.$gte = new Date(startDate);
-      if (endDate) filter.Date.$lte = new Date(endDate);
+      const dateCondition: any = {};
+      if (startDate) dateCondition.$gte = new Date(startDate);
+      if (endDate) dateCondition.$lte = new Date(endDate);
+      conditions.push({ $or: [{ Date: dateCondition }, { date: dateCondition }] });
     }
 
-    if (type === TransactionType.INCOME) {
-      filter.Revenue = { $gt: 0 };
-    } else if (type === TransactionType.EXPENSE) {
-      filter.Expenditure = { $gt: 0 };
+    if (type && type.toString() === 'income') {
+      conditions.push({ $or: [{ Revenue: { $gt: 0 } }, { revenue: { $gt: 0 } }] });
+    } else if (type && type.toString() === 'expense') {
+      conditions.push({ $or: [{ Expenditure: { $gt: 0 } }, { expenditure: { $gt: 0 } }] });
+    }
+
+    if (conditions.length > 0) {
+      filter.$and = conditions;
     }
 
     const transactions = await this.transactionModel
       .find(filter)
       .select({
         'Date': 1,
+        date: 1,
         'Account Type': 1,
+        accountType: 1,
         'Transaction Amount': 1,
+        transactionAmount: 1,
+        amount: 1,
         'Revenue': 1,
+        revenue: 1,
         'Expenditure': 1,
+        expenditure: 1,
         'Transaction ID': 1,
-        'originalCurrency': 1,
-        'convertedCurrency': 1,
-        'exchangeRate': 1,
-        'convertedAmount': 1
+        transactionId: 1,
+        originalCurrency: 1,
+        convertedCurrency: 1,
+        exchangeRate: 1,
+        convertedAmount: 1
       })
       .sort({ Date: -1 })
       .skip(offset)
@@ -346,26 +359,29 @@ export class StatisticsService implements OnModuleInit {
       .exec();
 
     return transactions.map((t: any) => {
-      const originalAmount = Number(t['Transaction Amount']) || 0;
+      const originalAmount = Number(t['Transaction Amount']) || Number(t.transactionAmount) || Number(t.amount) || 0;
       const convertedAmount = t.convertedAmount ?? originalAmount;
       const originalCurrency = t.originalCurrency || 'USD';
       const convertedCurrency = t.convertedCurrency || 'USD';
       const exchangeRate = t.exchangeRate || 1;
+      
+      const rev = Number(t['Revenue']) || Number(t.revenue) || 0;
+      const exp = Number(t['Expenditure']) || Number(t.expenditure) || 0;
 
       return {
         id: t._id.toString(),
-        date: t['Date'],
-        accountType: t['Account Type'],
+        date: t['Date'] || t.date,
+        accountType: t['Account Type'] || t.accountType,
         amount: originalAmount,
         originalAmount,
         convertedAmount,
         originalCurrency,
         convertedCurrency,
         exchangeRate,
-        transactionId: t['Transaction ID'],
-        type: t['Revenue'] > 0 ? 'income' : 'expense',
-        revenue: t['Revenue'],
-        expenditure: t['Expenditure'],
+        transactionId: t['Transaction ID'] || t.transactionId,
+        type: rev > 0 ? 'income' : 'expense',
+        revenue: rev,
+        expenditure: exp,
       };
     });
   }
