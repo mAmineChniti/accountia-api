@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type RecurringInvoiceDocument = RecurringInvoice & Document;
 
@@ -45,7 +45,7 @@ export class RecurringInvoice {
   @Prop({ required: false })
   clientEmail: string;
 
-  @ApiProperty({ type: [InvoiceItem] })
+  @ApiProperty({ type: () => [InvoiceItem], isArray: true })
   @Prop({ type: [InvoiceItemSchema], required: true })
   items: InvoiceItem[];
 
@@ -53,7 +53,11 @@ export class RecurringInvoice {
   @Prop({ required: true })
   totalAmount: number;
 
-  @ApiProperty({ example: 'monthly', enum: RecurringFrequency })
+  @ApiProperty({
+    example: 'monthly',
+    enum: RecurringFrequency,
+    enumName: 'RecurringFrequency',
+  })
   @Prop({ required: true, enum: RecurringFrequency })
   frequency: RecurringFrequency;
 
@@ -65,7 +69,7 @@ export class RecurringInvoice {
   @Prop({ required: true })
   startDate: Date;
 
-  @ApiProperty({ example: '2027-04-01T00:00:00Z', required: false })
+  @ApiPropertyOptional({ example: '2027-04-01T00:00:00Z' })
   @Prop({ required: false })
   endDate?: Date;
 
@@ -73,8 +77,16 @@ export class RecurringInvoice {
   @Prop({ required: true })
   nextRunDate: Date;
 
-  @ApiProperty({ example: 'active', enum: RecurringStatus })
-  @Prop({ required: true, enum: RecurringStatus, default: RecurringStatus.ACTIVE })
+  @ApiProperty({
+    example: 'active',
+    enum: RecurringStatus,
+    enumName: 'RecurringStatus',
+  })
+  @Prop({
+    required: true,
+    enum: RecurringStatus,
+    default: RecurringStatus.ACTIVE,
+  })
   status: RecurringStatus;
 
   @ApiProperty({ example: true })
@@ -82,4 +94,5 @@ export class RecurringInvoice {
   autoSend: boolean;
 }
 
-export const RecurringInvoiceSchema = SchemaFactory.createForClass(RecurringInvoice);
+export const RecurringInvoiceSchema =
+  SchemaFactory.createForClass(RecurringInvoice);

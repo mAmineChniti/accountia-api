@@ -57,7 +57,7 @@ import {
 })
 @ApiResponse({ status: 500, description: 'Internal Server Error' })
 export class BusinessController {
-  constructor(private readonly businessService: BusinessService) { }
+  constructor(private readonly businessService: BusinessService) {}
 
   // Business Application Endpoints
   @Post('apply')
@@ -449,7 +449,8 @@ export class BusinessController {
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get all clients for a business',
-    description: 'Retrieve all users assigned to the business with the CLIENT role.',
+    description:
+      'Retrieve all users assigned to the business with the CLIENT role.',
   })
   @ApiParam({
     name: 'id',

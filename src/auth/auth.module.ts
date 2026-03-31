@@ -69,4 +69,4 @@ import { StatisticsModule } from '@/statistics/statistics.module';
     GoogleCallbackGuard,
   ],
 })
-export class AuthModule { }
+export class AuthModule {}

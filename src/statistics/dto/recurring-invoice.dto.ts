@@ -10,7 +10,10 @@ import {
   IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { RecurringFrequency, RecurringStatus } from '../schemas/recurring-invoice.schema';
+import {
+  RecurringFrequency,
+  RecurringStatus,
+} from '../schemas/recurring-invoice.schema';
 
 export class InvoiceItemDto {
   @ApiProperty({ example: 'Consulting Services' })
@@ -40,7 +43,7 @@ export class CreateRecurringInvoiceDto {
   @IsString()
   clientEmail?: string;
 
-  @ApiProperty({ type: [InvoiceItemDto] })
+  @ApiProperty({ type: () => [InvoiceItemDto], isArray: true })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => InvoiceItemDto)
@@ -50,7 +53,7 @@ export class CreateRecurringInvoiceDto {
   @IsNumber()
   totalAmount: number;
 
-  @ApiProperty({ enum: RecurringFrequency })
+  @ApiProperty({ enum: RecurringFrequency, enumName: 'RecurringFrequency' })
   @IsEnum(RecurringFrequency)
   frequency: RecurringFrequency;
 
@@ -79,7 +82,7 @@ export class CreateRecurringInvoiceDto {
 }
 
 export class UpdateRecurringInvoiceStatusDto {
-  @ApiProperty({ enum: RecurringStatus })
+  @ApiProperty({ enum: RecurringStatus, enumName: 'RecurringStatus' })
   @IsEnum(RecurringStatus)
   status: RecurringStatus;
 }

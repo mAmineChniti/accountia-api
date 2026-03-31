@@ -35,13 +35,15 @@ export class BusinessApplication {
   businessId?: string; // Reference to created business if approved
 
   @Prop({
-    type: [{
-      action: { type: String, required: true },
-      reviewedBy: { type: String, required: true },
-      reviewerName: { type: String, required: true },
-      notes: { type: String },
-      timestamp: { type: Date, default: Date.now },
-    }],
+    type: [
+      {
+        action: { type: String, required: true },
+        reviewedBy: { type: String, required: true },
+        reviewerName: { type: String, required: true },
+        notes: { type: String },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
     default: [],
   })
   reviewHistory: Array<{

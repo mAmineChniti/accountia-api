@@ -106,7 +106,7 @@ export class AuthService {
   private static readonly LANG_PATTERN = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 
   static readonly TOKEN_EXPIRY_DURATIONS = {
-    accessMs: 24 * 60 * 60 * 1000,   // 24h
+    accessMs: 24 * 60 * 60 * 1000, // 24h
     refreshMs: 7 * 24 * 60 * 60 * 1000, // 7d
   };
 
@@ -116,7 +116,7 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService
-  ) { }
+  ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
@@ -412,7 +412,7 @@ export class AuthService {
       return existingEmail;
     }
 
-    const unHashedPassword = password || randomBytes(8).toString('hex');
+    const unHashedPassword = password ?? randomBytes(8).toString('hex');
     const passwordHash = await hash(unHashedPassword, 10);
     const username = `client_${randomBytes(4).toString('hex')}`;
     const emailToken = this.generateEmailToken();
@@ -465,15 +465,15 @@ export class AuthService {
     if (existingEmail) {
       throw existingEmail.emailConfirmed
         ? new ConflictException({
-          type: 'ACCOUNT_EXISTS',
-          message: 'This email is already registered',
-        })
+            type: 'ACCOUNT_EXISTS',
+            message: 'This email is already registered',
+          })
         : new ConflictException({
-          type: 'EMAIL_NOT_CONFIRMED',
-          message:
-            'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-          email: email,
-        });
+            type: 'EMAIL_NOT_CONFIRMED',
+            message:
+              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
+            email: email,
+          });
     }
 
     const passwordHash = await hash(password, 10);
@@ -779,9 +779,7 @@ export class AuthService {
   }
 
   async fetchUsers(userIds: string[]): Promise<PrivateUserDto[]> {
-    const users = await this.userModel
-      .find({ _id: { $in: userIds } })
-      .lean();
+    const users = await this.userModel.find({ _id: { $in: userIds } }).lean();
 
     return users.map((u) => ({
       username: u.username,
@@ -1052,7 +1050,9 @@ export class AuthService {
     userId: string
   ): Promise<MessageResponseDto> {
     if (adminId === userId) {
-      throw new BadRequestException('Administrators cannot reactivate themselves');
+      throw new BadRequestException(
+        'Administrators cannot reactivate themselves'
+      );
     }
 
     const user = await this.userModel.findById(userId);
@@ -1436,9 +1436,9 @@ export class AuthService {
 
   private async getGoogleAuthCodeRecord(code: string): Promise<
     | {
-      payload: AuthResponseDto | TwoFactorChallengeResponse;
-      expiresAt: number;
-    }
+        payload: AuthResponseDto | TwoFactorChallengeResponse;
+        expiresAt: number;
+      }
     | undefined
   > {
     await this.ensureOAuthIndexes();

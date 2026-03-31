@@ -27,7 +27,7 @@ export class Business {
 
   @Prop({ default: false })
   isActive: boolean;
-  
+
   @Prop({ default: false })
   _isReservation?: boolean;
 

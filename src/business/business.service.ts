@@ -40,6 +40,7 @@ import {
 } from '@/common/tenant/tenant.types';
 import { AuthService } from '@/auth/auth.service'; // Assuming AuthService is needed for the new logic
 import { StatisticsService } from '@/statistics/statistics.service';
+import { CreateClientDto } from '@/business/dto/create-client.dto';
 
 @Injectable()
 export class BusinessService {
@@ -54,7 +55,7 @@ export class BusinessService {
     private tenantConnectionService: TenantConnectionService,
     private readonly authService: AuthService, // Added AuthService
     private readonly statisticsService: StatisticsService // Added StatisticsService
-  ) { }
+  ) {}
 
   // Business Application Flow
   async submitBusinessApplication(
@@ -81,10 +82,11 @@ export class BusinessService {
     const savedApplication = await application.save();
 
     // Send email notification about application submission asynchronously
-    this.emailService.sendBusinessApplicationEmail(
-      userId,
-      savedApplication.businessName
-    ).catch(err => console.error('Failed to send business application email:', err));
+    this.emailService
+      .sendBusinessApplicationEmail(userId, savedApplication.businessName)
+      .catch((error) =>
+        console.error('Failed to send business application email:', error)
+      );
 
     return {
       message:
@@ -157,16 +159,22 @@ export class BusinessService {
         );
 
         if (!savedBusiness) {
-          throw new InternalServerErrorException('Database name reservation not found');
+          throw new InternalServerErrorException(
+            'Database name reservation not found'
+          );
         }
 
-        application.businessId = (savedBusiness._id as any).toString();
+        application.businessId = (
+          savedBusiness._id as { toString: () => string }
+        ).toString();
         approvedBusinessName = savedBusiness.name;
 
         await this.businessUserModel.create(
           [
             {
-              businessId: (savedBusiness._id as any).toString(),
+              businessId: (
+                savedBusiness._id as { toString: () => string }
+              ).toString(),
               userId: application.applicantId,
               role: BusinessUserRole.OWNER,
               assignedBy: reviewerId,
@@ -189,29 +197,43 @@ export class BusinessService {
       }
 
       // Send approval email asynchronously after successful commit
-      this.emailService.sendBusinessApprovalEmail(
-        application.applicantId,
-        approvedBusinessName
-      ).catch(e => console.error('Failed to send approval email', e));
+      this.emailService
+        .sendBusinessApprovalEmail(
+          application.applicantId,
+          approvedBusinessName
+        )
+        .catch((error) =>
+          console.error('Failed to send approval email', error)
+        );
     } else {
       await application.save();
 
       // Send rejection email asynchronously
-      this.emailService.sendBusinessRejectionEmail(
-        application.applicantId,
-        application.businessName,
-        reviewDto.reviewNotes
-      ).catch(e => console.error('Failed to send rejection email', e));
+      this.emailService
+        .sendBusinessRejectionEmail(
+          application.applicantId,
+          application.businessName,
+          reviewDto.reviewNotes
+        )
+        .catch((error) =>
+          console.error('Failed to send rejection email', error)
+        );
     }
 
     // Log the review asynchronously
-    this.statisticsService.createLog(
-      reviewerId,
-      reviewerUsername || 'System',
-      reviewDto.status === 'approved' ? 'APPROVE' : 'REJECT',
-      'BusinessApplication',
-      { applicationId, businessName: application.businessName, notes: reviewDto.reviewNotes }
-    ).catch(e => console.error('Failed to create audit log', e));
+    this.statisticsService
+      .createLog(
+        reviewerId,
+        reviewerUsername || 'System',
+        reviewDto.status === 'approved' ? 'APPROVE' : 'REJECT',
+        'BusinessApplication',
+        {
+          applicationId,
+          businessName: application.businessName,
+          notes: reviewDto.reviewNotes,
+        }
+      )
+      .catch((error) => console.error('Failed to create audit log', error));
 
     return {
       message:
@@ -586,10 +608,10 @@ export class BusinessService {
 
   async createAndAssignClient(
     businessId: string,
-    createClientDto: import('@/business/dto/create-client.dto').CreateClientDto,
+    createClientDto: CreateClientDto,
     userId: string,
     userRole: Role
-  ): Promise<{ message: string; client: any }> {
+  ): Promise<{ message: string; client: Record<string, unknown> }> {
     const business = await this.businessModel.findById(businessId);
     if (!business) {
       throw new NotFoundException('Business not found');
@@ -612,7 +634,9 @@ export class BusinessService {
     });
 
     if (existingAssignment) {
-      throw new BadRequestException('Client is already assigned to this business');
+      throw new BadRequestException(
+        'Client is already assigned to this business'
+      );
     }
 
     const businessUser = new this.businessUserModel({
@@ -636,7 +660,9 @@ export class BusinessService {
       );
     } catch {
       await this.businessUserModel.findByIdAndDelete(savedBusinessUser._id);
-      throw new InternalServerErrorException('Failed to sync tenant user assignment');
+      throw new InternalServerErrorException(
+        'Failed to sync tenant user assignment'
+      );
     }
 
     return {
@@ -650,18 +676,16 @@ export class BusinessService {
     };
   }
 
-  async getBusinessClients(
-    businessId: string,
-    userId: string,
-    userRole: Role
-  ) {
+  async getBusinessClients(businessId: string, userId: string, userRole: Role) {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
-    const clientAssignments = await this.businessUserModel.find({
-      businessId,
-      role: BusinessUserRole.CLIENT,
-      isActive: true,
-    }).lean();
+    const clientAssignments = await this.businessUserModel
+      .find({
+        businessId,
+        role: BusinessUserRole.CLIENT,
+        isActive: true,
+      })
+      .lean();
 
     if (clientAssignments.length === 0) {
       return { message: 'No clients found', clients: [] };

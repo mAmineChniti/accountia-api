@@ -41,4 +41,4 @@ import { StatisticsModule } from '@/statistics/statistics.module';
     TenantContextGuard,
   ],
 })
-export class BusinessModule { }
+export class BusinessModule {}

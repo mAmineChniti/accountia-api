@@ -8,7 +8,6 @@ import {
   Get,
   Put,
   Patch,
-  Delete,
   Req,
   Param,
   Res,

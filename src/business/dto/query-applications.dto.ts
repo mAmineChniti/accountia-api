@@ -13,7 +13,9 @@ export class QueryApplicationsDto {
   @IsIn(['pending', 'approved', 'rejected'])
   status?: 'pending' | 'approved' | 'rejected';
 
-  @ApiPropertyOptional({ description: 'Search by business name or description' })
+  @ApiPropertyOptional({
+    description: 'Search by business name or description',
+  })
   @IsOptional()
   @IsString()
   search?: string;
@@ -33,7 +35,10 @@ export class QueryApplicationsDto {
   @IsDateString()
   dateTo?: string;
 
-  @ApiPropertyOptional({ enum: ['createdAt', 'businessName', 'status'], default: 'createdAt' })
+  @ApiPropertyOptional({
+    enum: ['createdAt', 'businessName', 'status'],
+    default: 'createdAt',
+  })
   @IsOptional()
   @IsIn(['createdAt', 'businessName', 'status'])
   sortBy?: string;

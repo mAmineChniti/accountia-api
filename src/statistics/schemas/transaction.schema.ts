@@ -1,70 +1,73 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export type TransactionDocument = Transaction & Document;
 
 @Schema({ collection: 'transactions' })
 export class Transaction {
-  @ApiProperty({ example: '1' })
+  @ApiPropertyOptional({ example: '1' })
   @Prop({ name: 'Transaction ID', required: false })
-  transactionId: string;
+  transactionId?: string;
 
-  @ApiProperty({ example: 'client-uuid' })
+  @ApiPropertyOptional({ example: 'client-uuid' })
   @Prop({ required: false })
   clientId?: string;
 
-  @ApiProperty({ example: '2025-01-01' })
+  @ApiPropertyOptional({ example: '2025-01-01' })
   @Prop({ name: 'Date', required: false })
-  date: Date;
+  date?: Date;
 
-  @ApiProperty({ example: 'Asset', enum: ['Asset', 'Expense', 'Revenue', 'Liability'] })
+  @ApiPropertyOptional({
+    example: 'Asset',
+    enum: ['Asset', 'Expense', 'Revenue', 'Liability'],
+  })
   @Prop({ name: 'Account Type', required: false })
-  accountType: string;
+  accountType?: string;
 
-  @ApiProperty({ example: 1176 })
+  @ApiPropertyOptional({ example: 1176 })
   @Prop({ name: 'Transaction Amount', required: false })
-  transactionAmount: number;
+  transactionAmount?: number;
 
-  @ApiProperty({ example: 2174 })
+  @ApiPropertyOptional({ example: 2174 })
   @Prop({ name: 'Net Income', required: false })
-  netIncome: number;
+  netIncome?: number;
 
-  @ApiProperty({ example: 3137 })
+  @ApiPropertyOptional({ example: 3137 })
   @Prop({ name: 'Revenue', required: false })
-  revenue: number;
+  revenue?: number;
 
-  @ApiProperty({ example: 1823 })
+  @ApiPropertyOptional({ example: 1823 })
   @Prop({ name: 'Expenditure', required: false })
-  expenditure: number;
+  expenditure?: number;
 
-  @ApiProperty({ example: 0.6072 })
+  @ApiPropertyOptional({ example: 0.6072 })
   @Prop({ name: 'Profit Margin', required: false })
-  profitMargin: number;
+  profitMargin?: number;
 
-  @ApiProperty({ example: 0.9599 })
+  @ApiPropertyOptional({ example: 0.9599 })
   @Prop({ name: 'Accuracy Score', required: false })
-  accuracyScore: number;
+  accuracyScore?: number;
 
-  @ApiProperty({ example: 1 })
+  @ApiPropertyOptional({ example: 1 })
   @Prop({ name: 'Transaction Outcome', required: false })
-  transactionOutcome: number;
+  transactionOutcome?: number;
 
-  @ApiProperty({ example: 'USD' })
+  @ApiPropertyOptional({ example: 'USD' })
   @Prop({ required: false, default: 'USD' })
-  originalCurrency: string;
+  originalCurrency?: string;
 
-  @ApiProperty({ example: 'USD' })
+  @ApiPropertyOptional({ example: 'USD' })
   @Prop({ required: false, default: 'USD' })
-  convertedCurrency: string;
+  convertedCurrency?: string;
 
-  @ApiProperty({ example: 1.0 })
-  @Prop({ required: false, default: 1.0 })
-  exchangeRate: number;
+  @ApiPropertyOptional({ example: 1 })
+  @Prop({ required: false, default: 1 })
+  exchangeRate?: number;
 
-  @ApiProperty({ example: 1176 })
+  @ApiPropertyOptional({ example: 1176 })
   @Prop({ required: false })
-  convertedAmount: number;
+  convertedAmount?: number;
 }
 
 export const TransactionSchema = SchemaFactory.createForClass(Transaction);

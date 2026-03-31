@@ -14,7 +14,10 @@ export class AuditLog {
   @Prop({ required: true })
   username: string;
 
-  @ApiProperty({ example: 'UPDATE', enum: ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'APPROVE', 'REJECT'] })
+  @ApiProperty({
+    example: 'UPDATE',
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'APPROVE', 'REJECT'],
+  })
   @Prop({ required: true })
   action: string;
 
@@ -24,7 +27,7 @@ export class AuditLog {
 
   @ApiProperty({ example: { oldRole: 'CLIENT', newRole: 'ADMIN' } })
   @Prop({ type: Object })
-  details: any;
+  details: Record<string, unknown>;
 
   @Prop()
   createdAt: Date;
