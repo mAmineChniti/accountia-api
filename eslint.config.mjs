@@ -12,7 +12,7 @@ export default defineConfig(
   eslintPluginPrettierRecommended,
   unicornPlugin.configs.all,
   [
-    globalIgnores(['dist/**', 'node_modules/**', 'coverage/**', '*.js']),
+    globalIgnores(['dist/**', 'node_modules/**', 'coverage/**']),
     {
       files: ['eslint.config.mjs', '*.config.mjs', '*.config.js'],
       languageOptions: {

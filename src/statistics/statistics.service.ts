@@ -548,11 +548,18 @@ export class StatisticsService implements OnModuleInit {
     const transaction = await this.transactionModel.findById(id).lean().exec();
     if (!transaction) throw new Error('Transaction not found');
 
-    // Map transaction to template data
     const raw = transaction as unknown as Record<string, unknown>;
-    const amount = Number(raw['Transaction Amount']) || 0;
 
-    // Map transaction to template data
+    const amount = Number(
+      raw.transactionAmount ?? raw['Transaction Amount'] ?? 0
+    );
+    const accountType =
+      (raw.accountType as string) ??
+      (raw['Account Type'] as string) ??
+      'General Transaction';
+    const dateValue = raw.date ?? raw.Date ?? new Date();
+    const parsedDate = new Date(dateValue as string | Date);
+
     const data = {
       companyName: 'Accountia Ltd',
       companyAddress: '123 Business Way, Tech City',
@@ -562,11 +569,15 @@ export class StatisticsService implements OnModuleInit {
         (raw.clientAddress as string) ?? 'Client address placeholder',
       clientEmail: (raw.clientEmail as string) ?? 'client@example.com',
       invoiceNumber: `INV-${id.slice(-6).toUpperCase()}`,
-      invoiceDate: new Date(raw.Date as string | Date).toLocaleDateString(),
-      dueDate: new Date(raw.Date as string | Date).toLocaleDateString(),
+      invoiceDate: Number.isNaN(parsedDate.getTime())
+        ? new Date().toLocaleDateString()
+        : parsedDate.toLocaleDateString(),
+      dueDate: Number.isNaN(parsedDate.getTime())
+        ? new Date().toLocaleDateString()
+        : parsedDate.toLocaleDateString(),
       items: [
         {
-          description: (raw['Account Type'] as string) ?? 'General Transaction',
+          description: accountType,
           quantity: 1,
           price: amount,
           total: amount,
