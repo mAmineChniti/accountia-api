@@ -38,8 +38,8 @@ export class AuditController {
     @Query('limit') limit?: string,
     @Query('action') action?: AuditAction
   ): Promise<PaginatedAuditLogsDto> {
-    const pageNumber = Math.max(1, parseInt(page || '1', 10));
-    const limitNumber = Math.max(1, parseInt(limit || '10', 10));
+    const pageNumber = Math.max(1, Number.parseInt(page ?? '1', 10));
+    const limitNumber = Math.max(1, Number.parseInt(limit ?? '10', 10));
     return this.auditService.getLogs(pageNumber, limitNumber, action);
   }
 }

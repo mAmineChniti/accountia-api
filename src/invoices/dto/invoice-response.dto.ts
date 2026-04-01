@@ -1,4 +1,4 @@
-import { InvoiceStatusDto, CreateInvoiceItemDto } from './create-invoice.dto';
+import { type InvoiceStatusDto } from './create-invoice.dto';
 
 export class InvoiceItemResponseDto {
   id: string;

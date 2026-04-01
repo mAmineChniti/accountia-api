@@ -12,21 +12,22 @@ export class AuditService {
     @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLog>
   ) {}
 
-  async logAction(createDto: CreateAuditLogDto): Promise<AuditLog | null> {
+  async logAction(createDto: CreateAuditLogDto): Promise<AuditLog | undefined> {
     try {
       const log = new this.auditLogModel(createDto);
       const savedLog = await log.save();
       return savedLog;
     } catch (error) {
       // Non-blocking log action (ne pas crasher l'app si l'audit échoue)
-      this.logger.error(`Failed to save audit log: ${error.message}`);
-      return null;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to save audit log: ${message}`);
+      return undefined;
     }
   }
 
   async getLogs(
-    page: number = 1,
-    limit: number = 10,
+    page = 1,
+    limit = 10,
     action?: AuditAction
   ): Promise<PaginatedAuditLogsDto> {
     const skip = (page - 1) * limit;
@@ -34,7 +35,7 @@ export class AuditService {
 
     const [logs, total] = await Promise.all([
       this.auditLogModel
-        .find(query)
+        .find({ ...query })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)

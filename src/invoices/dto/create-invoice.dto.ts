@@ -60,8 +60,10 @@ export class CreateInvoiceDto {
   dueDate: Date;
 
   @IsNumber()
-  @IsIn([0, 7, 13, 19], { message: 'VAT rate must be one of: 0%, 7%, 13%, 19%' })
-  taxRate: number = 19;
+  @IsIn([0, 7, 13, 19], {
+    message: 'VAT rate must be one of: 0%, 7%, 13%, 19%',
+  })
+  taxRate = 19;
 
   @IsOptional()
   @IsString()

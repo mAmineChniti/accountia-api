@@ -28,7 +28,7 @@
       .brand-name {
         font-size: 26px;
         font-weight: 700;
-        color: #8B0000;
+        color: #8b0000;
         letter-spacing: -0.5px;
       }
       .container {
@@ -38,7 +38,7 @@
         overflow: hidden;
       }
       .header-bar {
-        background-color: #8B0000;
+        background-color: #8b0000;
         padding: 32px 40px;
         text-align: center;
       }
@@ -85,7 +85,7 @@
         padding-top: 12px;
       }
       .total-value {
-        color: #8B0000;
+        color: #8b0000;
         font-size: 20px;
         font-weight: 700;
       }
@@ -95,7 +95,7 @@
       }
       .button {
         display: inline-block;
-        background-color: #8B0000;
+        background-color: #8b0000;
         color: #ffffff !important;
         padding: 14px 36px;
         text-decoration: none;
@@ -128,8 +128,9 @@
         <div class="body">
           <p>Hello,</p>
           <p>
-            <strong>{{.BusinessName}}</strong> has sent you a new invoice for professional services. 
-            You can view the full details and manage your payments by clicking the button below.
+            <strong>{{.BusinessName}}</strong> has sent you a new invoice for
+            professional services. You can view the full details and manage your
+            payments by clicking the button below.
           </p>
 
           <div class="invoice-box">
@@ -143,7 +144,9 @@
             </div>
             <div class="invoice-row total-row">
               <span class="invoice-label">Total Amount</span>
-              <span class="invoice-value total-value">{{.Amount}} {{.Currency}}</span>
+              <span class="invoice-value total-value"
+                >{{.Amount}} {{.Currency}}</span
+              >
             </div>
           </div>
 
@@ -154,7 +157,8 @@
           </div>
 
           <p>
-            If you have any questions regarding this invoice, please contact {{.BusinessName}} directly.
+            If you have any questions regarding this invoice, please contact
+            {{.BusinessName}} directly.
           </p>
         </div>
 

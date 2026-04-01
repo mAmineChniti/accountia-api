@@ -1,7 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsMongoId, IsEnum, IsEmail, IsString, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsMongoId,
+  IsEnum,
+  IsEmail,
+  IsString,
+  IsOptional,
+} from 'class-validator';
 import { BusinessUserRole } from '@/business/schemas/business-user.schema';
-import { Role } from '@/auth/enums/role.enum';
 
 export class AssignBusinessUserDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
@@ -59,27 +64,39 @@ export class OnboardClientDto {
   @IsString()
   lastName: string;
 
-  @ApiProperty({ example: '+1234567890', required: false })
+  @ApiPropertyOptional({ example: '+1234567890' })
   @IsString()
   @IsOptional()
   phoneNumber?: string;
 
-  @ApiPropertyOptional({ example: 'password123', description: 'Custom password for the client' })
+  @ApiPropertyOptional({
+    example: 'password123',
+    description: 'Custom password for the client',
+  })
   @IsString()
   @IsOptional()
   password?: string;
 
-  @ApiPropertyOptional({ example: '123 Main St, City', description: 'Billing address' })
+  @ApiPropertyOptional({
+    example: '123 Main St, City',
+    description: 'Billing address',
+  })
   @IsString()
   @IsOptional()
   address?: string;
 
-  @ApiPropertyOptional({ example: 'VAT123456789', description: 'Tax ID / VAT number' })
+  @ApiPropertyOptional({
+    example: 'VAT123456789',
+    description: 'Tax ID / VAT number',
+  })
   @IsString()
   @IsOptional()
   vatNumber?: string;
 
-  @ApiPropertyOptional({ example: 'FR76 1234 5678 9012 3456 7890 123', description: 'IBAN number' })
+  @ApiPropertyOptional({
+    example: 'FR76 1234 5678 9012 3456 7890 123',
+    description: 'IBAN number',
+  })
   @IsString()
   @IsOptional()
   iban?: string;

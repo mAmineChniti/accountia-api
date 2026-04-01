@@ -15,11 +15,13 @@ import { EmailModule } from '@/email/email.module';
     AuthModule,
     BusinessModule,
     EmailModule,
-    MongooseModule.forFeature([
-      { name: Invoice.name, schema: InvoiceSchema },
-    ]),
+    MongooseModule.forFeature([{ name: Invoice.name, schema: InvoiceSchema }]),
   ],
-  controllers: [InvoicesController, ManagedInvoicesController, ClientInvoicesController],
+  controllers: [
+    InvoicesController,
+    ManagedInvoicesController,
+    ClientInvoicesController,
+  ],
   providers: [InvoicesService, FlouciService],
   exports: [InvoicesService, FlouciService],
 })

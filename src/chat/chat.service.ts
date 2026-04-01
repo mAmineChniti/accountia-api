@@ -1,12 +1,17 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { spawn, ChildProcess } from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
+import { spawn, ChildProcess } from 'node:child_process';
+import path from 'node:path';
+import * as fs from 'node:fs';
 
 export interface AiResponse {
   response: string;
   choices: string[];
-  link: { text: string; url: string } | null;
+  link: { text: string; url: string } | undefined;
   type: 'text' | 'choices' | 'analysis';
 }
 
@@ -18,12 +23,17 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log('Starting Python AI Service...');
-    
+
     const scriptPath = path.join(process.cwd(), 'ai_brain.py');
     let pythonExecutable = 'python';
 
     // Try to find the virtual environment python depending on OS
-    const venvWinPath = path.join(process.cwd(), '.venv', 'Scripts', 'python.exe');
+    const venvWinPath = path.join(
+      process.cwd(),
+      '.venv',
+      'Scripts',
+      'python.exe'
+    );
     const venvMacUnixPath = path.join(process.cwd(), '.venv', 'bin', 'python');
 
     if (fs.existsSync(venvWinPath)) {
@@ -31,7 +41,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     } else if (fs.existsSync(venvMacUnixPath)) {
       pythonExecutable = venvMacUnixPath;
     }
-    
+
     this.pythonProcess = spawn(pythonExecutable, [scriptPath], {
       stdio: 'pipe',
       detached: false,
@@ -41,12 +51,12 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    this.pythonProcess.stdout?.on('data', (data) => {
+    this.pythonProcess.stdout?.on('data', (data: Buffer) => {
       const out = data.toString().trim();
       if (out) this.logger.log(`[Python AI]: ${out}`);
     });
 
-    this.pythonProcess.stderr?.on('data', (data) => {
+    this.pythonProcess.stderr?.on('data', (data: Buffer) => {
       const err = data.toString().trim();
       if (err) this.logger.debug(`[Python AI]: ${err}`);
     });
@@ -67,7 +77,7 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
     role: string,
     query: string,
     history: Array<{ role: string; content: string }> = [],
-    systemContext?: any,
+    systemContext?: unknown
   ): Promise<AiResponse> {
     try {
       const response = await fetch(`${this.AI_BASE_URL}/chat`, {
@@ -75,14 +85,17 @@ export class ChatService implements OnModuleInit, OnModuleDestroy {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, query, history, context: systemContext }),
       });
-      const data = await response.json() as AiResponse;
+      const data = (await response.json()) as AiResponse;
       return data;
-    } catch (error: any) {
-      this.logger.error(`AI Service error: ${error.message}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown AI service error';
+      this.logger.error(`AI Service error: ${message}`);
       return {
-        response: "Désolé, je rencontre une petite difficulté technique. Réessayez dans un instant.",
+        response:
+          'Désolé, je rencontre une petite difficulté technique. Réessayez dans un instant.',
         choices: [],
-        link: null,
+        link: undefined,
         type: 'text',
       };
     }

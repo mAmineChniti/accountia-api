@@ -9,11 +9,16 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Invoice, InvoiceDocument, InvoiceStatus, InvoiceItem } from '@/business/schemas/invoice.schema';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import {
+  Invoice,
+  InvoiceDocument,
+  InvoiceStatus,
+  InvoiceItem,
+} from '@/business/schemas/invoice.schema';
+import { CreateInvoiceDto, InvoiceStatusDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import { EmailService } from '@/email/email.service';
 import { BusinessService } from '@/business/business.service';
 import { NotificationsService } from '@/notifications/notifications.service';
@@ -27,7 +32,7 @@ export class InvoicesService {
     private emailService: EmailService,
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService,
-    private notificationsService: NotificationsService,
+    private notificationsService: NotificationsService
   ) {}
 
   /**
@@ -44,10 +49,10 @@ export class InvoicesService {
    */
   private calculateTotals(
     lineItems: InvoiceItem[],
-    taxRate: number,
+    taxRate: number
   ): { subtotal: number; taxAmount: number; total: number } {
     const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = Math.round((subtotal * taxRate) / 100 * 100) / 100;
+    const taxAmount = Math.round(((subtotal * taxRate) / 100) * 100) / 100;
     const total = subtotal + taxAmount;
 
     return { subtotal, taxAmount, total };
@@ -56,16 +61,27 @@ export class InvoicesService {
   /**
    * Crée une facture
    */
-  async createInvoice(businessOwnerId: string, createInvoiceDto: CreateInvoiceDto): Promise<InvoiceResponseDto> {
-    console.log('[InvoicesService.createInvoice] Creating invoice for businessOwnerId:', businessOwnerId);
-    
+  async createInvoice(
+    businessOwnerId: string,
+    createInvoiceDto: CreateInvoiceDto
+  ): Promise<InvoiceResponseDto> {
+    console.log(
+      '[InvoicesService.createInvoice] Creating invoice for businessOwnerId:',
+      businessOwnerId
+    );
+
     // Validation: vérifier que dueDate > issueDate
-    if (new Date(createInvoiceDto.dueDate) <= new Date(createInvoiceDto.issueDate)) {
+    if (
+      new Date(createInvoiceDto.dueDate) <= new Date(createInvoiceDto.issueDate)
+    ) {
       throw new BadRequestException('Due date must be after issue date');
     }
 
     // Validation: au moins 1 article de ligne
-    if (!createInvoiceDto.lineItems || createInvoiceDto.lineItems.length === 0) {
+    if (
+      !createInvoiceDto.lineItems ||
+      createInvoiceDto.lineItems.length === 0
+    ) {
       throw new BadRequestException('Invoice must have at least one line item');
     }
 
@@ -79,7 +95,10 @@ export class InvoicesService {
     }));
 
     // Calculer les totaux
-    const { subtotal, taxAmount, total } = this.calculateTotals(lineItems, createInvoiceDto.taxRate || 19);
+    const { subtotal, taxAmount, total } = this.calculateTotals(
+      lineItems,
+      createInvoiceDto.taxRate || 19
+    );
 
     // Créer la facture
     const invoiceNumber = this.generateInvoiceNumber();
@@ -96,9 +115,9 @@ export class InvoicesService {
       total,
       issueDate: new Date(createInvoiceDto.issueDate),
       dueDate: new Date(createInvoiceDto.dueDate),
-      status: createInvoiceDto.status || InvoiceStatus.DRAFT,
+      status: createInvoiceDto.status ?? InvoiceStatus.DRAFT,
       notes: createInvoiceDto.notes,
-      currency: createInvoiceDto.currency || 'TND',
+      currency: createInvoiceDto.currency ?? 'TND',
     });
 
     console.log('[InvoicesService.createInvoice] Invoice object created:', {
@@ -109,39 +128,58 @@ export class InvoicesService {
 
     try {
       await invoice.save();
-      console.log('[InvoicesService.createInvoice] ✅ Invoice saved to DB:', invoice._id);
-      
+      console.log(
+        '[InvoicesService.createInvoice] ✅ Invoice saved to DB:',
+        invoice._id
+      );
+
       // If status is not DRAFT, trigger email notification immediately
       if (invoice.status !== InvoiceStatus.DRAFT) {
         invoice.sentAt = new Date();
         await invoice.save();
-        
-        const business = await this.businessService.findOne(businessOwnerId).catch(() => null);
-        const businessName = business?.name || 'Accountia Professional';
 
-        this.emailService.sendInvoiceNotification(
-          invoice.clientEmail,
-          invoice.invoiceNumber,
-          invoice.total,
-          invoice.currency || 'TND',
-          invoice.dueDate,
-          businessName,
-        ).catch(err => console.error('Failed to send invoice notification on create:', err));
-        
+        const business = await this.businessService
+          .findOne(businessOwnerId)
+          .catch((): undefined => undefined);
+        const businessName = business?.name ?? 'Accountia Professional';
+
+        this.emailService
+          .sendInvoiceNotification(
+            invoice.clientEmail,
+            invoice.invoiceNumber,
+            invoice.total,
+            invoice.currency ?? 'TND',
+            invoice.dueDate,
+            businessName
+          )
+          .catch((error) =>
+            console.error(
+              'Failed to send invoice notification on create:',
+              error
+            )
+          );
+
         // Also send confirmation to BO
-        this.emailService.sendInvoiceSentConfirmation(
-          businessOwnerId,
-          invoice.invoiceNumber,
-          invoice.clientName,
-          invoice.clientEmail,
-          invoice.total,
-          invoice.currency || 'TND',
-        ).catch(err => console.error('Failed to send BO confirmation on create:', err));
+        this.emailService
+          .sendInvoiceSentConfirmation(
+            businessOwnerId,
+            invoice.invoiceNumber,
+            invoice.clientName,
+            invoice.clientEmail,
+            invoice.total,
+            invoice.currency ?? 'TND'
+          )
+          .catch((error) =>
+            console.error('Failed to send BO confirmation on create:', error)
+          );
       }
-
-    } catch (error: any) {
-      console.error('[InvoicesService.createInvoice] ❌ Error saving invoice:', error);
-      if (error.code === 11000) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(
+        '[InvoicesService.createInvoice] ❌ Error saving invoice:',
+        message
+      );
+      if (error instanceof Error && 'code' in error && error.code === 11_000) {
         throw new ConflictException('Invoice number already exists');
       }
       throw error;
@@ -153,7 +191,10 @@ export class InvoicesService {
   /**
    * Récupère une facture par ID
    */
-  async getInvoiceById(id: string, businessOwnerId: string): Promise<InvoiceResponseDto> {
+  async getInvoiceById(
+    id: string,
+    businessOwnerId: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -179,46 +220,32 @@ export class InvoicesService {
   async getInvoicesByBusinessId(
     businessOwnerId: string,
     status?: InvoiceStatus,
-    page: number = 1,
-    limit: number = 10,
-  ): Promise<{ invoices: InvoiceResponseDto[]; total: number; page: number; limit: number; totalPages: number }> {
-    const query: any = {
+    page = 1,
+    limit = 10
+  ): Promise<{
+    invoices: InvoiceResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const query = {
       businessOwnerId,
-      $or: [
-        { deletedAt: { $exists: false } },
-        { deletedAt: null }
-      ]
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
+      ...(status && { status }),
     };
 
-    if (status) {
-      query.status = status;
-    }
-
-    console.log('[InvoicesService.getInvoicesByBusinessId] Search query:', query);
-
     const total = await this.invoiceModel.countDocuments(query);
-    console.log(`[InvoicesService.getInvoicesByBusinessId] Found ${total} total invoices`);
 
-    const now = new Date();
     const invoices = await this.invoiceModel
-      .find(query)
+      .find({ ...query })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
-    // Dynamic update: If an invoice is SENT/PENDING but the dueDate has passed, mark it OVERDUE
-    for (const inv of invoices) {
-      if (
-        (inv.status === InvoiceStatus.SENT || inv.status === InvoiceStatus.PENDING) &&
-        inv.dueDate < now
-      ) {
-        inv.status = InvoiceStatus.OVERDUE;
-        await inv.save();
-        console.log(`[InvoicesService.getInvoicesByBusinessId] Dynamic Status Update: Invoice ${inv.invoiceNumber} marked as OVERDUE`);
-      }
-    }
-
-    console.log(`[InvoicesService.getInvoicesByBusinessId] Returning ${invoices.length} invoices for page ${page}`);
+    // Note: Do NOT update invoice status in GET request
+    // Status updates should be handled by a separate cron job only
+    // This prevents race conditions and side effects on read operations
 
     return {
       invoices: invoices.map((inv) => this.formatInvoiceResponse(inv)),
@@ -237,24 +264,24 @@ export class InvoicesService {
   async getInvoicesByClientEmail(
     clientEmail: string,
     status?: InvoiceStatus,
-    page: number = 1,
-    limit: number = 10,
-  ): Promise<{ invoices: InvoiceResponseDto[]; total: number; page: number; limit: number; totalPages: number }> {
-    const query: any = {
+    page = 1,
+    limit = 10
+  ): Promise<{
+    invoices: InvoiceResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const query = {
       clientEmail,
-      $or: [
-        { deletedAt: { $exists: false } },
-        { deletedAt: null }
-      ]
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
+      ...(status && { status }),
     };
-
-    if (status) {
-      query.status = status;
-    }
 
     const total = await this.invoiceModel.countDocuments(query);
     const invoices = await this.invoiceModel
-      .find(query)
+      .find({ ...query })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -271,14 +298,14 @@ export class InvoicesService {
   /**
    * Récupère une facture unique par son ID si elle appartient au client
    */
-  async getInvoiceByClientEmailAndId(id: string, clientEmail: string): Promise<InvoiceResponseDto> {
+  async getInvoiceByClientEmailAndId(
+    id: string,
+    clientEmail: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findOne({
       _id: id,
-      clientEmail: { $regex: new RegExp('^' + clientEmail + '$', 'i') },
-      $or: [
-        { deletedAt: { $exists: false } },
-        { deletedAt: null }
-      ]
+      clientEmail: clientEmail, // Use exact match instead of unsafe regex
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
     });
 
     if (!invoice) {
@@ -291,7 +318,11 @@ export class InvoicesService {
   /**
    * Met à jour une facture
    */
-  async updateInvoice(id: string, businessOwnerId: string, updateInvoiceDto: UpdateInvoiceDto): Promise<InvoiceResponseDto> {
+  async updateInvoice(
+    id: string,
+    businessOwnerId: string,
+    updateInvoiceDto: UpdateInvoiceDto
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -349,7 +380,10 @@ export class InvoicesService {
     }
 
     // Recalculer les totaux
-    const { subtotal, taxAmount, total } = this.calculateTotals(invoice.lineItems, invoice.taxRate);
+    const { subtotal, taxAmount, total } = this.calculateTotals(
+      invoice.lineItems,
+      invoice.taxRate
+    );
     invoice.subtotal = subtotal;
     invoice.taxAmount = taxAmount;
     invoice.total = total;
@@ -384,7 +418,11 @@ export class InvoicesService {
   /**
    * Envoie une facture (change le statut à SENT)
    */
-  async sendInvoice(id: string, businessOwnerId: string, customMessage?: string): Promise<InvoiceResponseDto> {
+  async sendInvoice(
+    id: string,
+    businessOwnerId: string,
+    customMessage?: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -404,25 +442,35 @@ export class InvoicesService {
     await invoice.save();
 
     // Trigger Email Notification to client (non-blocking)
-    const business = await this.businessService.findOne(businessOwnerId).catch(() => null);
-    const businessName = business?.name || 'Accountia Professional';
-    
-    this.emailService.sendInvoiceNotification(
-      invoice.clientEmail,
-      invoice.invoiceNumber,
-      invoice.total,
-      invoice.currency || 'USD',
-      invoice.dueDate,
-      businessName,
-      customMessage,
-    ).catch(err => console.error('Failed to send invoice notification email:', err));
+    const business = await this.businessService
+      .findOne(businessOwnerId)
+      .catch((): undefined => undefined);
+    const businessName = business?.name ?? 'Accountia Professional';
+
+    this.emailService
+      .sendInvoiceNotification(
+        invoice.clientEmail,
+        invoice.invoiceNumber,
+        invoice.total,
+        invoice.currency || 'USD',
+        invoice.dueDate,
+        businessName,
+        customMessage
+      )
+      .catch((error) =>
+        console.error('Failed to send invoice notification email:', error)
+      );
     return this.formatInvoiceResponse(invoice);
   }
 
   /**
    * Marquer la facture comme payée (après vérification du paiement)
    */
-  async markInvoiceAsPaid(id: string, clientEmail: string, paymentId?: string): Promise<InvoiceResponseDto> {
+  async markInvoiceAsPaid(
+    id: string,
+    clientEmail: string,
+    _paymentId?: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findOne({
       _id: id,
       clientEmail: clientEmail,
@@ -442,29 +490,39 @@ export class InvoicesService {
     await invoice.save();
 
     // Trigger Email Notification for payment success (non-blocking)
-    const business = await this.businessService.findOne(invoice.businessOwnerId.toString()).catch(() => null);
-    const businessName = business?.name || 'Accountia Professional';
+    const business = await this.businessService
+      .findOne(invoice.businessOwnerId.toString())
+      .catch((): undefined => undefined);
+    const businessName = business?.name ?? 'Accountia Professional';
 
-    this.emailService.sendInvoiceNotification(
-      invoice.clientEmail,
-      invoice.invoiceNumber,
-      invoice.total,
-      invoice.currency || 'USD',
-      invoice.dueDate, // Pas grave si c'est la date d'échéance, idéalement c'est la date de paiement
-      businessName,
-      `Your payment of ${invoice.total.toFixed(2)} ${invoice.currency || 'USD'} has been successfully processed via Flouci. Thank you!`,
-    ).catch(err => console.error('Failed to send payment success email:', err));
+    this.emailService
+      .sendInvoiceNotification(
+        invoice.clientEmail,
+        invoice.invoiceNumber,
+        invoice.total,
+        invoice.currency || 'USD',
+        invoice.dueDate, // Pas grave si c'est la date d'échéance, idéalement c'est la date de paiement
+        businessName,
+        `Your payment of ${invoice.total.toFixed(2)} ${invoice.currency || 'USD'} has been successfully processed via Flouci. Thank you!`
+      )
+      .catch((error) =>
+        console.error('Failed to send payment success email:', error)
+      );
 
     // Notify Business Owner in-app
-    this.notificationsService.createNotification({
-      type: NotificationType.INVOICE_PAID,
-      message: `Invoice ${invoice.invoiceNumber} has been paid by ${invoice.clientName}`,
-      targetBusinessId: invoice.businessOwnerId.toString(),
-      payload: {
-        invoiceId: invoice._id.toString(),
-        amount: invoice.total,
-      }
-    }).catch(err => console.error('Failed to send in-app notification:', err));
+    this.notificationsService
+      .createNotification({
+        type: NotificationType.INVOICE_PAID,
+        message: `Invoice ${invoice.invoiceNumber} has been paid by ${invoice.clientName}`,
+        targetBusinessId: invoice.businessOwnerId.toString(),
+        payload: {
+          invoiceId: invoice._id.toString(),
+          amount: invoice.total,
+        },
+      })
+      .catch((error) =>
+        console.error('Failed to send in-app notification:', error)
+      );
 
     return this.formatInvoiceResponse(invoice);
   }
@@ -472,7 +530,10 @@ export class InvoicesService {
   /**
    * Marquer la facture comme payée manuellement par le Business Owner
    */
-  async markInvoiceAsPaidManual(id: string, businessOwnerId: string): Promise<InvoiceResponseDto> {
+  async markInvoiceAsPaidManual(
+    id: string,
+    businessOwnerId: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -484,7 +545,7 @@ export class InvoicesService {
     }
 
     if (invoice.status === InvoiceStatus.PAID) {
-      return this.formatInvoiceResponse(invoice); 
+      return this.formatInvoiceResponse(invoice);
     }
 
     invoice.status = InvoiceStatus.PAID;
@@ -497,7 +558,11 @@ export class InvoicesService {
   /**
    * Active ou désactive les rappels pour une facture spécifique
    */
-  async toggleInvoiceReminders(id: string, businessOwnerId: string, muted: boolean): Promise<InvoiceResponseDto> {
+  async toggleInvoiceReminders(
+    id: string,
+    businessOwnerId: string,
+    muted: boolean
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -517,7 +582,10 @@ export class InvoicesService {
   /**
    * Envoie manuellement un rappel de paiement
    */
-  async sendManualReminder(id: string, businessOwnerId: string): Promise<InvoiceResponseDto> {
+  async sendManualReminder(
+    id: string,
+    businessOwnerId: string
+  ): Promise<InvoiceResponseDto> {
     const invoice = await this.invoiceModel.findById(id);
 
     if (!invoice) {
@@ -529,35 +597,48 @@ export class InvoicesService {
     }
 
     // Autorisé pour SENT, PENDING, OVERDUE
-    if ([InvoiceStatus.DRAFT, InvoiceStatus.PAID].includes(invoice.status as any)) {
-      throw new BadRequestException('Can only remind for sent, pending or overdue invoices');
+    const notAllowedStatuses = [InvoiceStatus.DRAFT, InvoiceStatus.PAID];
+    if (notAllowedStatuses.includes(invoice.status)) {
+      throw new BadRequestException(
+        'Can only remind for sent, pending or overdue invoices'
+      );
     }
 
-    const business = await this.businessService.findOne(businessOwnerId).catch(() => null);
-    const businessName = business?.name || 'Accountia Professional';
+    const business = await this.businessService
+      .findOne(businessOwnerId)
+      .catch((): undefined => undefined);
+    const businessName = business?.name ?? 'Accountia Professional';
 
     // 1. Send Email
-    await this.emailService.sendInvoiceReminderEmail(
-      invoice.clientEmail,
-      invoice.clientName,
-      businessName,
-      invoice.invoiceNumber,
-      `${invoice.total.toFixed(2)} ${invoice.currency}`,
-      invoice.dueDate.toLocaleDateString(),
-      0 // 0 means manual reminder
-    ).catch(err => console.error('Failed to send manual reminder email:', err));
+    await this.emailService
+      .sendInvoiceReminderEmail(
+        invoice.clientEmail,
+        invoice.clientName,
+        businessName,
+        invoice.invoiceNumber,
+        `${invoice.total.toFixed(2)} ${invoice.currency}`,
+        invoice.dueDate.toLocaleDateString(),
+        0 // 0 means manual reminder
+      )
+      .catch((error) =>
+        console.error('Failed to send manual reminder email:', error)
+      );
 
     // 2. Create In-App Notification for Client
-    await this.notificationsService.createNotification({
-      type: NotificationType.INVOICE_REMINDED,
-      message: `Reminder: Invoice ${invoice.invoiceNumber} from ${businessName} is awaiting payment.`,
-      targetUserEmail: invoice.clientEmail,
-      payload: {
-        invoiceId: invoice._id.toString(),
-        businessName,
-        amount: invoice.total,
-      }
-    }).catch(err => console.error('Failed to create in-app notification for client:', err));
+    await this.notificationsService
+      .createNotification({
+        type: NotificationType.INVOICE_REMINDED,
+        message: `Reminder: Invoice ${invoice.invoiceNumber} from ${businessName} is awaiting payment.`,
+        targetUserEmail: invoice.clientEmail,
+        payload: {
+          invoiceId: invoice._id.toString(),
+          businessName,
+          amount: invoice.total,
+        },
+      })
+      .catch((error) =>
+        console.error('Failed to create in-app notification for client:', error)
+      );
 
     // 3. Record in history
     if (!invoice.reminderHistory) invoice.reminderHistory = [];
@@ -578,12 +659,12 @@ export class InvoicesService {
   async handleOverdueInvoices() {
     console.log('[Cron Job] Starting daily overdue invoice check...');
     const now = new Date();
-    
+
     // 1. Sync Status: Mark PENDING/SENT invoices as OVERDUE if dueDate is passed
     const justOverdueInvoices = await this.invoiceModel.find({
       status: { $in: [InvoiceStatus.PENDING, InvoiceStatus.SENT] },
       dueDate: { $lt: now },
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }]
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
     });
 
     for (const invoice of justOverdueInvoices) {
@@ -591,62 +672,84 @@ export class InvoicesService {
       await invoice.save();
 
       // Notify owner in-app
-      this.notificationsService.createNotification({
-        type: NotificationType.INVOICE_OVERDUE,
-        message: `Status: Invoice ${invoice.invoiceNumber} for ${invoice.clientName} is now OVERDUE.`,
-        targetBusinessId: invoice.businessOwnerId.toString(),
-        payload: { invoiceId: invoice._id.toString(), dueDate: invoice.dueDate }
-      }).catch(err => console.log('Error creating alert notification', err));
+      this.notificationsService
+        .createNotification({
+          type: NotificationType.INVOICE_OVERDUE,
+          message: `Status: Invoice ${invoice.invoiceNumber} for ${invoice.clientName} is now OVERDUE.`,
+          targetBusinessId: invoice.businessOwnerId.toString(),
+          payload: {
+            invoiceId: invoice._id.toString(),
+            dueDate: invoice.dueDate,
+          },
+        })
+        .catch((error) =>
+          console.log('Error creating alert notification', error)
+        );
     }
 
     // 2. Automated Reminders: Check all OVERDUE invoices for 5, 10, 20 day intervals
     const overdueInvoices = await this.invoiceModel.find({
       status: InvoiceStatus.OVERDUE,
       remindersMuted: { $ne: true },
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: null }]
+      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
     });
 
     for (const invoice of overdueInvoices) {
-      const business = await this.businessService.findOne(invoice.businessOwnerId.toString()).catch(() => null);
-      
+      const business = await this.businessService
+        .findOne(invoice.businessOwnerId.toString())
+        .catch((): undefined => undefined);
+
       // Skip if business exists but reminders are explicitly disabled
       if (business?.automationSettings?.remindersEnabled === false) continue;
 
-      const diffTime = Math.abs(now.getTime() - new Date(invoice.dueDate).getTime());
+      const diffTime = Math.abs(
+        now.getTime() - new Date(invoice.dueDate).getTime()
+      );
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
       // Professional intervals: 5, 10, 20
       const targetIntervals = [5, 10, 20];
-      const intervalToRemind = targetIntervals.find(i => diffDays >= i);
+      const intervalToRemind = targetIntervals.find((i) => diffDays >= i);
 
       if (intervalToRemind) {
         // Check if reminder was already sent for this specific interval
-        const alreadySent = invoice.reminderHistory?.some(h => h.intervalDays === intervalToRemind);
-        
+        const alreadySent = invoice.reminderHistory?.some(
+          (h) => h.intervalDays === intervalToRemind
+        );
+
         if (!alreadySent) {
-          console.log(`[Cron Job] Sending ${intervalToRemind}-day reminder for invoice ${invoice.invoiceNumber}`);
-          
-          await this.emailService.sendInvoiceReminderEmail(
-            invoice.clientEmail,
-            invoice.clientName,
-            business?.name || 'Accountia Business',
-            invoice.invoiceNumber,
-            `${invoice.total.toFixed(2)} ${invoice.currency}`,
-            invoice.dueDate.toLocaleDateString(),
-            intervalToRemind
-          ).catch(err => console.error(`Failed to send ${intervalToRemind}-day reminder:`, err));
+          console.log(
+            `[Cron Job] Sending ${intervalToRemind}-day reminder for invoice ${invoice.invoiceNumber}`
+          );
+
+          await this.emailService
+            .sendInvoiceReminderEmail(
+              invoice.clientEmail,
+              invoice.clientName,
+              business?.name ?? 'Accountia Business',
+              invoice.invoiceNumber,
+              `${invoice.total.toFixed(2)} ${invoice.currency}`,
+              invoice.dueDate.toLocaleDateString(),
+              intervalToRemind
+            )
+            .catch((error) =>
+              console.error(
+                `Failed to send ${intervalToRemind}-day reminder:`,
+                error
+              )
+            );
 
           // Record history
           if (!invoice.reminderHistory) invoice.reminderHistory = [];
           invoice.reminderHistory.push({
             sentAt: new Date(),
-            intervalDays: intervalToRemind
+            intervalDays: intervalToRemind,
           });
           await invoice.save();
         }
       }
     }
-    
+
     console.log('[Cron Job] Daily overdue invoice check completed.');
   }
 
@@ -674,18 +777,20 @@ export class InvoicesService {
       total: invoice.total,
       issueDate: invoice.issueDate,
       dueDate: invoice.dueDate,
-      status: invoice.status as any,
+      status: invoice.status as unknown as InvoiceStatusDto,
       notes: invoice.notes,
       currency: invoice.currency,
       sentAt: invoice.sentAt,
       paidAt: invoice.paidAt,
       remindersMuted: invoice.remindersMuted,
-      reminderHistory: invoice.reminderHistory ? invoice.reminderHistory.map(h => ({
-        sentAt: h.sentAt,
-        intervalDays: h.intervalDays,
-      })) : [],
-      createdAt: invoice.createdAt || new Date(),
-      updatedAt: invoice.updatedAt || new Date(),
+      reminderHistory: invoice.reminderHistory
+        ? invoice.reminderHistory.map((h) => ({
+            sentAt: h.sentAt,
+            intervalDays: h.intervalDays,
+          }))
+        : [],
+      createdAt: invoice.createdAt ?? new Date(),
+      updatedAt: invoice.updatedAt ?? new Date(),
     };
   }
 }

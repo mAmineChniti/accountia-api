@@ -155,13 +155,13 @@ export class EmailService {
       const templatePath = `${process.cwd()}/src/business/templates/client_onboarding.html`;
       console.log('Template path:', templatePath);
       let html = await readFile(templatePath, 'utf8');
-      
+
       const year = new Date().getFullYear().toString();
       const replacements = {
         '{{.ClientName}}': EmailService.escapeHtml(clientName),
         '{{.BusinessName}}': EmailService.escapeHtml(businessName),
         '{{.TempPassword}}': tempPassword,
-        '{{.Email}}': EmailService.escapeHtml(clientEmail || email),
+        '{{.Email}}': EmailService.escapeHtml(clientEmail ?? email),
         '{{.LoginUrl}}': this.frontendUrl,
         '{{.Year}}': year,
       };
@@ -170,7 +170,11 @@ export class EmailService {
         html = html.replaceAll(placeholder, value);
       }
 
-      await this.sendEmail(email, `Welcome to ${businessName} - Your Account is Ready`, html);
+      await this.sendEmail(
+        email,
+        `Welcome to ${businessName} - Your Account is Ready`,
+        html
+      );
     } catch (error: unknown) {
       console.error('Failed to send client onboarding email:', error);
     }
@@ -183,22 +187,24 @@ export class EmailService {
     currency: string,
     dueDate: Date,
     businessName: string,
-    customMessage?: string,
+    customMessage?: string
   ): Promise<void> {
     try {
       const templatePath = `${process.cwd()}/src/auth/templates/invoice_sent.html`;
       let html = await readFile(templatePath, 'utf8');
-      
+
       const year = new Date().getFullYear().toString();
       const dateObj = new Date(dueDate);
-      const formattedDate = isNaN(dateObj.getTime()) ? 'N/A' : dateObj.toLocaleDateString('fr-TN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
+      const formattedDate = Number.isNaN(dateObj.getTime())
+        ? 'N/A'
+        : dateObj.toLocaleDateString('fr-TN', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
 
       // Build optional custom message block
-      const customMessageBlock = customMessage 
+      const customMessageBlock = customMessage
         ? `<div style="background-color:#eff6ff;border-left:4px solid #2563eb;border-radius:0 8px 8px 0;padding:16px 20px;margin:20px 0;">
              <p style="font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Message from ${EmailService.escapeHtml(businessName)}</p>
              <p style="font-size:15px;color:#374151;margin:0;">${EmailService.escapeHtml(customMessage)}</p>
@@ -220,7 +226,11 @@ export class EmailService {
         html = html.replaceAll(placeholder, value);
       }
 
-      await this.sendEmail(email, `New Invoice from ${businessName}: ${invoiceNumber}`, html);
+      await this.sendEmail(
+        email,
+        `New Invoice from ${businessName}: ${invoiceNumber}`,
+        html
+      );
     } catch (error: unknown) {
       console.error('Failed to send invoice notification email:', error);
     }
@@ -235,11 +245,11 @@ export class EmailService {
     clientName: string,
     clientEmail: string,
     amount: number,
-    currency: string,
+    currency: string
   ): Promise<void> {
     try {
       const ownerEmail = await this.getUserEmail(businessOwnerId);
-      
+
       const year = new Date().getFullYear().toString();
       const html = `
       <!doctype html>
@@ -289,7 +299,11 @@ export class EmailService {
       </body>
       </html>`;
 
-      await this.sendEmail(ownerEmail, `✓ Invoice ${invoiceNumber} sent to ${clientName}`, html);
+      await this.sendEmail(
+        ownerEmail,
+        `✓ Invoice ${invoiceNumber} sent to ${clientName}`,
+        html
+      );
     } catch (error: unknown) {
       console.error('Failed to send BO confirmation email:', error);
     }
@@ -318,7 +332,7 @@ export class EmailService {
     }
   }
 
-  private static escapeHtml(value: string | undefined | null): string {
+  private static escapeHtml(value: string | undefined): string {
     if (!value) return '';
     return String(value)
       .replaceAll('&', '&amp;')
@@ -366,7 +380,9 @@ export class EmailService {
     };
 
     try {
-      console.log(`Attempting to send email to: ${to} with subject: ${subject}`);
+      console.log(
+        `Attempting to send email to: ${to} with subject: ${subject}`
+      );
       const info = await transporter.sendMail(mailOptions);
       console.log('Email sent successfully:', info.messageId);
     } catch (error: unknown) {
@@ -377,4 +393,3 @@ export class EmailService {
     }
   }
 }
-

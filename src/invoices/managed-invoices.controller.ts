@@ -2,61 +2,84 @@ import {
   Controller,
   Get,
   Query,
-  Req,
   UseGuards,
   Param,
   Post,
   Body,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiCreatedResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+import { type UserPayload } from '@/auth/types/auth.types';
+import { Role } from '@/auth/enums/role.enum';
 import { InvoicesService } from './invoices.service';
 import { FlouciService } from './flouci.service';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
+import { InvoiceStatus } from '@/business/schemas/invoice.schema';
 
 /**
  * Contrôleur pour les invoices des clients MANAGÉS
  * Les clients créés par un Business Owner via "Onboard New Client"
  * peuvent voir leurs invoices à /managed/invoices
  */
+@ApiTags('Invoices - Managed')
 @Controller('managed/invoices')
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class ManagedInvoicesController {
   constructor(
     private invoicesService: InvoicesService,
-    private flouciService: FlouciService,
+    private flouciService: FlouciService
   ) {}
 
   /**
    * Récupère les invoices pour le client MANAGÉ connecté
    * GET /managed/invoices
-   * 
+   *
    * - Filtre par l'email du client depuis le JWT
    * - Retourne UNIQUEMENT les invoices destinées à ce client
    */
   @Get()
+  @ApiOkResponse({
+    description: 'List of managed client invoices retrieved successfully',
+    type: [InvoiceResponseDto],
+  })
   async getManagedClientInvoices(
-    @Req() req: any,
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-    @Query('status') status?: string,
-  ): Promise<{ success: boolean; invoices?: InvoiceResponseDto[]; total?: number; error?: string }> {
+    @CurrentUser() user: UserPayload,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('status') status?: InvoiceStatus
+  ): Promise<{
+    success: boolean;
+    invoices?: InvoiceResponseDto[];
+    total?: number;
+    error?: string;
+  }> {
     try {
       // Only CLIENTs can access this endpoint
-      if (req.user.role !== 'CLIENT') {
-        return { success: false, error: 'Only managed clients can access this endpoint' };
+      if (user.role !== Role.CLIENT) {
+        return {
+          success: false,
+          error: 'Only managed clients can access this endpoint',
+        };
       }
 
       // Get invoices for this client based on their email
-      const clientEmail = req.user.email;
+      const clientEmail = user.email;
       if (!clientEmail) {
         return { success: false, error: 'Client email not found in token' };
       }
 
       const result = await this.invoicesService.getInvoicesByClientEmail(
         clientEmail,
-        status as any,
+        status,
         Math.max(1, page),
-        Math.max(1, limit),
+        Math.max(1, limit)
       );
 
       return {
@@ -64,8 +87,9 @@ export class ManagedInvoicesController {
         invoices: result.invoices,
         total: result.total,
       };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: message };
     }
   }
 
@@ -74,24 +98,35 @@ export class ManagedInvoicesController {
    * GET /managed/invoices/:id
    */
   @Get(':id')
+  @ApiOkResponse({
+    description: 'Managed client invoice retrieved successfully',
+    type: InvoiceResponseDto,
+  })
   async getManagedClientInvoiceById(
-    @Req() req: any,
-    @Param('id') id: string,
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string
   ): Promise<{ success: boolean; data?: InvoiceResponseDto; error?: string }> {
     try {
-      if (req.user.role !== 'CLIENT') {
-        return { success: false, error: 'Only managed clients can access this endpoint' };
+      if (user.role !== Role.CLIENT) {
+        return {
+          success: false,
+          error: 'Only managed clients can access this endpoint',
+        };
       }
 
-      const clientEmail = req.user.email;
+      const clientEmail = user.email;
       if (!clientEmail) {
         return { success: false, error: 'Client email not found in token' };
       }
 
-      const result = await this.invoicesService.getInvoiceByClientEmailAndId(id, clientEmail);
+      const result = await this.invoicesService.getInvoiceByClientEmailAndId(
+        id,
+        clientEmail
+      );
       return { success: true, data: result };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: message };
     }
   }
 
@@ -100,26 +135,47 @@ export class ManagedInvoicesController {
    * POST /managed/invoices/:id/pay
    */
   @Post(':id/pay')
+  @ApiCreatedResponse({
+    description: 'Payment initiated successfully',
+    schema: {
+      properties: {
+        success: { type: 'boolean' },
+        link: { type: 'string' },
+        error: { type: 'string' },
+      },
+    },
+  })
   async initiatePayment(
-    @Req() req: any,
+    @CurrentUser() user: UserPayload,
     @Param('id') id: string,
     @Body('successUrl') successUrl: string,
-    @Body('failUrl') failUrl: string,
+    @Body('failUrl') failUrl: string
   ): Promise<{ success: boolean; link?: string; error?: string }> {
     try {
-      if (req.user.role !== 'CLIENT') {
-        return { success: false, error: 'Only managed clients can access this endpoint' };
+      if (user.role !== Role.CLIENT) {
+        return {
+          success: false,
+          error: 'Only managed clients can access this endpoint',
+        };
       }
 
-      const clientEmail = req.user.email;
+      const clientEmail = user.email;
       if (!clientEmail) {
         return { success: false, error: 'Client email not found in token' };
       }
 
       // 1. Fetch the invoice to check if it's PENDING and get the amount
-      const invoice = await this.invoicesService.getInvoiceByClientEmailAndId(id, clientEmail);
-      
-      if (invoice.status !== 'PENDING' && invoice.status !== 'SENT' && invoice.status !== 'OVERDUE') {
+      const invoice = await this.invoicesService.getInvoiceByClientEmailAndId(
+        id,
+        clientEmail
+      );
+
+      if (
+        (invoice.status as unknown as InvoiceStatus) !==
+          InvoiceStatus.PENDING &&
+        (invoice.status as unknown as InvoiceStatus) !== InvoiceStatus.SENT &&
+        (invoice.status as unknown as InvoiceStatus) !== InvoiceStatus.OVERDUE
+      ) {
         return { success: false, error: 'Invoice is not pending payment' };
       }
 
@@ -129,12 +185,13 @@ export class ManagedInvoicesController {
         invoice.total,
         invoice.id,
         successUrl,
-        failUrl,
+        failUrl
       );
 
       return { success: true, link: flouciResponse.link };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: message };
     }
   }
 
@@ -143,33 +200,48 @@ export class ManagedInvoicesController {
    * POST /managed/invoices/:id/verify-payment
    */
   @Post(':id/verify-payment')
+  @ApiOkResponse({
+    description: 'Payment verified successfully',
+    type: InvoiceResponseDto,
+  })
   async verifyPayment(
-    @Req() req: any,
+    @CurrentUser() user: UserPayload,
     @Param('id') id: string,
-    @Body('paymentId') paymentId: string,
+    @Body('paymentId') paymentId: string
   ): Promise<{ success: boolean; data?: InvoiceResponseDto; error?: string }> {
     try {
-      if (req.user.role !== 'CLIENT') {
-        return { success: false, error: 'Only managed clients can access this endpoint' };
+      if (user.role !== Role.CLIENT) {
+        return {
+          success: false,
+          error: 'Only managed clients can access this endpoint',
+        };
       }
 
-      const clientEmail = req.user.email;
+      const clientEmail = user.email;
       if (!clientEmail) {
         return { success: false, error: 'Client email not found in token' };
       }
 
       // 1. Verify with Flouci
       const flouciVerify = await this.flouciService.verifyPayment(paymentId);
-      
+
       if (flouciVerify.success && flouciVerify.result?.status === 'SUCCESS') {
         // 2. Update Invoice Status to PAID
-        const updatedInvoice = await this.invoicesService.markInvoiceAsPaid(id, clientEmail, paymentId);
+        const updatedInvoice = await this.invoicesService.markInvoiceAsPaid(
+          id,
+          clientEmail,
+          paymentId
+        );
         return { success: true, data: updatedInvoice };
       } else {
-        return { success: false, error: 'Payment was not successful or still pending' };
+        return {
+          success: false,
+          error: 'Payment was not successful or still pending',
+        };
       }
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: message };
     }
   }
 }
