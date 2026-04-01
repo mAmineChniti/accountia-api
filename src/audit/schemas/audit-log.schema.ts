@@ -27,7 +27,7 @@ export class AuditLog extends Document {
   userRole: string;
 
   @Prop({ type: Object })
-  details: Record<string, any>; // Détails supplémentaires dynamiques
+  details: Record<string, unknown>; // Détails supplémentaires dynamiques
 
   @Prop()
   target?: string; // Who/what was the target of the action (email, business name, etc.)

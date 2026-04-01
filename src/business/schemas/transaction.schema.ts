@@ -44,7 +44,11 @@ export class Transaction {
   @Prop({ default: false })
   hasMissingData: boolean;
 
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business' })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+  })
   businessId: string;
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })

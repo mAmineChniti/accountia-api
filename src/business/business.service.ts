@@ -37,10 +37,20 @@ import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
-import { Transaction, TransactionDocument } from '@/business/schemas/transaction.schema';
-import { Invoice, InvoiceDocument, InvoiceStatus } from '@/business/schemas/invoice.schema';
+import {
+  Transaction,
+  TransactionDocument,
+} from '@/business/schemas/transaction.schema';
+import {
+  Invoice,
+  InvoiceDocument,
+  InvoiceStatus,
+} from '@/business/schemas/invoice.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
-import { OnboardClientDto, UpdateClientDto } from '@/business/dto/business-user.dto';
+import {
+  OnboardClientDto,
+  UpdateClientDto,
+} from '@/business/dto/business-user.dto';
 import { hash } from 'bcrypt';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'csv-parse/sync';
@@ -61,7 +71,8 @@ export class BusinessService {
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUserDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-    @InjectModel(Transaction.name) private transactionModel: Model<TransactionDocument>,
+    @InjectModel(Transaction.name)
+    private transactionModel: Model<TransactionDocument>,
     @InjectModel(Invoice.name) private invoiceModel: Model<InvoiceDocument>,
     private emailService: EmailService,
     private tenantConnectionService: TenantConnectionService,
@@ -94,25 +105,33 @@ export class BusinessService {
     const savedApplication = await application.save();
 
     // Send email notification about application submission (non-blocking)
-    const applicant = await this.userModel.findById(userId).catch(() => null);
+    const applicant = await this.userModel
+      .findById(userId)
+      .catch((_error) => undefined as never);
     if (applicant) {
-      this.emailService.sendBusinessApplicationEmail(
-        applicant.email,
-        `${applicant.firstName} ${applicant.lastName}`,
-        savedApplication.businessName
-      ).catch(err => console.error('Failed to send application email in background:', err));
+      void this.emailService
+        .sendBusinessApplicationEmail(
+          applicant.email,
+          `${applicant.firstName} ${applicant.lastName}`,
+          savedApplication.businessName
+        )
+        .catch((_error) =>
+          console.error('Failed to send application email in background')
+        );
     }
 
     // Send real-time admin notification (non-blocking)
-    this.notificationsService.createNotification({
-      type: NotificationType.NEW_BUSINESS_APPLICATION,
-      message: `New business application: "${savedApplication.businessName}"`,
-      payload: {
-        applicationId: savedApplication._id.toString(),
-        businessName: savedApplication.businessName,
-        applicantId: userId,
-      },
-    }).catch(err => console.error('Failed to create notification:', err));
+    void this.notificationsService
+      .createNotification({
+        type: NotificationType.NEW_BUSINESS_APPLICATION,
+        message: `New business application: "${savedApplication.businessName}"`,
+        payload: {
+          applicationId: savedApplication._id.toString(),
+          businessName: savedApplication.businessName,
+          applicantId: userId,
+        },
+      })
+      .catch((error) => console.error('Failed to create notification:', error));
 
     return {
       message:
@@ -214,47 +233,57 @@ export class BusinessService {
       }
 
       // Send approval email (non-blocking)
-      const appUser = await this.userModel.findById(application.applicantId).catch(() => null);
+      const appUser = await this.userModel
+        .findById(application.applicantId)
+        .catch((_error) => undefined as never);
       if (appUser) {
-        this.emailService.sendBusinessApprovalEmail(
-          appUser.email,
-          `${appUser.firstName} ${appUser.lastName}`,
-          approvedBusinessName
-        ).catch(err => console.error('Failed to send approval email in background:', err));
+        void this.emailService
+          .sendBusinessApprovalEmail(
+            appUser.email,
+            `${appUser.firstName} ${appUser.lastName}`,
+            approvedBusinessName
+          )
+          .catch((_error) =>
+            console.error('Failed to send approval email in background')
+          );
       }
 
-      this.auditService.logAction({
+      void this.auditService.logAction({
         action: AuditAction.APPROVE_BUSINESS,
         userId: reviewer.id,
-        userEmail: reviewer.email || 'Unknown',
-        userRole: reviewer.role || 'ADMIN',
+        userEmail: reviewer.email ?? 'Unknown',
+        userRole: reviewer.role ?? 'ADMIN',
         target: approvedBusinessName,
         details: { applicationId },
       });
-
     } else {
       await application.save();
 
       // Send rejection email (non-blocking)
-      const appUser = await this.userModel.findById(application.applicantId).catch(() => null);
+      const appUser = await this.userModel
+        .findById(application.applicantId)
+        .catch((_error) => undefined as never);
       if (appUser) {
-        this.emailService.sendBusinessRejectionEmail(
-          appUser.email,
-          `${appUser.firstName} ${appUser.lastName}`,
-          application.businessName,
-          reviewDto.reviewNotes ?? 'No specific reason provided'
-        ).catch(err => console.error('Failed to send rejection email in background:', err));
+        void this.emailService
+          .sendBusinessRejectionEmail(
+            appUser.email,
+            `${appUser.firstName} ${appUser.lastName}`,
+            application.businessName,
+            reviewDto.reviewNotes ?? 'No specific reason provided'
+          )
+          .catch((_error) =>
+            console.error('Failed to send rejection email in background')
+          );
       }
 
-      this.auditService.logAction({
+      void this.auditService.logAction({
         action: AuditAction.REJECT_BUSINESS,
         userId: reviewer.id,
-        userEmail: reviewer.email || 'Unknown',
-        userRole: reviewer.role || 'ADMIN',
+        userEmail: reviewer.email ?? 'Unknown',
+        userRole: reviewer.role ?? 'ADMIN',
         target: application.businessName,
         details: { applicationId, reason: reviewDto.reviewNotes },
       });
-
     }
 
     return {
@@ -286,11 +315,15 @@ export class BusinessService {
     });
 
     if (existingBusiness) {
-      throw new BadRequestException('You already have an active business associated with your account');
+      throw new BadRequestException(
+        'You already have an active business associated with your account'
+      );
     }
 
     // Regular setup logic (same as approval but direct)
-    const databaseName = await this.generateUniqueDatabaseName(setupDto.businessName);
+    const databaseName = await this.generateUniqueDatabaseName(
+      setupDto.businessName
+    );
 
     await this.provisionBusinessTenantDatabase(
       databaseName,
@@ -315,7 +348,7 @@ export class BusinessService {
 
     try {
       savedBusiness = await business.save({ session });
-      
+
       await this.businessUserModel.create(
         [
           {
@@ -337,7 +370,7 @@ export class BusinessService {
       await session.endSession();
     }
 
-    this.auditService.logAction({
+    void this.auditService.logAction({
       action: AuditAction.CREATE_BUSINESS,
       userId: ownerId,
       userEmail: 'Internal',
@@ -357,7 +390,7 @@ export class BusinessService {
         databaseName: savedBusiness.databaseName,
         status: savedBusiness.status as string,
         isActive: savedBusiness.isActive,
-        tags: savedBusiness.tags || [],
+        tags: savedBusiness.tags ?? [],
         automationSettings: savedBusiness.automationSettings,
         createdAt: savedBusiness.createdAt,
         updatedAt: savedBusiness.updatedAt,
@@ -372,7 +405,10 @@ export class BusinessService {
    */
   async autoProvisionBusiness(userId: string): Promise<{ businessId: string }> {
     // Check if already linked
-    const existing = await this.businessUserModel.findOne({ userId, isActive: true });
+    const existing = await this.businessUserModel.findOne({
+      userId,
+      isActive: true,
+    });
     if (existing) {
       return { businessId: existing.businessId };
     }
@@ -385,7 +421,9 @@ export class BusinessService {
 
     // If the application already has a businessId, just link the user
     if (application?.businessId) {
-      const business = await this.businessModel.findById(application.businessId);
+      const business = await this.businessModel.findById(
+        application.businessId
+      );
       if (business) {
         await this.businessUserModel.create({
           businessId: application.businessId,
@@ -401,13 +439,19 @@ export class BusinessService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    const businessName = application?.businessName
-      ?? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-      ?? 'Mon Entreprise';
+    const businessName =
+      application?.businessName ??
+      `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() ??
+      'Mon Entreprise';
 
     const databaseName = await this.generateUniqueDatabaseName(businessName);
 
-    await this.provisionBusinessTenantDatabase(databaseName, businessName, userId, userId);
+    await this.provisionBusinessTenantDatabase(
+      databaseName,
+      businessName,
+      userId,
+      userId
+    );
 
     const business = new this.businessModel({
       name: businessName,
@@ -427,7 +471,14 @@ export class BusinessService {
       savedBusiness = await business.save({ session });
 
       await this.businessUserModel.create(
-        [{ businessId: savedBusiness._id.toString(), userId, role: BusinessUserRole.OWNER, assignedBy: userId }],
+        [
+          {
+            businessId: savedBusiness._id.toString(),
+            userId,
+            role: BusinessUserRole.OWNER,
+            assignedBy: userId,
+          },
+        ],
         { session }
       );
 
@@ -448,7 +499,6 @@ export class BusinessService {
 
     return { businessId: savedBusiness._id.toString() };
   }
-
 
   async getBusinessApplications(
     userRole: Role
@@ -482,8 +532,9 @@ export class BusinessService {
     };
   }
 
-  async findOne(id: string): Promise<BusinessDocument | null> {
-    return this.businessModel.findById(id);
+  async findOne(id: string): Promise<BusinessDocument | undefined> {
+    const business = await this.businessModel.findById(id);
+    return business ?? undefined;
   }
 
   // Business Management
@@ -604,12 +655,12 @@ export class BusinessService {
   }
 
   async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
-    let businessUsers = await this.businessUserModel
+    let businessUsers = (await this.businessUserModel
       .find({ userId, isActive: true })
       .select('businessId')
-      .lean() as any[];
+      .lean()) as Array<{ businessId: string }>;
 
-    // Rescue Logic: If user has no business linked but is a BUSINESS_OWNER, 
+    // Rescue Logic: If user has no business linked but is a BUSINESS_OWNER,
     // check if they have an APPROVED application and link it now.
     if (businessUsers.length === 0) {
       const approvedApplication = await this.businessApplicationModel.findOne({
@@ -618,17 +669,19 @@ export class BusinessService {
         businessId: { $exists: true, $ne: '' },
       });
 
-      if (approvedApplication && approvedApplication.businessId) {
-        const business = await this.businessModel.findById(approvedApplication.businessId);
+      if (approvedApplication?.businessId) {
+        const business = await this.businessModel.findById(
+          approvedApplication.businessId
+        );
         if (business) {
           await this.businessUserModel.create({
-            businessId: approvedApplication.businessId as string,
+            businessId: approvedApplication.businessId,
             userId,
             role: BusinessUserRole.OWNER,
             assignedBy: userId,
           });
-          
-          businessUsers = [{ businessId: approvedApplication.businessId as string } as any];
+
+          businessUsers = [{ businessId: approvedApplication.businessId }];
         }
       }
     }
@@ -936,11 +989,12 @@ export class BusinessService {
 
     if (!clientUser) {
       // Use the provided password, or generate a random one
-      toSharePassword = onboardDto.password || randomBytes(4).toString('hex');
+      toSharePassword = onboardDto.password ?? randomBytes(4).toString('hex');
       const passwordHash = await hash(toSharePassword, 10);
-      
+
       const newUser = new this.userModel({
-        username: onboardDto.email.split('@')[0] + '_' + randomBytes(2).toString('hex'),
+        username:
+          onboardDto.email.split('@')[0] + '_' + randomBytes(2).toString('hex'),
         email: onboardDto.email,
         passwordHash,
         firstName: onboardDto.firstName,
@@ -956,7 +1010,9 @@ export class BusinessService {
     }
 
     if (!clientUser) {
-      throw new InternalServerErrorException('Failed to create or retrieve client user');
+      throw new InternalServerErrorException(
+        'Failed to create or retrieve client user'
+      );
     }
 
     // 2. Link user to business
@@ -966,7 +1022,9 @@ export class BusinessService {
     });
 
     if (existingLink) {
-      throw new BadRequestException('User is already assigned to this business');
+      throw new BadRequestException(
+        'User is already assigned to this business'
+      );
     }
 
     const businessUser = new this.businessUserModel({
@@ -982,14 +1040,20 @@ export class BusinessService {
     await this.seedInitialFinancialData(businessId, clientUser._id.toString());
 
     // 3. Send email credentials/notification
-    const displayPassword = isNewUser ? toSharePassword : '*(Use your existing password)*';
-    
-    this.emailService.sendClientOnboardingEmail(
-      clientUser.email,
-      `${clientUser.firstName} ${clientUser.lastName}`,
-      business.name,
-      displayPassword
-    ).catch(err => console.error('Failed to send onboarding email:', err));
+    const displayPassword = isNewUser
+      ? toSharePassword
+      : '*(Use your existing password)*';
+
+    this.emailService
+      .sendClientOnboardingEmail(
+        clientUser.email,
+        `${clientUser.firstName} ${clientUser.lastName}`,
+        business.name,
+        displayPassword
+      )
+      .catch((error) =>
+        console.error('Failed to send onboarding email:', error)
+      );
 
     // Sync to tenant database
     try {
@@ -1002,13 +1066,14 @@ export class BusinessService {
           isActive: true,
         }
       );
-    } catch (err) {
-      console.error('Failed to sync client to tenant database:', err);
+    } catch (error) {
+      console.error('Failed to sync client to tenant database:', error);
     }
 
-
     return {
-      message: isNewUser ? 'Client account created and linked successfully' : 'Existing user linked to business successfully',
+      message: isNewUser
+        ? 'Client account created and linked successfully'
+        : 'Existing user linked to business successfully',
       businessUser: {
         id: savedBusinessUser._id.toString(),
         businessId: savedBusinessUser.businessId,
@@ -1021,12 +1086,11 @@ export class BusinessService {
     };
   }
 
-
   async getBusinessClients(
     businessId: string,
     userId: string,
     userRole: Role
-  ): Promise<{ message: string; clients: any[] }> {
+  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
     const business = await this.businessModel.findById(businessId);
     if (!business) {
       throw new NotFoundException('Business not found');
@@ -1070,7 +1134,7 @@ export class BusinessService {
     updateClientDto: UpdateClientDto,
     userId: string,
     userRole: Role
-  ): Promise<{ message: string; client: any }> {
+  ): Promise<{ message: string; client: Record<string, unknown> }> {
     await this.checkBusinessAccess(businessId, userId, userRole);
 
     const businessUser = await this.businessUserModel.findOne({
@@ -1132,8 +1196,8 @@ export class BusinessService {
     });
 
     if (otherAssociations === 0) {
-      // If no other associations, we could potentially delete the user, 
-      // but for safety in this version we just keep the orphaned account 
+      // If no other associations, we could potentially delete the user,
+      // but for safety in this version we just keep the orphaned account
       // or we can delete if it was ONLY a managed client.
       // For now, unlinking is the core requirement.
     }
@@ -1144,57 +1208,73 @@ export class BusinessService {
   }
 
   // Seed mock financial data for a specific client
-  private async seedInitialFinancialData(businessId: string, clientId: string): Promise<void> {
-    console.log(`[DEBUG] Seeding initial financial data for client ${clientId} in business ${businessId}`);
-    
+  private async seedInitialFinancialData(
+    businessId: string,
+    clientId: string
+  ): Promise<void> {
+    console.log(
+      `[DEBUG] Seeding initial financial data for client ${clientId} in business ${businessId}`
+    );
+
     try {
       // 1. Generate 30 days of mock transactions
-      const transactions: any[] = [];
+      const transactions: Array<Record<string, unknown>> = [];
       const now = new Date();
-      
+
       // Use the last digit of the clientId to create a unique seed for variance
-      const seed = parseInt(clientId.slice(-1), 16) || 0;
-      const baseAmount = 500 + (seed * 100); // Varied base: 500 to 2000
+      const seed = Number.parseInt(clientId.slice(-1), 16) || 0;
+      const baseAmount = 500 + seed * 100; // Varied base: 500 to 2000
       const volatility = 0.2 + (seed % 5) * 0.1; // Varied volatility
 
       for (let i = 0; i < 30; i++) {
         const date = new Date();
         date.setDate(now.getDate() - i);
-        
+
         const isExpense = i % 3 === 0;
         const amount = baseAmount + Math.random() * baseAmount * volatility;
-        
+
         transactions.push({
-          transactionId: `TXN-${clientId.substring(0, 5)}-${i}-${Date.now()}`,
+          transactionId: `TXN-${clientId.slice(0, 5)}-${i}-${Date.now()}`,
           date,
           accountType: isExpense ? 'Accounts Payable' : 'Accounts Receivable',
-          amount: parseFloat(amount.toFixed(2)),
-          cashFlow: isExpense ? -parseFloat(amount.toFixed(2)) : parseFloat(amount.toFixed(2)),
-          netIncome: isExpense ? -parseFloat(amount.toFixed(2)) : parseFloat((amount * 0.4).toFixed(2)),
-          revenue: isExpense ? 0 : parseFloat(amount.toFixed(2)),
-          expenditure: isExpense ? parseFloat(amount.toFixed(2)) : 0,
+          amount: Number.parseFloat(amount.toFixed(2)),
+          cashFlow: isExpense
+            ? -Number.parseFloat(amount.toFixed(2))
+            : Number.parseFloat(amount.toFixed(2)),
+          netIncome: isExpense
+            ? -Number.parseFloat(amount.toFixed(2))
+            : Number.parseFloat((amount * 0.4).toFixed(2)),
+          revenue: isExpense ? 0 : Number.parseFloat(amount.toFixed(2)),
+          expenditure: isExpense ? Number.parseFloat(amount.toFixed(2)) : 0,
           profitMargin: isExpense ? 0 : 40,
-          operatingExpenses: isExpense ? parseFloat((amount * 0.1).toFixed(2)) : 0,
-          grossProfit: isExpense ? 0 : parseFloat((amount * 0.9).toFixed(2)),
+          operatingExpenses: isExpense
+            ? Number.parseFloat((amount * 0.1).toFixed(2))
+            : 0,
+          grossProfit: isExpense
+            ? 0
+            : Number.parseFloat((amount * 0.9).toFixed(2)),
           accuracyScore: 98,
           hasMissingData: false,
           businessId,
           clientId,
         });
       }
-      
+
       await this.transactionModel.insertMany(transactions);
-      console.log(`[DEBUG] Seeded ${transactions.length} mock transactions for client ${clientId}`);
+      console.log(
+        `[DEBUG] Seeded ${transactions.length} mock transactions for client ${clientId}`
+      );
 
       // 2. Generate 2 mock invoices with varied descriptions
-      const desc1 = seed % 2 === 0 ? 'Consulting Services' : 'Software Subscription';
+      const desc1 =
+        seed % 2 === 0 ? 'Consulting Services' : 'Software Subscription';
       const desc2 = seed % 3 === 0 ? 'Maintenance Fee' : 'Hardware Supply';
 
-      const invoices: any[] = [
+      const invoices: Array<Record<string, unknown>> = [
         {
-          invoiceNumber: `INV-${clientId.substring(0, 5)}-1`,
+          invoiceNumber: `INV-${clientId.slice(0, 5)}-1`,
           description: desc1,
-          amount: parseFloat((baseAmount * 2).toFixed(2)),
+          amount: Number.parseFloat((baseAmount * 2).toFixed(2)),
           currency: 'EUR',
           status: 'PAID',
           dueDate: new Date(),
@@ -1203,22 +1283,25 @@ export class BusinessService {
           clientId,
         },
         {
-          invoiceNumber: `INV-${clientId.substring(0, 5)}-2`,
+          invoiceNumber: `INV-${clientId.slice(0, 5)}-2`,
           description: desc2,
-          amount: parseFloat((baseAmount * 0.5).toFixed(2)),
+          amount: Number.parseFloat((baseAmount * 0.5).toFixed(2)),
           currency: 'EUR',
           status: 'PENDING',
           dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
           businessId,
           clientId,
-        }
+        },
       ];
-      
+
       await this.invoiceModel.insertMany(invoices);
-      console.log(`[DEBUG] Seeded ${invoices.length} mock invoices for client ${clientId}`);
-      
-    } catch (error: any) {
-      console.error('[DEBUG] Failed to seed initial data:', error.message);
+      console.log(
+        `[DEBUG] Seeded ${invoices.length} mock invoices for client ${clientId}`
+      );
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('[DEBUG] Failed to seed initial data:', error.message);
+      }
       // We don't throw here to avoid blocking onboarding if seeding fails
     }
   }
@@ -1230,25 +1313,33 @@ export class BusinessService {
     userId: string,
     userRole: Role
   ): Promise<{ message: string; count: number }> {
-    console.log(`[DEBUG importFinancialData] businessId=${businessId}, userId=${userId}, userRole=${userRole}, csvPath=${csvPath}`);
-    
+    console.log(
+      `[DEBUG importFinancialData] businessId=${businessId}, userId=${userId}, userRole=${userRole}, csvPath=${csvPath}`
+    );
+
     try {
       await this.checkBusinessAccess(businessId, userId, userRole);
-    } catch (err: any) {
-      console.error('[DEBUG] checkBusinessAccess failed:', err.message);
-      throw err;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('[DEBUG] checkBusinessAccess failed:', error.message);
+      }
+      throw error;
     }
 
     // Fetch all clients for this business to distribute data
-    const managedClients = await this.businessUserModel.find({ 
-      businessId, 
-      role: BusinessUserRole.CLIENT 
+    const managedClients = await this.businessUserModel.find({
+      businessId,
+      role: BusinessUserRole.CLIENT,
     });
-    console.log(`[DEBUG] Found ${managedClients.length} managed clients for business ${businessId}`);
+    console.log(
+      `[DEBUG] Found ${managedClients.length} managed clients for business ${businessId}`
+    );
 
     try {
-      const fileContent = await readFile(csvPath, 'utf-8');
-      console.log(`[DEBUG] CSV file read successfully, length=${fileContent.length}`);
+      const fileContent = await readFile(csvPath, 'utf8');
+      console.log(
+        `[DEBUG] CSV file read successfully, length=${fileContent.length}`
+      );
       const records = parse(fileContent, {
         columns: true,
         skip_empty_lines: true,
@@ -1256,26 +1347,28 @@ export class BusinessService {
       });
       console.log(`[DEBUG] Parsed ${records.length} records from CSV`);
 
-      const transactions = records.map((record: any) => {
+      const transactions = records.map((record: Record<string, unknown>) => {
         // Randomly assign to one of the managed clients if any exist
-        const randomClient = managedClients.length > 0 
-          ? managedClients[Math.floor(Math.random() * managedClients.length)]
-          : null;
+        const randomClient =
+          managedClients.length > 0
+            ? managedClients[Math.floor(Math.random() * managedClients.length)]
+            : undefined;
 
         return {
           transactionId: record['Transaction ID'],
-          date: new Date(record['Date']),
+          date: new Date(record.Date as string | number | Date),
           accountType: record['Account Type'],
           amount: Number(record['Transaction Amount']),
           cashFlow: Number(record['Cash Flow']),
           netIncome: Number(record['Net Income']),
-          revenue: Number(record['Revenue']),
-          expenditure: Number(record['Expenditure']),
+          revenue: Number(record.Revenue),
+          expenditure: Number(record.Expenditure),
           profitMargin: Number(record['Profit Margin']),
           operatingExpenses: Number(record['Operating Expenses']),
           grossProfit: Number(record['Gross Profit']),
           accuracyScore: Number(record['Accuracy Score']),
-          hasMissingData: record['Missing Data Indicator']?.toLowerCase() === 'true',
+          hasMissingData:
+            String(record['Missing Data Indicator']).toLowerCase() === 'true',
           businessId,
           clientId: randomClient ? randomClient.userId : undefined,
         };
@@ -1284,14 +1377,16 @@ export class BusinessService {
       // Clear existing transactions and invoices for this business to avoid duplicates during re-import
       await this.transactionModel.deleteMany({ businessId });
       await this.invoiceModel.deleteMany({ businessId });
-      
+
       try {
-        await this.invoiceModel.collection.dropIndex('invoiceNumber_1_businessOwnerId_1');
+        await this.invoiceModel.collection.dropIndex(
+          'invoiceNumber_1_businessOwnerId_1'
+        );
         console.log('[DEBUG] Dropped deprecated invoice index');
-      } catch (e) {
+      } catch {
         // Index might not exist, ignore
       }
-      
+
       const result = await this.transactionModel.insertMany(transactions);
       console.log(`[DEBUG] Inserted ${result.length} transactions`);
 
@@ -1299,7 +1394,7 @@ export class BusinessService {
       for (const client of managedClients) {
         const clientInvoices = [
           {
-            invoiceNumber: `INV-${businessId.substring(0, 4)}-${client.userId.substring(0, 3)}-1`,
+            invoiceNumber: `INV-${businessId.slice(0, 4)}-${client.userId.slice(0, 3)}-1`,
             description: 'Consultation Services',
             amount: 1500 + Math.random() * 1000,
             currency: 'USD',
@@ -1309,7 +1404,7 @@ export class BusinessService {
             clientId: client.userId,
           },
           {
-            invoiceNumber: `INV-${businessId.substring(0, 4)}-${client.userId.substring(0, 3)}-2`,
+            invoiceNumber: `INV-${businessId.slice(0, 4)}-${client.userId.slice(0, 3)}-2`,
             description: 'Monthly Maintenance',
             amount: 500 + Math.random() * 500,
             currency: 'USD',
@@ -1317,20 +1412,34 @@ export class BusinessService {
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             businessId,
             clientId: client.userId,
-          }
+          },
         ];
-        console.log(`[DEBUG] Seeding ${clientInvoices.length} invoices for client ${client.userId}`);
+        console.log(
+          `[DEBUG] Seeding ${clientInvoices.length} invoices for client ${client.userId}`
+        );
         await this.invoiceModel.insertMany(clientInvoices);
       }
 
-      console.log(`[DEBUG] Successfully seeded invoices for ${managedClients.length} clients`);
+      console.log(
+        `[DEBUG] Successfully seeded invoices for ${managedClients.length} clients`
+      );
       return {
         message: 'Financial data imported successfully',
         count: result.length,
       };
-    } catch (error: any) {
-      console.error('[DEBUG] CSV Import Error:', error.message, error.stack);
-      throw new BadRequestException(`Failed to import CSV: ${error.message}`);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error(
+          '[DEBUG] CSV Import Error:',
+          error.message,
+          error instanceof Error
+            ? (error as Error & { stack?: string }).stack
+            : ''
+        );
+      }
+      throw new BadRequestException(
+        `Failed to import CSV: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -1339,41 +1448,49 @@ export class BusinessService {
     userId: string,
     userRole: Role,
     clientId?: string
-  ): Promise<{ transactions: any[] }> {
+  ): Promise<{ transactions: Array<Record<string, unknown>> }> {
     await this.checkBusinessAccess(businessId, userId, userRole);
 
-    const query: any = { businessId };
-    let clientEmail: string | null = null;
-    
+    const query: Record<string, unknown> = { businessId };
+    let clientEmail: string | undefined = undefined;
+
     // Strict isolation: Clients only see their own assigned transactions
     if (userRole === Role.CLIENT) {
       query.clientId = userId;
       // Get the client's email to fetch associated invoices
       const user = await this.userModel.findById(userId).select('email').lean();
-      clientEmail = user?.email || null;
+      clientEmail = user?.email ?? undefined;
     } else if (clientId) {
       // Owners can filter by a specific client if provided
       query.clientId = clientId;
-      const user = await this.userModel.findById(clientId).select('email').lean();
-      clientEmail = user?.email || null;
+      const user = await this.userModel
+        .findById(clientId)
+        .select('email')
+        .lean();
+      clientEmail = user?.email ?? undefined;
     }
 
-    const transactions = await this.transactionModel
-      .find(query)
+    const transactions = (await this.transactionModel
+      .find({ ...query })
       .sort({ date: 1 })
-      .lean() as any[];
+      .lean()) as unknown as Array<Record<string, unknown>>;
 
     // Include invoices as real data points (treated as expenditures for the client)
-    const invoiceTransactions: any[] = [];
+    const invoiceTransactions: Array<Record<string, unknown>> = [];
     if (clientEmail) {
-      const invoices = await this.invoiceModel.find({
-        clientEmail,
-        status: { $in: [InvoiceStatus.SENT, InvoiceStatus.PAID, InvoiceStatus.PENDING] },
-        $or: [
-          { deletedAt: { $exists: false } },
-          { deletedAt: null }
-        ]
-      }).lean();
+      const invoices = await this.invoiceModel
+        .find({
+          clientEmail,
+          status: {
+            $in: [
+              InvoiceStatus.SENT,
+              InvoiceStatus.PAID,
+              InvoiceStatus.PENDING,
+            ],
+          },
+          $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
+        })
+        .lean();
 
       for (const inv of invoices) {
         invoiceTransactions.push({
@@ -1385,14 +1502,14 @@ export class BusinessService {
           netIncome: -inv.total,
           cashFlow: inv.status === InvoiceStatus.PAID ? -inv.total : 0,
           accountType: 'Invoice',
-          description: `Invoice ${inv.invoiceNumber}`
+          description: `Invoice ${inv.invoiceNumber}`,
         });
       }
     }
 
     const combinedTransactions = [
-      ...transactions.map(t => ({
-        id: t._id.toString(),
+      ...transactions.map((t) => ({
+        id: String(t._id),
         date: t.date,
         amount: t.amount,
         revenue: t.revenue,
@@ -1401,8 +1518,12 @@ export class BusinessService {
         cashFlow: t.cashFlow,
         accountType: t.accountType,
       })),
-      ...invoiceTransactions
-    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      ...invoiceTransactions,
+    ].toSorted(
+      (a: Record<string, unknown>, b: Record<string, unknown>) =>
+        new Date(a.date as string | number | Date).getTime() -
+        new Date(b.date as string | number | Date).getTime()
+    );
 
     return {
       transactions: combinedTransactions,
@@ -1413,28 +1534,33 @@ export class BusinessService {
     businessId: string,
     userId: string,
     userRole: Role,
-    clientId?: string
-  ): Promise<{ invoices: any[] }> {
+    _clientId?: string
+  ): Promise<{ invoices: Array<Record<string, unknown>> }> {
     await this.checkBusinessAccess(businessId, userId, userRole);
 
-    const query: any = { businessOwnerId: businessId };
-    
+    const query: Record<string, unknown> = {
+      businessOwnerId: businessId,
+      deletedAt: { $exists: false },
+    };
+
     // The invoices module now handles the strict isolation
     // This is a legacy method - use the InvoicesController instead
     // Only return non-deleted invoices
-    query.deletedAt = { $exists: false };
 
-    console.log(`[DEBUG] Fetching invoices for business ${businessId} with query:`, query);
+    console.log(
+      `[DEBUG] Fetching invoices for business ${businessId} with query:`,
+      query
+    );
 
     const invoices = await this.invoiceModel
-      .find(query)
+      .find({ ...query })
       .sort({ createdAt: -1 })
       .lean();
 
     console.log(`[DEBUG] Found ${invoices.length} invoices for query:`, query);
 
     return {
-      invoices: invoices.map(inv => ({
+      invoices: invoices.map((inv) => ({
         id: inv._id.toString(),
         invoiceNumber: inv.invoiceNumber,
         clientName: inv.clientName,
@@ -1457,8 +1583,10 @@ export class BusinessService {
     businessId: string,
     userId: string,
     userRole: Role
-  ): Promise<any> {
-    const business = await this.businessModel.findById(businessId).select('databaseName');
+  ): Promise<Record<string, unknown>> {
+    const business = await this.businessModel
+      .findById(businessId)
+      .select('databaseName');
     if (!business) {
       throw new NotFoundException('Business not found');
     }
@@ -1466,21 +1594,34 @@ export class BusinessService {
     await this.checkBusinessAccess(businessId, userId, userRole);
 
     const now = new Date();
-    
+
     // 1. Total Revenue (Current Month) - Sum of PAID/SENT invoices issues this month
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
     const currentMonthInvoices = await this.invoiceModel.find({
       businessOwnerId: businessId,
       issueDate: { $gte: startOfMonth, $lte: endOfMonth },
-      status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] }
+      status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] },
     });
-    
-    const totalRevenueCurrentMonth = currentMonthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
+    const totalRevenueCurrentMonth = currentMonthInvoices.reduce(
+      (sum, inv) => sum + (inv.total || 0),
+      0
+    );
 
     // 2. Invoice Statistics
-    const allInvoices = await this.invoiceModel.find({ businessOwnerId: businessId }).lean();
+    const allInvoices = await this.invoiceModel
+      .find({ businessOwnerId: businessId })
+      .lean();
     let totalInvoices = 0;
     let paidInvoices = 0;
     let pendingInvoices = 0;
@@ -1489,7 +1630,11 @@ export class BusinessService {
     for (const inv of allInvoices) {
       totalInvoices++;
       if (inv.status === InvoiceStatus.PAID) paidInvoices++;
-      if (inv.status === InvoiceStatus.PENDING || inv.status === InvoiceStatus.SENT) pendingInvoices++;
+      if (
+        inv.status === InvoiceStatus.PENDING ||
+        inv.status === InvoiceStatus.SENT
+      )
+        pendingInvoices++;
       if (inv.status === InvoiceStatus.OVERDUE) overdueInvoices++;
     }
 
@@ -1505,19 +1650,30 @@ export class BusinessService {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-      
+      const monthEnd = new Date(
+        d.getFullYear(),
+        d.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      );
+
       const monthInvoices = await this.invoiceModel.find({
         businessOwnerId: businessId,
         issueDate: { $gte: monthStart, $lte: monthEnd },
-        status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] }
+        status: { $in: [InvoiceStatus.PAID, InvoiceStatus.SENT] },
       });
-      
-      const revenue = monthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
+      const revenue = monthInvoices.reduce(
+        (sum, inv) => sum + (inv.total || 0),
+        0
+      );
       trendData.push({
         month: d.toLocaleString('en-US', { month: 'short' }),
         year: d.getFullYear(),
-        revenue
+        revenue,
       });
     }
 
@@ -1538,7 +1694,7 @@ export class BusinessService {
       },
       activeClients: activeClientsCount,
       trendData,
-      recentInvoices: recentInvoices.map(inv => ({
+      recentInvoices: recentInvoices.map((inv) => ({
         id: inv._id.toString(),
         invoiceNumber: inv.invoiceNumber,
         clientName: inv.clientName,
@@ -1546,8 +1702,8 @@ export class BusinessService {
         status: inv.status,
         issueDate: inv.issueDate,
         dueDate: inv.dueDate,
-        currency: inv.currency
-      }))
+        currency: inv.currency,
+      })),
     };
   }
 }

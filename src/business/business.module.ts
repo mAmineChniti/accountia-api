@@ -14,7 +14,10 @@ import {
   BusinessUserSchema,
 } from '@/business/schemas/business-user.schema';
 import { User, UserSchema } from '@/users/schemas/user.schema';
-import { Transaction, TransactionSchema } from '@/business/schemas/transaction.schema';
+import {
+  Transaction,
+  TransactionSchema,
+} from '@/business/schemas/transaction.schema';
 import { Invoice, InvoiceSchema } from '@/business/schemas/invoice.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';

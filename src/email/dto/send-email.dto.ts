@@ -1,5 +1,12 @@
-import { IsEmail, IsString, IsEnum, IsNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsEmail,
+  IsString,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  Allow,
+} from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum EmailType {
   BUSINESS_APPROVAL = 'business_approval',
@@ -44,6 +51,7 @@ export class SendEmailDto {
 
   @ApiProperty({
     enum: EmailType,
+    enumName: 'EmailType',
     description: 'Type of email being sent',
     example: EmailType.BUSINESS_APPROVAL,
   })
@@ -51,13 +59,15 @@ export class SendEmailDto {
   @IsNotEmpty()
   type: EmailType;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Metadata for email tracking',
     example: {
       businessName: 'Acme Corp',
       applicantEmail: 'applicant@example.com',
     },
   })
+  @Allow()
+  @IsOptional()
   metadata?: {
     businessName?: string;
     applicantEmail?: string;
@@ -72,17 +82,15 @@ export class SendEmailResponseDto {
   })
   success: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Email service message ID (optional)',
     example: 'msg_xyz123',
-    required: false,
   })
   messageId?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Error message if sending failed',
     example: 'SMTP connection failed',
-    required: false,
   })
   error?: string;
 }

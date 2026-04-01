@@ -26,7 +26,7 @@ export class Notification extends Document {
   targetUserEmail?: string; // If set, this notification is targeted to a specific user (e.g. managed client)
 
   @Prop({ type: Object, default: {} })
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
 
   @Prop({ default: false })
   isRead: boolean;

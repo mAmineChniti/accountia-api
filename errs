@@ -1,0 +1,35 @@
+
+/home/amine/GitHub/accountia-api/src/audit/audit.service.ts
+  24:14  error  Use `undefined` instead of `null`  unicorn/no-null
+
+/home/amine/GitHub/accountia-api/src/business/business.service.ts
+  1586:29  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/amine/GitHub/accountia-api/src/invoices/invoices.service.ts
+  143:39  error  Unexpected empty arrow function                      @typescript-eslint/no-empty-function
+  232:33  error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  244:13  error  Do not pass function `query` directly to `.find(…)`  unicorn/no-array-callback-reference
+  279:33  error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  290:13  error  Do not pass function `query` directly to `.find(…)`  unicorn/no-array-callback-reference
+  453:20  error  Unexpected empty arrow function                      @typescript-eslint/no-empty-function
+  501:20  error  Unexpected empty arrow function                      @typescript-eslint/no-empty-function
+  615:20  error  Unexpected empty arrow function                      @typescript-eslint/no-empty-function
+  706:22  error  Unexpected empty arrow function                      @typescript-eslint/no-empty-function
+  786:7   error  Unsafe assignment of an `any` value                  @typescript-eslint/no-unsafe-assignment
+  786:33  error  Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+
+/home/amine/GitHub/accountia-api/src/notifications/notifications.service.ts
+  100:34  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+  111:13  error  Do not pass function directly to `.find(…)`                                                                                                                                                                                                                                                                                                                        unicorn/no-array-callback-reference
+  111:13  error  Unsafe argument of type `any` assigned to a parameter of type `_QueryFilter<{ type: NotificationType; schema: Schema<any, Model<any, any, any, any, any, any, any>, {}, {}, {}, {}, DefaultSchemaOptions, { ...; }, Document<...> & ... 1 more ... & { ...; }, unknown, { ...; } & ... 1 more ... & { ...; }>; ... 225 more ...; isRead: boolean; }> | undefined`  @typescript-eslint/no-unsafe-argument
+  111:23  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+  122:34  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+  133:13  error  Do not pass function directly to `.find(…)`                                                                                                                                                                                                                                                                                                                        unicorn/no-array-callback-reference
+  133:13  error  Unsafe argument of type `any` assigned to a parameter of type `_QueryFilter<{ type: NotificationType; schema: Schema<any, Model<any, any, any, any, any, any, any>, {}, {}, {}, {}, DefaultSchemaOptions, { ...; }, Document<...> & ... 1 more ... & { ...; }, unknown, { ...; } & ... 1 more ... & { ...; }>; ... 225 more ...; isRead: boolean; }> | undefined`  @typescript-eslint/no-unsafe-argument
+  133:23  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+  145:34  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+  154:45  error  Unsafe argument of type `any` assigned to a parameter of type `_QueryFilter<{ type: NotificationType; schema: Schema<any, Model<any, any, any, any, any, any, any>, {}, {}, {}, {}, DefaultSchemaOptions, { ...; }, Document<...> & ... 1 more ... & { ...; }, unknown, { ...; } & ... 1 more ... & { ...; }>; ... 225 more ...; isRead: boolean; }>`              @typescript-eslint/no-unsafe-argument
+  154:55  error  Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-explicit-any
+
+✖ 24 problems (24 errors, 0 warnings)
+

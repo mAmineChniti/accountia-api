@@ -2,20 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AuditAction } from '../schemas/audit-log.schema';
 
 export class CreateAuditLogDto {
-  action: AuditAction;
-  userId: string;
-  userEmail: string;
-  userRole: string;
-  details?: Record<string, any>;
-  target?: string;
-  ipAddress?: string;
-}
-
-export class AuditLogResponseDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty({ enum: AuditAction })
+  @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
   action: AuditAction;
 
   @ApiProperty()
@@ -28,7 +15,33 @@ export class AuditLogResponseDto {
   userRole: string;
 
   @ApiPropertyOptional()
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
+
+  @ApiPropertyOptional()
+  target?: string;
+
+  @ApiPropertyOptional()
+  ipAddress?: string;
+}
+
+export class AuditLogResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
+  action: AuditAction;
+
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  userEmail: string;
+
+  @ApiProperty()
+  userRole: string;
+
+  @ApiPropertyOptional()
+  details?: Record<string, unknown>;
 
   @ApiPropertyOptional()
   target?: string;
@@ -41,7 +54,7 @@ export class AuditLogResponseDto {
 }
 
 export class PaginatedAuditLogsDto {
-  @ApiProperty({ type: [AuditLogResponseDto] })
+  @ApiProperty({ type: [AuditLogResponseDto], isArray: true })
   logs: AuditLogResponseDto[];
 
   @ApiProperty()

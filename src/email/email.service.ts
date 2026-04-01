@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { readFile } from 'node:fs/promises';
-import * as path from 'path';
+import path from 'node:path';
 import {
   SendEmailDto,
   SendEmailResponseDto,
@@ -18,19 +18,22 @@ export class EmailService {
 
   constructor(private configService: ConfigService) {
     this.initializeTransporter();
-    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
-    
-    const port = this.configService.get<string>('PORT') || '4789';
-    const host = this.configService.get<string>('APP_HOST') || 'localhost';
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+
+    const port = this.configService.get<string>('PORT') ?? '4789';
+    const host = this.configService.get<string>('APP_HOST') ?? 'localhost';
     const protocol = host === 'localhost' ? 'http' : 'https';
     this.apiUrl = `${protocol}://${host}:${port}`;
   }
 
   private initializeTransporter(): void {
     const gmailUsername = this.configService.get<string>('GMAIL_USERNAME');
-    const gmailAppPassword = this.configService.get<string>('GMAIL_APP_PASSWORD');
-    const smtpHost = this.configService.get<string>('SMTP_HOST') || 'smtp.gmail.com';
-    const smtpPort = this.configService.get<number>('SMTP_PORT') || 587;
+    const gmailAppPassword =
+      this.configService.get<string>('GMAIL_APP_PASSWORD');
+    const smtpHost =
+      this.configService.get<string>('SMTP_HOST') ?? 'smtp.gmail.com';
+    const smtpPort = this.configService.get<number>('SMTP_PORT') ?? 587;
 
     if (gmailUsername && gmailAppPassword) {
       this.transporter = nodemailer.createTransport({
@@ -61,19 +64,21 @@ export class EmailService {
       const { to, subject, html, text, metadata } = sendEmailDto;
       const fromEmail = this.configService.get<string>('GMAIL_USERNAME');
 
-      const info = await this.transporter.sendMail({
+      const info = (await this.transporter.sendMail({
         from: `Accountia <${fromEmail}>`,
         to,
         subject,
         html,
         text,
         headers: {
-          'X-Email-Type': metadata?.businessName || 'system',
+          'X-Email-Type': metadata?.businessName ?? 'system',
         },
-      });
+      })) as { messageId: string };
 
-      this.logger.log(`Email "${subject}" sent to ${to}. ID: ${info.messageId}`);
-      return { success: true, messageId: info.messageId };
+      this.logger.log(
+        `Email "${subject}" sent to ${to}. ID: ${info.messageId ?? 'unknown'}`
+      );
+      return { success: true, messageId: info.messageId ?? 'unknown' };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to send email to ${sendEmailDto.to}: ${msg}`);
@@ -86,118 +91,170 @@ export class EmailService {
   async sendConfirmationEmail(email: string, token: string): Promise<void> {
     const confirmationLink = `${this.apiUrl}/api/auth/confirm-email/${token}`;
     try {
-      const templatePath = path.join(process.cwd(), 'src/auth/templates/confirmation_email.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/auth/templates/confirmation_email.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
-      html = html.replaceAll('{{.ConfirmationLink}}', confirmationLink)
-                 .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({ 
-        to: email, 
-        subject: 'Confirm Your Accountia Account', 
+      html = html
+        .replaceAll('{{.ConfirmationLink}}', confirmationLink)
+        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+
+      await this.sendEmail({
+        to: email,
+        subject: 'Confirm Your Accountia Account',
         html,
         text: `Please confirm your Accountia account by visiting: ${confirmationLink}`,
-        type: EmailType.SYSTEM
+        type: EmailType.SYSTEM,
       });
     } catch (error) {
-      this.logger.error(`Confirmation email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Confirmation email failed: ${msg}`);
     }
   }
 
-  async sendPasswordResetEmail(email: string, resetToken: string): Promise<void> {
+  async sendPasswordResetEmail(
+    email: string,
+    resetToken: string
+  ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/auth/templates/password_reset.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/auth/templates/password_reset.html'
+      );
       let html = await readFile(templatePath, 'utf8');
 
-      html = html.replaceAll('{{.Token}}', resetToken)
-                 .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-                 .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+      html = html
+        .replaceAll('{{.Token}}', resetToken)
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
+        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({ 
-        to: email, 
-        subject: 'Password Reset Request for Accountia', 
+      await this.sendEmail({
+        to: email,
+        subject: 'Password Reset Request for Accountia',
         html,
         text: `You requested a password reset. Use this token: ${resetToken}`,
-        type: EmailType.SYSTEM
+        type: EmailType.SYSTEM,
       });
     } catch (error) {
-      this.logger.error(`Password reset email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Password reset email failed: ${msg}`);
     }
   }
 
   // --- Business Application Emails ---
 
-  async sendBusinessApplicationEmail(to: string, applicantName: string, businessName: string): Promise<void> {
+  async sendBusinessApplicationEmail(
+    to: string,
+    applicantName: string,
+    businessName: string
+  ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/business/templates/business_application_submitted.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/business/templates/business_application_submitted.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
-      html = html.replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
-                 .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({ 
-        to, 
-        subject: `Business Application Received: ${businessName}`, 
+      html = html
+        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
+        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+
+      await this.sendEmail({
+        to,
+        subject: `Business Application Received: ${businessName}`,
         html,
         text: `We have received your application for ${businessName}.`,
         type: EmailType.SYSTEM,
-        metadata: { businessName }
+        metadata: { businessName },
       });
     } catch (error) {
-      this.logger.error(`Application submission email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Application submission email failed: ${msg}`);
     }
   }
 
-  async sendBusinessApprovalEmail(to: string, applicantName: string, businessName: string): Promise<void> {
+  async sendBusinessApprovalEmail(
+    to: string,
+    applicantName: string,
+    businessName: string
+  ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/business/templates/business_application_approved.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/business/templates/business_application_approved.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
-      html = html.replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
-                 .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-                 .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({ 
-        to, 
-        subject: `Business Application Approved: ${businessName}`, 
+      html = html
+        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
+        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+
+      await this.sendEmail({
+        to,
+        subject: `Business Application Approved: ${businessName}`,
         html,
         text: `Congratulations! Your application for ${businessName} was approved.`,
-        type: EmailType.BUSINESS_APPROVAL 
+        type: EmailType.BUSINESS_APPROVAL,
       });
     } catch (error) {
-      this.logger.error(`Approval email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Approval email failed: ${msg}`);
     }
   }
 
-  async sendBusinessRejectionEmail(to: string, applicantName: string, businessName: string, reviewNotes?: string): Promise<void> {
+  async sendBusinessRejectionEmail(
+    to: string,
+    applicantName: string,
+    businessName: string,
+    reviewNotes?: string
+  ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/business/templates/business_application_rejected.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/business/templates/business_application_rejected.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
-      html = html.replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
-                 .replaceAll('{{.ReviewNotes}}', EmailService.escapeHtml(reviewNotes ?? 'No specific reason provided'))
-                 .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-                 .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({ 
-        to, 
-        subject: `Business Application Update: ${businessName}`, 
+      html = html
+        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
+        .replaceAll(
+          '{{.ReviewNotes}}',
+          EmailService.escapeHtml(reviewNotes ?? 'No specific reason provided')
+        )
+        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
+        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+
+      await this.sendEmail({
+        to,
+        subject: `Business Application Update: ${businessName}`,
         html,
         text: `Your application for ${businessName} was rejected. Note: ${reviewNotes}`,
-        type: EmailType.BUSINESS_REJECTION 
+        type: EmailType.BUSINESS_REJECTION,
       });
     } catch (error) {
-      this.logger.error(`Rejection email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Rejection email failed: ${msg}`);
     }
   }
 
   // --- Client & Invoice Emails ---
 
-  async sendClientOnboardingEmail(to: string, clientName: string, businessName: string, tempPassword: string): Promise<void> {
+  async sendClientOnboardingEmail(
+    to: string,
+    clientName: string,
+    businessName: string,
+    tempPassword: string
+  ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/business/templates/client_onboarding.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/business/templates/client_onboarding.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
+
       const replacements = {
         '{{.ClientName}}': EmailService.escapeHtml(clientName),
         '{{.BusinessName}}': EmailService.escapeHtml(businessName),
@@ -211,15 +268,16 @@ export class EmailService {
         html = html.replaceAll(placeholder, value);
       }
 
-      await this.sendEmail({ 
-        to, 
-        subject: `Welcome to ${businessName} - Your Account is Ready`, 
+      await this.sendEmail({
+        to,
+        subject: `Welcome to ${businessName} - Your Account is Ready`,
         html,
         text: `Welcome to ${businessName}. Your temp password is: ${tempPassword}`,
-        type: EmailType.ONBOARDING 
+        type: EmailType.ONBOARDING,
       });
     } catch (error) {
-      this.logger.error(`Client onboarding email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Client onboarding email failed: ${msg}`);
     }
   }
 
@@ -230,19 +288,22 @@ export class EmailService {
     currency: string,
     dueDate: Date,
     businessName: string,
-    customMessage?: string,
+    customMessage?: string
   ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/auth/templates/invoice_sent.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/auth/templates/invoice_sent.html'
+      );
       let html = await readFile(templatePath, 'utf8');
-      
+
       const formattedDate = new Date(dueDate).toLocaleDateString('fr-TN', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
       });
 
-      const customMessageBlock = customMessage 
+      const customMessageBlock = customMessage
         ? `<div style="background-color:#eff6ff;border-left:4px solid #8B0000;border-radius:0 8px 8px 0;padding:16px 20px;margin:20px 0;">
              <p style="font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Message from ${EmailService.escapeHtml(businessName)}</p>
              <p style="font-size:15px;color:#374151;margin:0;">${EmailService.escapeHtml(customMessage)}</p>
@@ -264,15 +325,16 @@ export class EmailService {
         html = html.replaceAll(placeholder, value);
       }
 
-      await this.sendEmail({ 
-        to, 
-        subject: `New Invoice from ${businessName}: ${invoiceNumber}`, 
+      await this.sendEmail({
+        to,
+        subject: `New Invoice from ${businessName}: ${invoiceNumber}`,
         html,
         text: `New invoice ${invoiceNumber} for ${amount} ${currency} from ${businessName}.`,
-        type: EmailType.INVOICE_REMINDER 
+        type: EmailType.INVOICE_REMINDER,
       });
     } catch (error) {
-      this.logger.error(`Invoice notification email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Invoice notification email failed: ${msg}`);
     }
   }
 
@@ -286,25 +348,39 @@ export class EmailService {
     intervalDays: number
   ): Promise<void> {
     try {
-      const templatePath = path.join(process.cwd(), 'src/auth/templates/invoice_reminder.html');
+      const templatePath = path.join(
+        process.cwd(),
+        'src/auth/templates/invoice_reminder.html'
+      );
       let html = await readFile(templatePath, 'utf8');
 
       let title = 'Payment Reminder';
       let message = `This is a reminder regarding invoice <strong>${invoiceNumber}</strong>. Please ensure payment is made at your earliest convenience.`;
       let subject = `Reminder: Invoice ${invoiceNumber} from ${businessName}`;
 
-      if (intervalDays === 5) {
-        title = 'Gentle Reminder';
-        subject = `Gentle Reminder: Invoice ${invoiceNumber} is Overdue`;
-        message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> was due on ${dueDate} and is now 5 days overdue.`;
-      } else if (intervalDays === 10) {
-        title = 'Account Overdue';
-        subject = `Important: Account Overdue - Invoice ${invoiceNumber}`;
-        message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is 10 days past its due date.`;
-      } else if (intervalDays === 20) {
-        title = 'Final Notice';
-        subject = `URGENT: Final Reminder for Invoice ${invoiceNumber}`;
-        message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is now 20 days overdue. Please pay immediately.`;
+      switch (intervalDays) {
+        case 5: {
+          title = 'Gentle Reminder';
+          subject = `Gentle Reminder: Invoice ${invoiceNumber} is Overdue`;
+          message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> was due on ${dueDate} and is now 5 days overdue.`;
+
+          break;
+        }
+        case 10: {
+          title = 'Account Overdue';
+          subject = `Important: Account Overdue - Invoice ${invoiceNumber}`;
+          message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is 10 days past its due date.`;
+
+          break;
+        }
+        case 20: {
+          title = 'Final Notice';
+          subject = `URGENT: Final Reminder for Invoice ${invoiceNumber}`;
+          message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is now 20 days overdue. Please pay immediately.`;
+
+          break;
+        }
+        // No default
       }
 
       const replacements = {
@@ -324,15 +400,16 @@ export class EmailService {
         html = html.replaceAll(placeholder, value);
       }
 
-      await this.sendEmail({ 
-        to, 
-        subject, 
+      await this.sendEmail({
+        to,
+        subject,
         html,
         text: `Reminder: Invoice ${invoiceNumber} from ${businessName} is due.`,
-        type: EmailType.INVOICE_REMINDER
+        type: EmailType.INVOICE_REMINDER,
       });
     } catch (error) {
-      this.logger.error(`Invoices reminder email failed: ${error.message}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Invoices reminder email failed: ${msg}`);
     }
   }
 
@@ -342,7 +419,7 @@ export class EmailService {
     clientName: string,
     clientEmail: string,
     amount: number,
-    currency: string,
+    currency: string
   ): Promise<void> {
     try {
       const year = new Date().getFullYear().toString();
@@ -394,19 +471,19 @@ export class EmailService {
       </body>
       </html>`;
 
-      await this.sendEmail({ 
-        to, 
-        subject: `✓ Invoice ${invoiceNumber} sent to ${clientName}`, 
+      await this.sendEmail({
+        to,
+        subject: `✓ Invoice ${invoiceNumber} sent to ${clientName}`,
         html,
         text: `Invoice ${invoiceNumber} for ${amount} ${currency} successfully sent to ${clientName}.`,
-        type: EmailType.SYSTEM
+        type: EmailType.SYSTEM,
       });
     } catch (error) {
       this.logger.error('Failed to send BO confirmation email:', error);
     }
   }
 
-  private static escapeHtml(value: string | undefined | null): string {
+  private static escapeHtml(value: string | undefined): string {
     if (!value) return '';
     return String(value)
       .replaceAll('&', '&amp;')
@@ -425,7 +502,7 @@ export class EmailService {
       subject: 'Test Email from Accountia',
       html: '<p>This is a test email</p>',
       text: 'This is a test email',
-      type: EmailType.SYSTEM
+      type: EmailType.SYSTEM,
     });
   }
 }

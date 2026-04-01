@@ -6,7 +6,6 @@ import {
   IsDate,
   IsOptional,
   ValidateNested,
-  Min,
   ArrayMinSize,
   IsEnum,
   IsIn,
@@ -46,7 +45,9 @@ export class UpdateInvoiceDto {
 
   @IsOptional()
   @IsNumber()
-  @IsIn([0, 7, 13, 19], { message: 'VAT rate must be one of: 0%, 7%, 13%, 19%' })
+  @IsIn([0, 7, 13, 19], {
+    message: 'VAT rate must be one of: 0%, 7%, 13%, 19%',
+  })
   taxRate?: number;
 
   @IsOptional()

@@ -36,7 +36,12 @@ export class Invoice {
   @Prop({ required: true, unique: true, index: true })
   invoiceNumber: string;
 
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business', index: true })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+    index: true,
+  })
   businessOwnerId: string;
 
   @Prop({ required: true })
@@ -69,10 +74,10 @@ export class Invoice {
   @Prop({ required: true })
   dueDate: Date;
 
-  @Prop({ 
-    required: true, 
+  @Prop({
+    required: true,
     enum: Object.values(InvoiceStatus),
-    default: InvoiceStatus.DRAFT
+    default: InvoiceStatus.DRAFT,
   })
   status: InvoiceStatus;
 
@@ -88,17 +93,19 @@ export class Invoice {
   @Prop()
   paidAt?: Date;
 
-  @Prop({ default: null })
+  @Prop()
   deletedAt?: Date;
 
   @Prop({ default: false })
   remindersMuted: boolean;
 
   @Prop({
-    type: [{
-      sentAt: { type: Date, default: Date.now },
-      intervalDays: Number,
-    }],
+    type: [
+      {
+        sentAt: { type: Date, default: Date.now },
+        intervalDays: Number,
+      },
+    ],
     _id: false,
     default: [],
   })

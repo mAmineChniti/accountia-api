@@ -14,7 +14,7 @@ export interface VerifyPaymentResponse {
     payment_id: string;
     amount: number;
     status: 'SUCCESS' | 'FAILURE' | 'PENDING';
-    details: any;
+    details: Record<string, unknown>;
   };
 }
 
@@ -29,12 +29,14 @@ export class FlouciService {
   constructor(private configService: ConfigService) {
     this.publicKey = this.configService.get<string>('FLOUCI_PUBLIC_KEY');
     this.secretKey = this.configService.get<string>('FLOUCI_SECRET_KEY');
-    
+
     // Si les clés ne sont pas configurées, on passe en mode simulation
     this.isSimulationMode = !this.publicKey || !this.secretKey;
-    
+
     if (this.isSimulationMode) {
-      this.logger.warn('⚠️ FLOUCI_PUBLIC_KEY or FLOUCI_SECRET_KEY is missing in .env');
+      this.logger.warn(
+        '⚠️ FLOUCI_PUBLIC_KEY or FLOUCI_SECRET_KEY is missing in .env'
+      );
       this.logger.warn('⚠️ Running FlouciService in SIMULATION MODE.');
     } else {
       this.logger.log('✅ Flouci API configured successfully.');
@@ -48,19 +50,21 @@ export class FlouciService {
     amount: number, // en DINARS (ex: 120.50)
     invoiceId: string,
     successLink: string,
-    failLink: string,
+    failLink: string
   ): Promise<GeneratePaymentResponse> {
     if (this.isSimulationMode) {
-      this.logger.log(`[SIMULATION] Generating payment for invoice ${invoiceId} - Amount: ${amount} TND`);
-      
+      this.logger.log(
+        `[SIMULATION] Generating payment for invoice ${invoiceId} - Amount: ${amount} TND`
+      );
+
       // On redirige vers notre page de simulation ultra-réaliste au lieu de valider direct
       // On extrait la base URL et la langue du successLink (ex: http://localhost:3000/en/...)
-      const urlMatch = successLink.match(/^(https?:\/\/[^\/]+)\/([a-z]{2})\//);
+      const urlMatch = /^(https?:\/\/[^/]+)\/([a-z]{2})\//.exec(successLink);
       const baseUrl = urlMatch ? urlMatch[1] : 'http://localhost:3000';
       const lang = urlMatch ? urlMatch[2] : 'en';
 
       const simulationLink = `${baseUrl}/${lang}/managed/payment-simulation?invoiceId=${invoiceId}&amount=${amount}&successLink=${encodeURIComponent(successLink)}`;
-      
+
       return {
         success: true,
         payment_id: `sim_pending_${Date.now()}`,
@@ -77,7 +81,7 @@ export class FlouciService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.publicKey}:${this.secretKey}`,
+          Authorization: `Bearer ${this.publicKey}:${this.secretKey}`,
         },
         body: JSON.stringify({
           app_public: this.publicKey,
@@ -88,14 +92,14 @@ export class FlouciService {
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as Record<string, unknown>;
 
-      if (!response.ok || !data.success) {
+      if (!response.ok || !(data.success === true)) {
         this.logger.error(`Flouci Error: ${JSON.stringify(data)}`);
         throw new Error('Failed to generate Flouci payment link');
       }
 
-      return data as GeneratePaymentResponse;
+      return data as unknown as GeneratePaymentResponse;
     } catch (error) {
       this.logger.error('Error generating flouci payment', error);
       throw error;
@@ -107,7 +111,9 @@ export class FlouciService {
    */
   async verifyPayment(paymentId: string): Promise<VerifyPaymentResponse> {
     if (this.isSimulationMode) {
-      this.logger.log(`[SIMULATION] Verifying payment for paymentId ${paymentId}`);
+      this.logger.log(
+        `[SIMULATION] Verifying payment for paymentId ${paymentId}`
+      );
       // Simuler un paiement réussi
       return {
         success: true,
@@ -121,26 +127,29 @@ export class FlouciService {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/verify_payment/${paymentId}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'apppublic': this.publicKey || '',
-          'appsecret': this.secretKey || '',
-          // Note: Selon la doc Flouci, l'authentification est parfois dans les headers custom au lieu de Bearer pour verify
-          // mais on peut aussi envoyer Bearer
-          'Authorization': `Bearer ${this.publicKey}:${this.secretKey}`,
-        },
-      });
+      const response = await fetch(
+        `${this.baseUrl}/verify_payment/${paymentId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            apppublic: this.publicKey ?? '',
+            appsecret: this.secretKey ?? '',
+            // Note: Selon la doc Flouci, l'authentification est parfois dans les headers custom au lieu de Bearer pour verify
+            // mais on peut aussi envoyer Bearer
+            Authorization: `Bearer ${this.publicKey}:${this.secretKey}`,
+          },
+        }
+      );
 
-      const data = await response.json();
+      const data = (await response.json()) as Record<string, unknown>;
 
       if (!response.ok) {
         this.logger.error(`Flouci Verify Error: ${JSON.stringify(data)}`);
         throw new Error('Failed to verify Flouci payment');
       }
 
-      return data as VerifyPaymentResponse;
+      return data as unknown as VerifyPaymentResponse;
     } catch (error) {
       this.logger.error('Error verifying flouci payment', error);
       throw error;

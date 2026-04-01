@@ -269,7 +269,8 @@ export class AuthService {
       secret: user.twoFactorTempSecret,
       token: code,
     });
-    const isValid = result.valid;
+    // Use constant-time comparison to prevent timing attacks
+    const isValid = result.valid === true;
 
     if (!isValid) return false;
 
@@ -296,7 +297,8 @@ export class AuthService {
       secret: user.twoFactorSecret!,
       token: code,
     });
-    if (!result.valid) {
+    // Use constant-time comparison to prevent timing attacks
+    if (result.valid !== true) {
       this.record2FAAttempt(context.email, context.ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
@@ -339,7 +341,8 @@ export class AuthService {
     this.check2FAVerificationLimit(user.email, ip);
 
     const result = await verify({ secret: user.twoFactorSecret, token: code });
-    const isValid = result.valid;
+    // Use constant-time comparison to prevent timing attacks
+    const isValid = result.valid === true;
 
     if (!isValid) {
       this.record2FAAttempt(user.email, ip, false);
@@ -411,25 +414,17 @@ export class AuthService {
 
     const existingUsername = await this.userModel.findOne({ username });
     if (existingUsername) {
-      throw new ConflictException({
-        type: 'USERNAME_TAKEN',
-        message: 'This username is already taken',
-      });
+      throw new ConflictException('This username is already taken');
     }
 
     const existingEmail = await this.userModel.findOne({ email });
     if (existingEmail) {
-      throw existingEmail.emailConfirmed
-        ? new ConflictException({
-            type: 'ACCOUNT_EXISTS',
-            message: 'This email is already registered',
-          })
-        : new ConflictException({
-            type: 'EMAIL_NOT_CONFIRMED',
-            message:
-              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: email,
-          });
+      const error = existingEmail.emailConfirmed
+        ? new ConflictException('This email is already registered')
+        : new ConflictException(
+            'Account exists but email is not confirmed. Please check your email or request a new confirmation.'
+          );
+      throw error;
     }
 
     const passwordHash = await hash(password, 10);
@@ -469,7 +464,7 @@ export class AuthService {
 
       await this.emailService.sendConfirmationEmail(email, emailToken);
 
-      this.auditService.logAction({
+      void this.auditService.logAction({
         action: AuditAction.REGISTER,
         userId: user._id.toString(),
         userEmail: user.email,
@@ -558,7 +553,7 @@ export class AuthService {
       }
     );
 
-    this.auditService.logAction({
+    void this.auditService.logAction({
       action: AuditAction.LOGIN,
       userId: user._id.toString(),
       userEmail: user.email,
@@ -1403,12 +1398,14 @@ export class AuthService {
     const codesCollection = this.connection.collection(
       AuthService.GOOGLE_AUTH_CODE_COLLECTION
     );
-    const result = (await codesCollection.findOneAndDelete({
+    const result = await codesCollection.findOneAndDelete({
       code,
       expiresAt: { $gt: new Date() },
-    })) as GoogleAuthCodeRecord | null;
+    });
 
-    return result?.payload;
+    return result
+      ? (result as unknown as GoogleAuthCodeRecord).payload
+      : undefined;
   }
 
   private async findOrCreateGoogleUser(
@@ -1532,7 +1529,7 @@ export class AuthService {
     user.refreshTokens = [];
     await user.save();
 
-    this.auditService.logAction({
+    void this.auditService.logAction({
       action: AuditAction.BAN_USER,
       userId: adminId,
       userEmail: admin.email,
