@@ -5,7 +5,7 @@ export class BusinessResponseDto {
     example: 'Business retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Business object with complete details',
@@ -24,7 +24,7 @@ export class BusinessResponseDto {
       updatedAt: '2024-02-17T16:30:00.000Z',
     },
   })
-  business: {
+  business!: {
     id: string;
     name: string;
     description: string;
@@ -49,7 +49,7 @@ export class BusinessesListResponseDto {
     example: 'Businesses retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Array of businesses with basic details',
@@ -66,7 +66,7 @@ export class BusinessesListResponseDto {
       },
     ],
   })
-  businesses: {
+  businesses!: {
     id: string;
     name: string;
     phone: string;
@@ -81,7 +81,7 @@ export class BusinessApplicationListResponseDto {
     example: 'Business applications retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Array of business applications with details',
@@ -103,7 +103,7 @@ export class BusinessApplicationListResponseDto {
       },
     ],
   })
-  applications: {
+  applications!: {
     id: string;
     businessName: string;
     description: string;

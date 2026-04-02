@@ -93,7 +93,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/auth/templates/confirmation_email.html'
+        'src/email/templates/confirmation_email.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -121,7 +121,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/auth/templates/password_reset.html'
+        'src/email/templates/password_reset.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -153,7 +153,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/business/templates/business_application_submitted.html'
+        'src/email/templates/business_application_submitted.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -183,7 +183,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/business/templates/business_application_approved.html'
+        'src/email/templates/business_application_approved.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -214,7 +214,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/business/templates/business_application_rejected.html'
+        'src/email/templates/business_application_rejected.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -251,7 +251,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/business/templates/client_onboarding.html'
+        'src/email/templates/client_onboarding.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -293,7 +293,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/auth/templates/invoice_sent.html'
+        'src/email/templates/invoice_sent.html'
       );
       let html = await readFile(templatePath, 'utf8');
 
@@ -350,7 +350,7 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/auth/templates/invoice_reminder.html'
+        'src/email/templates/invoice_reminder.html'
       );
       let html = await readFile(templatePath, 'utf8');
 

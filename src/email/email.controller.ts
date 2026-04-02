@@ -27,12 +27,7 @@ export class EmailController {
   @Post('send')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(
-    Role.PLATFORM_ADMIN,
-    Role.PLATFORM_OWNER,
-    Role.BUSINESS_ADMIN,
-    Role.BUSINESS_OWNER
-  )
+  @Roles(Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Send email notification',

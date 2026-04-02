@@ -1,11 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-
-export enum BusinessUserRole {
-  OWNER = 'owner',
-  ADMIN = 'admin',
-  CLIENT = 'client',
-}
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 @Schema({ collection: 'business_users', timestamps: true })
 export class BusinessUser {

@@ -18,7 +18,6 @@ import {
   Transaction,
   TransactionSchema,
 } from '@/business/schemas/transaction.schema';
-import { Invoice, InvoiceSchema } from '@/business/schemas/invoice.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -33,7 +32,6 @@ import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
       { name: BusinessUser.name, schema: BusinessUserSchema },
       { name: User.name, schema: UserSchema },
       { name: Transaction.name, schema: TransactionSchema },
-      { name: Invoice.name, schema: InvoiceSchema },
     ]),
   ],
   controllers: [BusinessController],

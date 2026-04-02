@@ -28,8 +28,7 @@ import {
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
 import {
   AssignBusinessUserDto,
-  OnboardClientDto,
-  UpdateClientDto,
+  ChangeClientRoleDto,
   BusinessUserResponseDto,
 } from '@/business/dto/business-user.dto';
 import {
@@ -94,11 +93,6 @@ export class BusinessController {
     @Body() createApplicationDto: CreateBusinessApplicationDto,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessApplicationResponseDto> {
-    console.log('🔐 submitBusinessApplication - Current User:', {
-      id: user?.id,
-      email: user?.email,
-      role: user?.role,
-    });
     return this.businessService.submitBusinessApplication(
       createApplicationDto,
       user.id
@@ -122,55 +116,6 @@ export class BusinessController {
     return this.businessService.getBusinessInvoices(id, user.id, user.role, clientId);
   }
   */
-
-  @Post('setup')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.BUSINESS_OWNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Directly setup a business profile (Business Owners only)',
-    description:
-      'Allow users with the BUSINESS_OWNER role to create their business profile directly if they do not have one yet.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Business profile created successfully',
-    type: BusinessResponseDto,
-  })
-  async setupInitialBusiness(
-    @Body() setupDto: CreateBusinessApplicationDto,
-    @CurrentUser() user: UserPayload
-  ): Promise<BusinessResponseDto> {
-    return this.businessService.setupInitialBusiness(setupDto, user.id);
-  }
-
-  @Post('auto-provision')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.BUSINESS_OWNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Auto-provision a business for an approved owner',
-    description:
-      'Silently links or creates a business for an approved BUSINESS_OWNER.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Business auto-provisioned successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description:
-      'Forbidden - Insufficient permissions (BUSINESS_OWNER required)',
-  })
-  async autoProvisionBusiness(
-    @CurrentUser() user: UserPayload
-  ): Promise<{ businessId: string }> {
-    return this.businessService.autoProvisionBusiness(user.id);
-  }
 
   @Get('applications')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -535,50 +480,6 @@ export class BusinessController {
     );
   }
 
-  @Post(':id/onboard-client')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Onboard a new client for a business',
-    description:
-      'Create a new client user account and link it to the business. Only accessible by business owners.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Client onboarded successfully',
-    type: BusinessUserResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Invalid client data or already assigned',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description:
-      'Forbidden - Insufficient permissions to onboard clients for this business',
-  })
-  async onboardClient(
-    @Param('id') id: string,
-    @Body() onboardDto: OnboardClientDto,
-    @CurrentUser() user: UserPayload
-  ): Promise<BusinessUserResponseDto> {
-    return this.businessService.onboardClient(
-      id,
-      onboardDto,
-      user.id,
-      user.role
-    );
-  }
-
   @Get(':id/clients')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
@@ -615,22 +516,23 @@ export class BusinessController {
     return this.businessService.getBusinessClients(id, user.id, user.role);
   }
 
-  @Patch(':id/clients/:clientId')
+  @Patch(':id/clients/:clientId/role')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Update a client profile and billing info',
-    description: 'Update user data and billing fields for a specific client.',
+    summary: 'Change a client role in the business',
+    description:
+      'Change the role of a user within the business (e.g., promote from client to admin).',
   })
   @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'Client User ID' })
   @ApiResponse({
     status: 200,
-    description: 'Client updated successfully',
+    description: 'Client role changed successfully',
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - Invalid update data',
+    description: 'Bad request - Invalid role data',
   })
   @ApiResponse({
     status: 401,
@@ -638,22 +540,22 @@ export class BusinessController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden - Insufficient permissions to update this client',
+    description: 'Forbidden - Insufficient permissions to change client role',
   })
   @ApiResponse({
     status: 404,
-    description: 'Business or client not found',
+    description: 'Business or user not found',
   })
-  async updateClient(
+  async changeClientRole(
     @Param('id') id: string,
     @Param('clientId') clientId: string,
-    @Body() updateClientDto: UpdateClientDto,
+    @Body() changeRoleDto: ChangeClientRoleDto,
     @CurrentUser() user: UserPayload
   ) {
-    return this.businessService.updateClient(
+    return this.businessService.changeClientRole(
       id,
       clientId,
-      updateClientDto,
+      changeRoleDto,
       user.id,
       user.role
     );
@@ -664,14 +566,19 @@ export class BusinessController {
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Remove a client from the business',
-    description: 'Unlink a client from this business.',
+    summary: 'Remove a user from the business',
+    description:
+      'Unlink/remove a user from this business. Cannot remove business owner.',
   })
   @ApiParam({ name: 'id', description: 'Business ID' })
-  @ApiParam({ name: 'clientId', description: 'Client User ID' })
+  @ApiParam({ name: 'clientId', description: 'User ID to remove' })
   @ApiResponse({
     status: 200,
-    description: 'Client removed successfully',
+    description: 'User removed successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Cannot remove business owner',
   })
   @ApiResponse({
     status: 401,
@@ -679,11 +586,11 @@ export class BusinessController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden - Insufficient permissions to remove clients',
+    description: 'Forbidden - Insufficient permissions to remove users',
   })
   @ApiResponse({
     status: 404,
-    description: 'Business or client not found',
+    description: 'Business or user not found',
   })
   async deleteClient(
     @Param('id') id: string,
@@ -693,53 +600,9 @@ export class BusinessController {
     return this.businessService.deleteClient(id, clientId, user.id, user.role);
   }
 
-  @Post(':id/import-financials')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Roles(Role.BUSINESS_OWNER)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Import financial data from CSV',
-    description: 'Import financial data for the business from a CSV file.',
-  })
-  @ApiParam({ name: 'id', description: 'Business ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Financial data imported successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Invalid file or format',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description:
-      'Forbidden - Insufficient permissions (BUSINESS_OWNER required)',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Business not found',
-  })
-  async importFinancials(
-    @Param('id') businessId: string,
-    @CurrentUser() user: UserPayload
-  ) {
-    // For now, we use the local path to accounting_data.csv provided by the user
-    const csvPath = String.raw`C:\Users\Asus\Downloads\accounting_data.csv`;
-    return this.businessService.importFinancialData(
-      businessId,
-      csvPath,
-      user.id,
-      user.role
-    );
-  }
-
   @Get(':id/managed-financials')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Roles(Role.BUSINESS_OWNER, Role.CLIENT)
+  @Roles(Role.CLIENT)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get financial data for managed clients',
@@ -773,44 +636,6 @@ export class BusinessController {
       user.id,
       user.role,
       clientId
-    );
-  }
-
-  @Get(':id/dashboard')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Roles(Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get business dashboard statistics',
-    description: 'Retrieve dashboard statistics and metrics for the business.',
-  })
-  @ApiParam({ name: 'id', description: 'Business ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Dashboard statistics retrieved successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description:
-      'Forbidden - Insufficient permissions (BUSINESS_OWNER or BUSINESS_ADMIN required)',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Business not found',
-  })
-  async getBusinessDashboard(
-    @Param('id') businessId: string,
-    @CurrentUser() user: UserPayload
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): Promise<Record<string, any>> {
-    return this.businessService.getBusinessDashboard(
-      businessId,
-      user.id,
-      user.role
     );
   }
 }

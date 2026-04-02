@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Subject, Observable } from 'rxjs';
 import { Notification, NotificationType } from './schemas/notification.schema';
+import { NotificationsGateway } from './notifications.gateway';
 
 export interface NotificationEvent {
   id: string;
@@ -16,11 +16,10 @@ export interface NotificationEvent {
 
 @Injectable()
 export class NotificationsService {
-  private eventSubject = new Subject<NotificationEvent>();
-
   constructor(
     @InjectModel(Notification.name)
-    private notificationModel: Model<Notification>
+    private notificationModel: Model<Notification>,
+    private notificationsGateway: NotificationsGateway
   ) {}
 
   async createNotification(data: {
@@ -40,8 +39,7 @@ export class NotificationsService {
     });
     const saved = await notification.save();
 
-    // Emit to SSE stream
-    this.eventSubject.next({
+    const event: NotificationEvent = {
       id: saved._id.toString(),
       type: saved.type,
       message: saved.message,
@@ -49,66 +47,17 @@ export class NotificationsService {
       targetBusinessId: saved.targetBusinessId,
       targetUserEmail: saved.targetUserEmail,
       createdAt: saved.createdAt,
-    });
-  }
+    };
 
-  /**
-   * Returns an SSE-compatible Observable for the controller.
-   * If businessId or userEmail is provided, only sends events targeted to that business/user.
-   */
-  getEventStream(
-    businessId?: string,
-    userEmail?: string
-  ): Observable<MessageEvent> {
-    return this.eventSubject.pipe(
-      (source) =>
-        new Observable<MessageEvent>((observer) => {
-          const subscription = source.subscribe({
-            next: (event) => {
-              // Logic:
-              // 1. If businessId provided: deliver if event matched businessId
-              // 2. If userEmail provided: deliver if event matched userEmail
-              // 3. Admin (no businessId/userEmail): deliver if NO targetBusinessId and NO targetUserEmail
-
-              if (businessId) {
-                if (event.targetBusinessId === businessId) {
-                  observer.next({ data: event } as MessageEvent);
-                }
-              } else if (userEmail) {
-                if (event.targetUserEmail === userEmail) {
-                  observer.next({ data: event } as MessageEvent);
-                }
-              } else {
-                // Admin: global events
-                if (!event.targetBusinessId && !event.targetUserEmail) {
-                  observer.next({ data: event } as MessageEvent);
-                }
-              }
-            },
-            error: (err) => observer.error(err),
-            complete: () => observer.complete(),
-          });
-          return () => subscription.unsubscribe();
-        })
-    );
+    // Emit to WebSocket gateway
+    this.notificationsGateway.emitNotification(event);
   }
 
   async getUnread(
     businessId?: string,
     userEmail?: string
   ): Promise<Notification[]> {
-    let query: Record<string, unknown>;
-    if (businessId) {
-      query = { isRead: false, targetBusinessId: businessId };
-    } else if (userEmail) {
-      query = { isRead: false, targetUserEmail: userEmail };
-    } else {
-      query = {
-        isRead: false,
-        targetBusinessId: { $exists: false },
-        targetUserEmail: { $exists: false },
-      };
-    }
+    const query = this.buildFilters(businessId, userEmail, true);
 
     return (await this.notificationModel
       .find({ ...query })
@@ -122,17 +71,7 @@ export class NotificationsService {
     businessId?: string,
     userEmail?: string
   ): Promise<Notification[]> {
-    let query: Record<string, unknown>;
-    if (businessId) {
-      query = { targetBusinessId: businessId };
-    } else if (userEmail) {
-      query = { targetUserEmail: userEmail };
-    } else {
-      query = {
-        targetBusinessId: { $exists: false },
-        targetUserEmail: { $exists: false },
-      };
-    }
+    const query = this.buildFilters(businessId, userEmail, false);
 
     return (await this.notificationModel
       .find({ ...query })
@@ -147,18 +86,7 @@ export class NotificationsService {
   }
 
   async markAllAsRead(businessId?: string, userEmail?: string): Promise<void> {
-    let query: Record<string, unknown>;
-    if (businessId) {
-      query = { isRead: false, targetBusinessId: businessId };
-    } else if (userEmail) {
-      query = { isRead: false, targetUserEmail: userEmail };
-    } else {
-      query = {
-        isRead: false,
-        targetBusinessId: { $exists: false },
-        targetUserEmail: { $exists: false },
-      };
-    }
+    const query = this.buildFilters(businessId, userEmail, true);
     await this.notificationModel.updateMany({ ...query }, { isRead: true });
   }
 

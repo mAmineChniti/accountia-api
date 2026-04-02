@@ -20,7 +20,7 @@ import { Role } from '@/auth/enums/role.enum';
 import { InvoicesService } from './invoices.service';
 import { FlouciService } from './flouci.service';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import { InvoiceStatus } from '@/business/schemas/invoice.schema';
+import { InvoiceStatus } from '@/invoices/schemas/invoice.schema';
 
 /**
  * Contrôleur pour les invoices des clients MANAGÉS
@@ -69,14 +69,9 @@ export class ManagedInvoicesController {
         };
       }
 
-      // Get invoices for this client based on their email
-      const clientEmail = user.email;
-      if (!clientEmail) {
-        return { success: false, error: 'Client email not found in token' };
-      }
-
-      const result = await this.invoicesService.getInvoicesByClientEmail(
-        clientEmail,
+      // Get invoices for this user by their ID
+      const result = await this.invoicesService.getInvoicesByUserId(
+        user.id,
         status,
         Math.max(1, page),
         Math.max(1, limit)
@@ -114,15 +109,7 @@ export class ManagedInvoicesController {
         };
       }
 
-      const clientEmail = user.email;
-      if (!clientEmail) {
-        return { success: false, error: 'Client email not found in token' };
-      }
-
-      const result = await this.invoicesService.getInvoiceByClientEmailAndId(
-        id,
-        clientEmail
-      );
+      const result = await this.invoicesService.getInvoiceByInvoiceId(id);
       return { success: true, data: result };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -159,16 +146,8 @@ export class ManagedInvoicesController {
         };
       }
 
-      const clientEmail = user.email;
-      if (!clientEmail) {
-        return { success: false, error: 'Client email not found in token' };
-      }
-
       // 1. Fetch the invoice to check if it's PENDING and get the amount
-      const invoice = await this.invoicesService.getInvoiceByClientEmailAndId(
-        id,
-        clientEmail
-      );
+      const invoice = await this.invoicesService.getInvoiceByInvoiceId(id);
 
       if (
         (invoice.status as unknown as InvoiceStatus) !==

@@ -4,8 +4,6 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -14,13 +12,13 @@ import {
   InvoiceDocument,
   InvoiceStatus,
   InvoiceItem,
-} from '@/business/schemas/invoice.schema';
+} from '@/invoices/schemas/invoice.schema';
 import { CreateInvoiceDto, InvoiceStatusDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoiceResponseDto } from './dto/invoice-response.dto';
 import * as crypto from 'node:crypto';
 import { EmailService } from '@/email/email.service';
-import { BusinessService } from '@/business/business.service';
+import { Business } from '@/business/schemas/business.schema';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -29,11 +27,21 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export class InvoicesService {
   constructor(
     @InjectModel(Invoice.name) private invoiceModel: Model<InvoiceDocument>,
+    @InjectModel(Business.name) private businessModel: Model<Business>,
     private emailService: EmailService,
-    @Inject(forwardRef(() => BusinessService))
-    private businessService: BusinessService,
     private notificationsService: NotificationsService
   ) {}
+
+  /**
+   * Récupère le nom d'une business par son ID
+   */
+  private async getBusinessName(businessOwnerId: string): Promise<string> {
+    const business = await this.businessModel
+      .findById(businessOwnerId)
+      .select('name')
+      .lean();
+    return business?.name ?? 'Accountia Professional';
+  }
 
   /**
    * Génère un numéro de facture unique
@@ -65,11 +73,6 @@ export class InvoicesService {
     businessOwnerId: string,
     createInvoiceDto: CreateInvoiceDto
   ): Promise<InvoiceResponseDto> {
-    console.log(
-      '[InvoicesService.createInvoice] Creating invoice for businessOwnerId:',
-      businessOwnerId
-    );
-
     // Validation: vérifier que dueDate > issueDate
     if (
       new Date(createInvoiceDto.dueDate) <= new Date(createInvoiceDto.issueDate)
@@ -83,6 +86,15 @@ export class InvoicesService {
       createInvoiceDto.lineItems.length === 0
     ) {
       throw new BadRequestException('Invoice must have at least one line item');
+    }
+
+    // Validation: Status can only be DRAFT or SENT on creation (not PAID or OVERDUE)
+    const initialStatus = createInvoiceDto.status ?? InvoiceStatus.DRAFT;
+    const disallowedStatuses = [InvoiceStatus.PAID, InvoiceStatus.OVERDUE];
+    if (disallowedStatuses.includes(initialStatus as InvoiceStatus)) {
+      throw new BadRequestException(
+        'Invoice can only be created as DRAFT or SENT'
+      );
     }
 
     // Créer les articles de ligne avec IDs uniques
@@ -115,33 +127,21 @@ export class InvoicesService {
       total,
       issueDate: new Date(createInvoiceDto.issueDate),
       dueDate: new Date(createInvoiceDto.dueDate),
-      status: createInvoiceDto.status ?? InvoiceStatus.DRAFT,
+      status: initialStatus,
       notes: createInvoiceDto.notes,
       currency: createInvoiceDto.currency ?? 'TND',
     });
 
-    console.log('[InvoicesService.createInvoice] Invoice object created:', {
-      invoiceNumber,
-      businessOwnerId,
-      clientName: createInvoiceDto.clientName,
-    });
-
     try {
       await invoice.save();
-      console.log(
-        '[InvoicesService.createInvoice] ✅ Invoice saved to DB:',
-        invoice._id
-      );
 
       // If status is not DRAFT, trigger email notification immediately
       if (invoice.status !== InvoiceStatus.DRAFT) {
+        invoice.status = InvoiceStatus.SENT;
         invoice.sentAt = new Date();
         await invoice.save();
 
-        const business = await this.businessService
-          .findOne(businessOwnerId)
-          .catch((): undefined => undefined);
-        const businessName = business?.name ?? 'Accountia Professional';
+        const businessName = await this.getBusinessName(businessOwnerId);
 
         this.emailService
           .sendInvoiceNotification(
@@ -152,12 +152,9 @@ export class InvoicesService {
             invoice.dueDate,
             businessName
           )
-          .catch((error) =>
-            console.error(
-              'Failed to send invoice notification on create:',
-              error
-            )
-          );
+          .catch(() => {
+            // Silently handle email failure
+          });
 
         // Also send confirmation to BO
         this.emailService
@@ -169,16 +166,11 @@ export class InvoicesService {
             invoice.total,
             invoice.currency ?? 'TND'
           )
-          .catch((error) =>
-            console.error('Failed to send BO confirmation on create:', error)
-          );
+          .catch(() => {
+            // Silently handle email failure
+          });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error(
-        '[InvoicesService.createInvoice] ❌ Error saving invoice:',
-        message
-      );
       if (error instanceof Error && 'code' in error && error.code === 11_000) {
         throw new ConflictException('Invoice number already exists');
       }
@@ -257,12 +249,11 @@ export class InvoicesService {
   }
 
   /**
-   * Récupère les invoices pour un client MANAGÉ par email
-   * Les clients créés par un BO via "Onboard New Client"
-   * voient leurs invoices via /managed/invoices
+   * Récupère les invoices pour un utilisateur
+   * Inclut les invoices créées par l'utilisateur (businessOwnerId) ou reçues (clientUserId)
    */
-  async getInvoicesByClientEmail(
-    clientEmail: string,
+  async getInvoicesByUserId(
+    userId: string,
     status?: InvoiceStatus,
     page = 1,
     limit = 10
@@ -274,8 +265,15 @@ export class InvoicesService {
     totalPages: number;
   }> {
     const query = {
-      clientEmail,
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
+      $or: [
+        { businessOwnerId: userId }, // Invoices created by this user
+        { clientUserId: userId }, // Invoices sent to this user
+      ],
+      $and: [
+        {
+          $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
+        },
+      ],
       ...(status && { status }),
     };
 
@@ -296,20 +294,15 @@ export class InvoicesService {
   }
 
   /**
-   * Récupère une facture unique par son ID si elle appartient au client
+   * Récupère une facture unique par son ID
    */
-  async getInvoiceByClientEmailAndId(
-    id: string,
-    clientEmail: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findOne({
-      _id: id,
-      clientEmail: clientEmail, // Use exact match instead of unsafe regex
+  async getInvoiceByInvoiceId(id: string): Promise<InvoiceResponseDto> {
+    const invoice = await this.invoiceModel.findById(id).where({
       $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
     });
 
     if (!invoice) {
-      throw new NotFoundException('Invoice not found or unauthorized');
+      throw new NotFoundException('Invoice not found');
     }
 
     return this.formatInvoiceResponse(invoice);
@@ -442,10 +435,7 @@ export class InvoicesService {
     await invoice.save();
 
     // Trigger Email Notification to client (non-blocking)
-    const business = await this.businessService
-      .findOne(businessOwnerId)
-      .catch((): undefined => undefined);
-    const businessName = business?.name ?? 'Accountia Professional';
+    const businessName = await this.getBusinessName(businessOwnerId);
 
     this.emailService
       .sendInvoiceNotification(
@@ -457,9 +447,9 @@ export class InvoicesService {
         businessName,
         customMessage
       )
-      .catch((error) =>
-        console.error('Failed to send invoice notification email:', error)
-      );
+      .catch(() => {
+        // Silently handle email failure
+      });
     return this.formatInvoiceResponse(invoice);
   }
 
@@ -490,10 +480,9 @@ export class InvoicesService {
     await invoice.save();
 
     // Trigger Email Notification for payment success (non-blocking)
-    const business = await this.businessService
-      .findOne(invoice.businessOwnerId.toString())
-      .catch((): undefined => undefined);
-    const businessName = business?.name ?? 'Accountia Professional';
+    const businessName = await this.getBusinessName(
+      invoice.businessOwnerId.toString()
+    );
 
     this.emailService
       .sendInvoiceNotification(
@@ -505,9 +494,9 @@ export class InvoicesService {
         businessName,
         `Your payment of ${invoice.total.toFixed(2)} ${invoice.currency || 'USD'} has been successfully processed via Flouci. Thank you!`
       )
-      .catch((error) =>
-        console.error('Failed to send payment success email:', error)
-      );
+      .catch(() => {
+        // Silently handle email failure
+      });
 
     // Notify Business Owner in-app
     this.notificationsService
@@ -520,9 +509,9 @@ export class InvoicesService {
           amount: invoice.total,
         },
       })
-      .catch((error) =>
-        console.error('Failed to send in-app notification:', error)
-      );
+      .catch(() => {
+        // Silently handle notification failure
+      });
 
     return this.formatInvoiceResponse(invoice);
   }
@@ -551,6 +540,37 @@ export class InvoicesService {
     invoice.status = InvoiceStatus.PAID;
     invoice.paidAt = new Date();
     await invoice.save();
+
+    // Notify client that payment was marked as received
+    const businessName = await this.getBusinessName(businessOwnerId);
+    this.emailService
+      .sendInvoiceNotification(
+        invoice.clientEmail,
+        invoice.invoiceNumber,
+        invoice.total,
+        invoice.currency || 'USD',
+        invoice.dueDate,
+        businessName,
+        `Your invoice has been marked as paid. Thank you for your business!`
+      )
+      .catch(() => {
+        // Silently handle email failure
+      });
+
+    // Notify Business Owner in-app
+    this.notificationsService
+      .createNotification({
+        type: NotificationType.INVOICE_PAID,
+        message: `Invoice ${invoice.invoiceNumber} has been marked as paid for ${invoice.clientName}`,
+        targetBusinessId: invoice.businessOwnerId.toString(),
+        payload: {
+          invoiceId: invoice._id.toString(),
+          amount: invoice.total,
+        },
+      })
+      .catch(() => {
+        // Silently handle notification failure
+      });
 
     return this.formatInvoiceResponse(invoice);
   }
@@ -604,10 +624,7 @@ export class InvoicesService {
       );
     }
 
-    const business = await this.businessService
-      .findOne(businessOwnerId)
-      .catch((): undefined => undefined);
-    const businessName = business?.name ?? 'Accountia Professional';
+    const businessName = await this.getBusinessName(businessOwnerId);
 
     // 1. Send Email
     await this.emailService
@@ -620,9 +637,9 @@ export class InvoicesService {
         invoice.dueDate.toLocaleDateString(),
         0 // 0 means manual reminder
       )
-      .catch((error) =>
-        console.error('Failed to send manual reminder email:', error)
-      );
+      .catch(() => {
+        // Silently handle email failure
+      });
 
     // 2. Create In-App Notification for Client
     await this.notificationsService
@@ -636,9 +653,9 @@ export class InvoicesService {
           amount: invoice.total,
         },
       })
-      .catch((error) =>
-        console.error('Failed to create in-app notification for client:', error)
-      );
+      .catch(() => {
+        // Silently handle notification failure
+      });
 
     // 3. Record in history
     if (!invoice.reminderHistory) invoice.reminderHistory = [];
@@ -657,7 +674,6 @@ export class InvoicesService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleOverdueInvoices() {
-    console.log('[Cron Job] Starting daily overdue invoice check...');
     const now = new Date();
 
     // 1. Sync Status: Mark PENDING/SENT invoices as OVERDUE if dueDate is passed
@@ -682,9 +698,9 @@ export class InvoicesService {
             dueDate: invoice.dueDate,
           },
         })
-        .catch((error) =>
-          console.log('Error creating alert notification', error)
-        );
+        .catch(() => {
+          // Silently handle notification failure
+        });
     }
 
     // 2. Automated Reminders: Check all OVERDUE invoices for 5, 10, 20 day intervals
@@ -695,11 +711,12 @@ export class InvoicesService {
     });
 
     for (const invoice of overdueInvoices) {
-      const business = await this.businessService
-        .findOne(invoice.businessOwnerId.toString())
-        .catch((): undefined => undefined);
+      const business = await this.businessModel
+        .findById(invoice.businessOwnerId.toString())
+        .select('name automationSettings')
+        .lean();
 
-      // Skip if business exists but reminders are explicitly disabled
+      // Skip if business reminders are explicitly disabled
       if (business?.automationSettings?.remindersEnabled === false) continue;
 
       const diffTime = Math.abs(
@@ -718,26 +735,19 @@ export class InvoicesService {
         );
 
         if (!alreadySent) {
-          console.log(
-            `[Cron Job] Sending ${intervalToRemind}-day reminder for invoice ${invoice.invoiceNumber}`
-          );
-
           await this.emailService
             .sendInvoiceReminderEmail(
               invoice.clientEmail,
               invoice.clientName,
-              business?.name ?? 'Accountia Business',
+              business?.name ?? 'Accountia Professional',
               invoice.invoiceNumber,
               `${invoice.total.toFixed(2)} ${invoice.currency}`,
               invoice.dueDate.toLocaleDateString(),
               intervalToRemind
             )
-            .catch((error) =>
-              console.error(
-                `Failed to send ${intervalToRemind}-day reminder:`,
-                error
-              )
-            );
+            .catch(() => {
+              // Silently handle email failure
+            });
 
           // Record history
           if (!invoice.reminderHistory) invoice.reminderHistory = [];
@@ -749,8 +759,6 @@ export class InvoicesService {
         }
       }
     }
-
-    console.log('[Cron Job] Daily overdue invoice check completed.');
   }
 
   /**
