@@ -21,7 +21,7 @@ import { RegisterDto } from '@/auth/dto/register.dto';
 import { AuditService } from '@/audit/audit.service';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { LoginDto } from '@/auth/dto/login.dto';
-import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
+import { RefreshTokenDto } from '@/auth/dto/refresh.dto';
 import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
@@ -36,7 +36,7 @@ import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { EmailService } from '@/email/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 import { Role } from '@/auth/enums/role.enum';
-import { RoleResponseDto } from '@/auth/dto/role-response.dto';
+import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 
@@ -72,6 +72,7 @@ type GoogleOAuthInitParams = {
   mode: 'login' | 'register';
   lang: string;
   redirectUri?: string;
+  ip: string;
 };
 
 type GoogleAuthCodeRecord = {
@@ -118,6 +119,19 @@ export class AuthService {
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
+
+    // Rate-limit OAuth state creation per IP
+    const rateLimit = this.rateLimitingService.checkOAuthStateRequests(
+      params.ip
+    );
+    if (!rateLimit.allowed) {
+      throw new HttpException(
+        'Too many OAuth requests. Please try again later.',
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+    this.rateLimitingService.recordOAuthStateRequest(params.ip);
+
     const lang = this.normalizeLang(params.lang);
 
     const sanitizedRedirectUri = this.resolveFrontendRedirectUri(
@@ -965,8 +979,8 @@ export class AuthService {
             updateData.email,
             updateData.emailToken
           );
-        } catch (error) {
-          console.error('Failed to send confirmation email:', error);
+        } catch {
+          // Silently handle email failure
         }
       }
 

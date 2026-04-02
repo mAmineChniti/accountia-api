@@ -57,7 +57,7 @@ export class BusinessApplicationResponseDto {
     example: 'Business application submitted successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Business application object with complete details',
@@ -74,7 +74,7 @@ export class BusinessApplicationResponseDto {
       createdAt: '2024-02-17T16:30:00.000Z',
     },
   })
-  application: {
+  application!: {
     id: string;
     businessName: string;
     description: string;

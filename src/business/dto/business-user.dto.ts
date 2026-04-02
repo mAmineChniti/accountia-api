@@ -1,12 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsMongoId,
-  IsEnum,
-  IsEmail,
-  IsString,
-  IsOptional,
-} from 'class-validator';
-import { BusinessUserRole } from '@/business/schemas/business-user.schema';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsMongoId, IsEnum } from 'class-validator';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 export class AssignBusinessUserDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
@@ -27,7 +21,7 @@ export class BusinessUserResponseDto {
     example: 'User assigned to business successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Business user assignment object with complete details',
@@ -41,7 +35,7 @@ export class BusinessUserResponseDto {
       createdAt: '2024-02-17T16:30:00.000Z',
     },
   })
-  businessUser: {
+  businessUser!: {
     id: string;
     businessId: string;
     userId: string;
@@ -51,90 +45,14 @@ export class BusinessUserResponseDto {
     createdAt: Date;
   };
 }
-export class OnboardClientDto {
-  @ApiProperty({ example: 'client@example.com' })
-  @IsEmail()
-  email: string;
 
-  @ApiProperty({ example: 'John' })
-  @IsString()
-  firstName: string;
-
-  @ApiProperty({ example: 'Doe' })
-  @IsString()
-  lastName: string;
-
-  @ApiPropertyOptional({ example: '+1234567890' })
-  @IsString()
-  @IsOptional()
-  phoneNumber?: string;
-
-  @ApiPropertyOptional({
-    example: 'password123',
-    description: 'Custom password for the client',
+export class ChangeClientRoleDto {
+  @ApiProperty({
+    enum: BusinessUserRole,
+    enumName: 'BusinessUserRole',
+    example: BusinessUserRole.ADMIN,
+    description: 'New role for the client in the business',
   })
-  @IsString()
-  @IsOptional()
-  password?: string;
-
-  @ApiPropertyOptional({
-    example: '123 Main St, City',
-    description: 'Billing address',
-  })
-  @IsString()
-  @IsOptional()
-  address?: string;
-
-  @ApiPropertyOptional({
-    example: 'VAT123456789',
-    description: 'Tax ID / VAT number',
-  })
-  @IsString()
-  @IsOptional()
-  vatNumber?: string;
-
-  @ApiPropertyOptional({
-    example: 'FR76 1234 5678 9012 3456 7890 123',
-    description: 'IBAN number',
-  })
-  @IsString()
-  @IsOptional()
-  iban?: string;
-}
-
-export class UpdateClientDto {
-  @ApiPropertyOptional({ example: 'John' })
-  @IsString()
-  @IsOptional()
-  firstName?: string;
-
-  @ApiPropertyOptional({ example: 'Doe' })
-  @IsString()
-  @IsOptional()
-  lastName?: string;
-
-  @ApiPropertyOptional({ example: 'john.doe@example.com' })
-  @IsEmail()
-  @IsOptional()
-  email?: string;
-
-  @ApiPropertyOptional({ example: '+33123456789' })
-  @IsString()
-  @IsOptional()
-  phoneNumber?: string;
-
-  @ApiPropertyOptional({ example: '123 Main St, City' })
-  @IsString()
-  @IsOptional()
-  address?: string;
-
-  @ApiPropertyOptional({ example: 'VAT123456789' })
-  @IsString()
-  @IsOptional()
-  vatNumber?: string;
-
-  @ApiPropertyOptional({ example: 'FR76 1234 5678 9012 3456 7890 123' })
-  @IsString()
-  @IsOptional()
-  iban?: string;
+  @IsEnum(BusinessUserRole)
+  role: BusinessUserRole;
 }

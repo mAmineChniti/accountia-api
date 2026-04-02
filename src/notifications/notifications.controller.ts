@@ -3,19 +3,20 @@ import {
   Get,
   Patch,
   Param,
-  Sse,
   UseGuards,
-  MessageEvent,
-  Query,
-  UnauthorizedException,
+  HttpCode,
+  HttpStatus,
   Req,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { JwtService } from '@nestjs/jwt';
-import { ApiBearerAuth, ApiTags, ApiOkResponse } from '@nestjs/swagger';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { User, type UserDocument } from '@/users/schemas/user.schema';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
@@ -27,81 +28,51 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @Controller('notifications')
 @ApiBearerAuth()
 export class NotificationsController {
-  constructor(
-    private readonly notificationsService: NotificationsService,
-    private readonly jwtService: JwtService,
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>
-  ) {}
-
-  /**
-   * SSE stream: browser EventSource can't set custom headers,
-   * so we accept the token as a query param instead.
-   */
-  @Sse('sse')
-  async stream(
-    @Query('token') tokenParam?: string,
-    @Query('businessId') businessIdParam?: string
-  ): Promise<Observable<MessageEvent>> {
-    if (!tokenParam) {
-      throw new UnauthorizedException('Missing token');
-    }
-
-    let payload: { sub?: string };
-    try {
-      payload = this.jwtService.verify<{ sub?: string }>(tokenParam);
-    } catch {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    const user = await this.userModel.findById(payload.sub).lean();
-    if (!user) throw new UnauthorizedException('User not found');
-
-    // Admins, Business Owners, or Clients
-    const allowedRoles = [
-      Role.PLATFORM_OWNER,
-      Role.PLATFORM_ADMIN,
-      Role.BUSINESS_OWNER,
-      Role.BUSINESS_ADMIN,
-      Role.CLIENT,
-    ];
-    if (!allowedRoles.includes(user.role)) {
-      throw new UnauthorizedException('Insufficient role');
-    }
-
-    const isBusinessOwner = [Role.BUSINESS_OWNER, Role.BUSINESS_ADMIN].includes(
-      user.role
-    );
-    const isClient = user.role === Role.CLIENT;
-
-    return this.notificationsService.getEventStream(
-      isBusinessOwner ? (businessIdParam ?? undefined) : undefined,
-      isClient ? user.email : undefined
-    );
-  }
+  constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(
-    Role.PLATFORM_OWNER,
-    Role.PLATFORM_ADMIN,
-    Role.BUSINESS_OWNER,
-    Role.BUSINESS_ADMIN,
-    Role.CLIENT
-  )
-  @ApiOkResponse()
-  async getRecent(
-    @Req() req: { user: UserPayload },
-    @Query('businessId') businessId?: string
-  ) {
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.CLIENT)
+  @ApiOperation({
+    summary: 'Get recent notifications',
+    description:
+      'Retrieve up to 20 most recent notifications. Filtered by user role and context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    type: 'string',
+    description: 'Business ID for business owner notifications filter',
+    required: false,
+  })
+  @ApiOkResponse({
+    description: 'List of notifications with unread count',
+    schema: {
+      example: {
+        notifications: [
+          {
+            id: '507f1f77bcf86cd799439011',
+            type: 'invoice.sent',
+            message: 'Invoice sent to client',
+            payload: { invoiceId: '507f1f77bcf86cd799439012' },
+            isRead: false,
+            createdAt: '2026-04-02T10:00:00Z',
+          },
+        ],
+        unreadCount: 1,
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  async getRecent(@Req() req: { user: UserPayload }) {
     const userRole = req.user.role;
     const userEmail = req.user.email;
 
     const isClient = userRole === Role.CLIENT;
     const filterEmail = isClient ? userEmail : undefined;
-    const filterBusinessId = isClient ? undefined : businessId;
 
     const notifications = await this.notificationsService.getRecent(
-      filterBusinessId,
+      undefined,
       filterEmail
     );
     return {
@@ -120,14 +91,24 @@ export class NotificationsController {
 
   @Patch(':id/read')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(
-    Role.PLATFORM_OWNER,
-    Role.PLATFORM_ADMIN,
-    Role.BUSINESS_OWNER,
-    Role.BUSINESS_ADMIN,
-    Role.CLIENT
-  )
-  @ApiOkResponse()
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.CLIENT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mark notification as read',
+    description: 'Update a specific notification to read status.',
+  })
+  @ApiParam({
+    name: 'id',
+    type: 'string',
+    description: 'Notification MongoDB ID',
+  })
+  @ApiOkResponse({
+    description: 'Notification marked as read',
+    schema: { example: { message: 'Notification marked as read' } },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  @ApiResponse({ status: 404, description: 'Notification not found' })
   async markAsRead(@Param('id') id: string) {
     await this.notificationsService.markAsRead(id);
     return { message: 'Notification marked as read' };
@@ -135,29 +116,33 @@ export class NotificationsController {
 
   @Patch('read-all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(
-    Role.PLATFORM_OWNER,
-    Role.PLATFORM_ADMIN,
-    Role.BUSINESS_OWNER,
-    Role.BUSINESS_ADMIN,
-    Role.CLIENT
-  )
-  @ApiOkResponse()
-  async markAllAsRead(
-    @Req() req: { user: UserPayload },
-    @Query('businessId') businessId?: string
-  ) {
+  @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.CLIENT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mark all notifications as read',
+    description:
+      'Bulk update all unread notifications to read status, filtered by user context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    type: 'string',
+    description: 'Business ID for business owner context',
+    required: false,
+  })
+  @ApiOkResponse({
+    description: 'All notifications marked as read',
+    schema: { example: { message: 'All notifications marked as read' } },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Insufficient role' })
+  async markAllAsRead(@Req() req: { user: UserPayload }) {
     const userRole = req.user.role;
     const userEmail = req.user.email;
 
     const isClient = userRole === Role.CLIENT;
     const filterEmail = isClient ? userEmail : undefined;
-    const filterBusinessId = isClient ? undefined : businessId;
 
-    await this.notificationsService.markAllAsRead(
-      filterBusinessId,
-      filterEmail
-    );
+    await this.notificationsService.markAllAsRead(undefined, filterEmail);
     return { message: 'All notifications marked as read' };
   }
 }
