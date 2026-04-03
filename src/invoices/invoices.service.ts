@@ -9,6 +9,10 @@ import { Model } from 'mongoose';
 import { PersonalInvoice } from '@/invoices/schemas/personal-invoice.schema';
 import { CompanyInvoice } from '@/invoices/schemas/company-invoice.schema';
 import { Product } from '@/products/schemas/product.schema';
+import { User } from '@/users/schemas/user.schema';
+import { Business } from '@/business/schemas/business.schema';
+import { EmailService } from '@/email/email.service';
+import { NotificationsService } from '@/notifications/notifications.service';
 import {
   CreatePersonalInvoiceDto,
   CreateCompanyInvoiceDto,
@@ -17,6 +21,7 @@ import {
   CompanyInvoiceResponseDto,
   InvoiceListResponseDto,
 } from '@/invoices/dto/invoice.dto';
+import { NotificationType } from '@/notifications/schemas/notification.schema';
 
 @Injectable()
 export class InvoicesService {
@@ -26,12 +31,18 @@ export class InvoicesService {
     @InjectModel(CompanyInvoice.name)
     private readonly companyInvoiceModel: Model<CompanyInvoice>,
     @InjectModel(Product.name)
-    private readonly productModel: Model<Product>
+    private readonly productModel: Model<Product>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<User>,
+    @InjectModel(Business.name)
+    private readonly businessModel: Model<Business>,
+    private readonly emailService: EmailService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   /**
    * Create a personal invoice (issued to a client user)
-   * Deducts quantity from product inventory
+   * Deducts quantity from product inventory and sends email + WebSocket notification
    */
   async createPersonalInvoice(
     businessId: string,
@@ -76,12 +87,53 @@ export class InvoicesService {
       { new: true }
     );
 
+    // Send email and WebSocket notification (non-blocking)
+    try {
+      const [client, business] = await Promise.all([
+        this.userModel.findById(dto.clientUserId),
+        this.businessModel.findById(businessId),
+      ]);
+
+      if (client?.email && business?.name) {
+        // Calculate due date (30 days from issuance)
+        const dueDate = new Date(savedInvoice.issuedAt);
+        dueDate.setDate(dueDate.getDate() + 30);
+
+        // Send email notification
+        await this.emailService.sendInvoiceNotification(
+          client.email,
+          savedInvoice._id.toString(),
+          amount,
+          product.currency,
+          dueDate,
+          business.name
+        );
+
+        // Send WebSocket notification
+        await this.notificationsService.createNotification({
+          type: NotificationType.INVOICE_CREATED,
+          message: `New invoice ${savedInvoice._id.toString()} from ${business.name}`,
+          payload: {
+            invoiceId: savedInvoice._id.toString(),
+            businessName: business.name,
+            amount,
+            currency: product.currency,
+            dueDate,
+          },
+          targetUserEmail: client.email,
+        });
+      }
+    } catch (error) {
+      // Notification sending failed, but don't block invoice creation
+      console.error('Failed to send invoice notification:', error);
+    }
+
     return this.formatPersonalInvoiceResponse(savedInvoice);
   }
 
   /**
    * Create a company invoice (issued to another business)
-   * Deducts quantity from product inventory
+   * Deducts quantity from product inventory and sends email + WebSocket notifications to business owner/admins
    */
   async createCompanyInvoice(
     businessId: string,
@@ -127,6 +179,47 @@ export class InvoicesService {
       { $inc: { quantity: -dto.quantity } },
       { new: true }
     );
+
+    // Send email and WebSocket notifications to business (non-blocking)
+    try {
+      const [clientBusiness, issuingBusiness] = await Promise.all([
+        this.businessModel.findById(dto.clientBusinessId),
+        this.businessModel.findById(businessId),
+      ]);
+
+      if (clientBusiness?.email && issuingBusiness?.name) {
+        // Calculate due date (30 days from issuance)
+        const dueDate = new Date(savedInvoice.issuedAt);
+        dueDate.setDate(dueDate.getDate() + 30);
+
+        // Send email to business contact email
+        await this.emailService.sendInvoiceNotification(
+          clientBusiness.email,
+          savedInvoice._id.toString(),
+          amount,
+          product.currency,
+          dueDate,
+          issuingBusiness.name
+        );
+
+        // Send WebSocket notification to business room
+        await this.notificationsService.createNotification({
+          type: NotificationType.INVOICE_CREATED,
+          message: `New invoice ${savedInvoice._id.toString()} from ${issuingBusiness.name}`,
+          payload: {
+            invoiceId: savedInvoice._id.toString(),
+            businessName: issuingBusiness.name,
+            amount,
+            currency: product.currency,
+            dueDate,
+          },
+          targetBusinessId: dto.clientBusinessId,
+        });
+      }
+    } catch (error) {
+      // Notification sending failed, but don't block invoice creation
+      console.error('Failed to send invoice notification:', error);
+    }
 
     return this.formatCompanyInvoiceResponse(savedInvoice);
   }

@@ -25,16 +25,12 @@ export class CreateBusinessDto {
   @IsString()
   phone: string;
 
+  @ApiProperty({ example: 'contact@techsolutions.com' })
+  @IsString()
+  email: string;
+
   @ApiPropertyOptional({ example: 'tech_solutions_db' })
   @IsOptional()
   @IsString()
   databaseName?: string;
-
-  @ApiPropertyOptional({
-    example: ['technology', 'software', 'innovation'],
-    isArray: true,
-  })
-  @IsOptional()
-  @IsString({ each: true })
-  tags?: string[];
 }
