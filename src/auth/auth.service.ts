@@ -16,7 +16,7 @@ import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
 import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { User, UserDocument } from '@/users/schemas/user.schema';
+import { User } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
 import { AuditService } from '@/audit/audit.service';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
@@ -110,7 +110,7 @@ export class AuthService {
 
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(User.name) private userModel: Model<User>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService,
@@ -325,7 +325,7 @@ export class AuthService {
     await user.save();
   }
 
-  generateTempToken(user: UserDocument): string {
+  generateTempToken(user: User): string {
     return this.jwtService.sign(
       { sub: user._id.toString(), type: '2fa-temp' },
       { expiresIn: '5m', jwtid: randomUUID() }
@@ -386,7 +386,7 @@ export class AuthService {
 
   private buildAuthResponse(
     tokens: { accessToken: string; refreshToken: string },
-    user: UserDocument
+    user: User
   ): AuthResponseDto {
     return {
       accessToken: tokens.accessToken,
@@ -478,7 +478,7 @@ export class AuthService {
 
       await this.emailService.sendConfirmationEmail(email, emailToken);
 
-      void this.auditService.logAction({
+      await this.auditService.logAction({
         action: AuditAction.REGISTER,
         userId: user._id.toString(),
         userEmail: user.email,
@@ -567,7 +567,7 @@ export class AuthService {
       }
     );
 
-    void this.auditService.logAction({
+    await this.auditService.logAction({
       action: AuditAction.LOGIN,
       userId: user._id.toString(),
       userEmail: user.email,
@@ -1110,9 +1110,7 @@ export class AuthService {
     refreshToken: string;
   } {
     const userId =
-      user instanceof User && '_id' in user
-        ? (user as UserDocument)._id.toString()
-        : (user as TokenPayload).id;
+      user instanceof User && '_id' in user ? user._id.toString() : user.id;
 
     const payload: TokenPayload = {
       sub: userId,
@@ -1157,14 +1155,14 @@ export class AuthService {
       user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
     }
 
-    await (user as UserDocument).save();
+    await user.save();
   }
 
   private async resetFailedAttempts(user: User): Promise<void> {
     if (user.failedLoginAttempts > 0 || user.lockUntil) {
       user.failedLoginAttempts = 0;
       user.lockUntil = undefined;
-      await (user as UserDocument).save();
+      await user.save();
     }
   }
 
@@ -1424,7 +1422,7 @@ export class AuthService {
 
   private async findOrCreateGoogleUser(
     tokenInfo: GoogleTokenInfo
-  ): Promise<UserDocument> {
+  ): Promise<User> {
     const existing = await this.userModel.findOne({ email: tokenInfo.email });
     if (existing) {
       if (!existing.emailConfirmed) {
@@ -1543,7 +1541,7 @@ export class AuthService {
     user.refreshTokens = [];
     await user.save();
 
-    void this.auditService.logAction({
+    await this.auditService.logAction({
       action: AuditAction.BAN_USER,
       userId: adminId,
       userEmail: admin.email,

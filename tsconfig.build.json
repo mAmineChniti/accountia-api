@@ -5,6 +5,13 @@
     "test",
     "dist",
     "**/*spec.ts",
-    "eslint.config.mjs"
+    "eslint.config.mjs",
+    "**/*.py",
+    "**/__pycache__/**",
+    "**/*.html",
+    ".env*",
+    "*.md",
+    ".git",
+    ".gitignore"
   ]
 }

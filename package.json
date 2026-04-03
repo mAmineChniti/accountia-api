@@ -23,6 +23,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@multiavatar/multiavatar": "^1.0.7",
     "@nestjs/common": "^11.1.15",
     "@nestjs/config": "^4.0.3",
@@ -31,6 +32,7 @@
     "@nestjs/mongoose": "^11.0.4",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.13",
+    "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/websockets": "^11.1.17",
     "bcrypt": "^6.0.0",
@@ -48,11 +50,10 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "qrcode": "^1.5.4",
-    "react-markdown": "^10.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.3",
-    "typeorm": "^0.3.28"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@darraghor/eslint-plugin-nestjs-typed": "^7.1.26",

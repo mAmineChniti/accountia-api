@@ -31,7 +31,6 @@ export class BusinessUserResponseDto {
       userId: '507f1f77bcf86cd799439012',
       role: 'admin',
       assignedBy: '615f2e0a6c6d5c0e1a1e4a01',
-      isActive: true,
       createdAt: '2024-02-17T16:30:00.000Z',
     },
   })
@@ -41,7 +40,6 @@ export class BusinessUserResponseDto {
     userId: string;
     role: string;
     assignedBy: string;
-    isActive: boolean;
     createdAt: Date;
   };
 }

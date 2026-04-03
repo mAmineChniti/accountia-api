@@ -392,7 +392,7 @@ export class EmailService {
         '{{.DueDate}}': dueDate,
         '{{.ButtonLabel}}': 'Pay Now',
         '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.InvoicesUrl}}': `${this.frontendUrl}/managed/invoices`,
+        '{{.InvoicesUrl}}': `${this.frontendUrl}/invoices/managed`,
         '{{.Year}}': new Date().getFullYear().toString(),
       };
 

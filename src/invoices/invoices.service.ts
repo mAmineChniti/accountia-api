@@ -1,246 +1,160 @@
 import {
   Injectable,
-  BadRequestException,
   NotFoundException,
   ForbiddenException,
-  ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { PersonalInvoice } from '@/invoices/schemas/personal-invoice.schema';
+import { CompanyInvoice } from '@/invoices/schemas/company-invoice.schema';
+import { Product } from '@/products/schemas/product.schema';
 import {
-  Invoice,
-  InvoiceDocument,
-  InvoiceStatus,
-  InvoiceItem,
-} from '@/invoices/schemas/invoice.schema';
-import { CreateInvoiceDto, InvoiceStatusDto } from './dto/create-invoice.dto';
-import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import * as crypto from 'node:crypto';
-import { EmailService } from '@/email/email.service';
-import { Business } from '@/business/schemas/business.schema';
-import { NotificationsService } from '@/notifications/notifications.service';
-import { NotificationType } from '@/notifications/schemas/notification.schema';
-import { Cron, CronExpression } from '@nestjs/schedule';
+  CreatePersonalInvoiceDto,
+  CreateCompanyInvoiceDto,
+  UpdateInvoiceDto,
+  PersonalInvoiceResponseDto,
+  CompanyInvoiceResponseDto,
+  InvoiceListResponseDto,
+} from '@/invoices/dto/invoice.dto';
 
 @Injectable()
 export class InvoicesService {
   constructor(
-    @InjectModel(Invoice.name) private invoiceModel: Model<InvoiceDocument>,
-    @InjectModel(Business.name) private businessModel: Model<Business>,
-    private emailService: EmailService,
-    private notificationsService: NotificationsService
+    @InjectModel(PersonalInvoice.name)
+    private readonly personalInvoiceModel: Model<PersonalInvoice>,
+    @InjectModel(CompanyInvoice.name)
+    private readonly companyInvoiceModel: Model<CompanyInvoice>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<Product>
   ) {}
 
   /**
-   * Récupère le nom d'une business par son ID
+   * Create a personal invoice (issued to a client user)
+   * Deducts quantity from product inventory
    */
-  private async getBusinessName(businessOwnerId: string): Promise<string> {
-    const business = await this.businessModel
-      .findById(businessOwnerId)
-      .select('name')
-      .lean();
-    return business?.name ?? 'Accountia Professional';
-  }
-
-  /**
-   * Génère un numéro de facture unique
-   */
-  private generateInvoiceNumber(): string {
-    const randomPart = crypto.randomBytes(2).toString('hex').toUpperCase();
-    const timestamp = Date.now().toString(36).toUpperCase();
-    return `INV-${randomPart}-${timestamp}`;
-  }
-
-  /**
-   * Calcule les totaux et les taxes
-   */
-  private calculateTotals(
-    lineItems: InvoiceItem[],
-    taxRate: number
-  ): { subtotal: number; taxAmount: number; total: number } {
-    const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = Math.round(((subtotal * taxRate) / 100) * 100) / 100;
-    const total = subtotal + taxAmount;
-
-    return { subtotal, taxAmount, total };
-  }
-
-  /**
-   * Crée une facture
-   */
-  async createInvoice(
-    businessOwnerId: string,
-    createInvoiceDto: CreateInvoiceDto
-  ): Promise<InvoiceResponseDto> {
-    // Validation: vérifier que dueDate > issueDate
-    if (
-      new Date(createInvoiceDto.dueDate) <= new Date(createInvoiceDto.issueDate)
-    ) {
-      throw new BadRequestException('Due date must be after issue date');
+  async createPersonalInvoice(
+    businessId: string,
+    dto: CreatePersonalInvoiceDto
+  ): Promise<PersonalInvoiceResponseDto> {
+    // Fetch product
+    const product = await this.productModel.findById(dto.productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
 
-    // Validation: au moins 1 article de ligne
-    if (
-      !createInvoiceDto.lineItems ||
-      createInvoiceDto.lineItems.length === 0
-    ) {
-      throw new BadRequestException('Invoice must have at least one line item');
+    // Check product belongs to business
+    if (product.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Product does not belong to this business');
     }
 
-    // Validation: Status can only be DRAFT or SENT on creation (not PAID or OVERDUE)
-    const initialStatus = createInvoiceDto.status ?? InvoiceStatus.DRAFT;
-    const disallowedStatuses = [InvoiceStatus.PAID, InvoiceStatus.OVERDUE];
-    if (disallowedStatuses.includes(initialStatus as InvoiceStatus)) {
-      throw new BadRequestException(
-        'Invoice can only be created as DRAFT or SENT'
-      );
+    // Check sufficient quantity
+    if (product.quantity < dto.quantity) {
+      throw new BadRequestException('Insufficient product quantity');
     }
 
-    // Créer les articles de ligne avec IDs uniques
-    const lineItems: InvoiceItem[] = createInvoiceDto.lineItems.map((item) => ({
-      id: crypto.randomUUID(),
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      total: Math.round(item.quantity * item.unitPrice * 100) / 100,
-    }));
+    // Calculate amount
+    const amount = dto.quantity * product.unitPrice;
 
-    // Calculer les totaux
-    const { subtotal, taxAmount, total } = this.calculateTotals(
-      lineItems,
-      createInvoiceDto.taxRate || 19
-    );
-
-    // Créer la facture
-    const invoiceNumber = this.generateInvoiceNumber();
-    const invoice = new this.invoiceModel({
-      invoiceNumber,
-      businessOwnerId,
-      clientName: createInvoiceDto.clientName,
-      clientEmail: createInvoiceDto.clientEmail,
-      clientPhone: createInvoiceDto.clientPhone,
-      lineItems,
-      subtotal,
-      taxRate: createInvoiceDto.taxRate || 19,
-      taxAmount,
-      total,
-      issueDate: new Date(createInvoiceDto.issueDate),
-      dueDate: new Date(createInvoiceDto.dueDate),
-      status: initialStatus,
-      notes: createInvoiceDto.notes,
-      currency: createInvoiceDto.currency ?? 'TND',
+    // Create invoice
+    const invoice = new this.personalInvoiceModel({
+      businessId,
+      clientUserId: dto.clientUserId,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      amount,
+      issuedAt: new Date(),
+      paid: false,
     });
 
-    try {
-      await invoice.save();
+    const savedInvoice = await invoice.save();
 
-      // If status is not DRAFT, trigger email notification immediately
-      if (invoice.status !== InvoiceStatus.DRAFT) {
-        invoice.status = InvoiceStatus.SENT;
-        invoice.sentAt = new Date();
-        await invoice.save();
+    // Deduct quantity from product
+    await this.productModel.findByIdAndUpdate(
+      dto.productId,
+      { $inc: { quantity: -dto.quantity } },
+      { new: true }
+    );
 
-        const businessName = await this.getBusinessName(businessOwnerId);
-
-        this.emailService
-          .sendInvoiceNotification(
-            invoice.clientEmail,
-            invoice.invoiceNumber,
-            invoice.total,
-            invoice.currency ?? 'TND',
-            invoice.dueDate,
-            businessName
-          )
-          .catch(() => {
-            // Silently handle email failure
-          });
-
-        // Also send confirmation to BO
-        this.emailService
-          .sendInvoiceSentConfirmation(
-            businessOwnerId,
-            invoice.invoiceNumber,
-            invoice.clientName,
-            invoice.clientEmail,
-            invoice.total,
-            invoice.currency ?? 'TND'
-          )
-          .catch(() => {
-            // Silently handle email failure
-          });
-      }
-    } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 11_000) {
-        throw new ConflictException('Invoice number already exists');
-      }
-      throw error;
-    }
-
-    return this.formatInvoiceResponse(invoice);
+    return this.formatPersonalInvoiceResponse(savedInvoice);
   }
 
   /**
-   * Récupère une facture par ID
+   * Create a company invoice (issued to another business)
+   * Deducts quantity from product inventory
    */
-  async getInvoiceById(
-    id: string,
-    businessOwnerId: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+  async createCompanyInvoice(
+    businessId: string,
+    dto: CreateCompanyInvoiceDto
+  ): Promise<CompanyInvoiceResponseDto> {
+    // Fetch product
+    const product = await this.productModel.findById(dto.productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
 
-    // Vérifier que la facture appartient au business owner
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
+    // Check product belongs to business
+    if (product.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Product does not belong to this business');
     }
 
-    // Ne pas retourner les factures supprimées
-    if (invoice.deletedAt) {
-      throw new NotFoundException('Invoice not found');
+    // Check sufficient quantity
+    if (product.quantity < dto.quantity) {
+      throw new BadRequestException('Insufficient product quantity');
     }
 
-    return this.formatInvoiceResponse(invoice);
+    // Calculate amount
+    const amount = dto.quantity * product.unitPrice;
+
+    // Create invoice
+    const invoice = new this.companyInvoiceModel({
+      businessId,
+      clientBusinessId: dto.clientBusinessId,
+      clientCompanyName: dto.clientCompanyName,
+      clientContactEmail: dto.clientContactEmail,
+      productId: dto.productId,
+      quantity: dto.quantity,
+      amount,
+      issuedAt: new Date(),
+      paid: false,
+    });
+
+    const savedInvoice = await invoice.save();
+
+    // Deduct quantity from product
+    await this.productModel.findByIdAndUpdate(
+      dto.productId,
+      { $inc: { quantity: -dto.quantity } },
+      { new: true }
+    );
+
+    return this.formatCompanyInvoiceResponse(savedInvoice);
   }
 
   /**
-   * Récupère toutes les factures d'un business owner
+   * Get all personal invoices for a business
    */
-  async getInvoicesByBusinessId(
-    businessOwnerId: string,
-    status?: InvoiceStatus,
+  async getPersonalInvoicesByBusiness(
+    businessId: string,
     page = 1,
     limit = 10
-  ): Promise<{
-    invoices: InvoiceResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    const query = {
-      businessOwnerId,
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-      ...(status && { status }),
-    };
-
-    const total = await this.invoiceModel.countDocuments(query);
-
-    const invoices = await this.invoiceModel
-      .find({ ...query })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
-
-    // Note: Do NOT update invoice status in GET request
-    // Status updates should be handled by a separate cron job only
-    // This prevents race conditions and side effects on read operations
+  ): Promise<InvoiceListResponseDto> {
+    const skip = (page - 1) * limit;
+    const [invoices, total] = await Promise.all([
+      this.personalInvoiceModel
+        .find({ businessId })
+        .sort({ issuedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.personalInvoiceModel.countDocuments({ businessId }),
+    ]);
 
     return {
-      invoices: invoices.map((inv) => this.formatInvoiceResponse(inv)),
+      invoices: invoices.map((inv) => {
+        const typed = inv as unknown as PersonalInvoice;
+        return this.formatPersonalInvoiceResponse(typed);
+      }),
       total,
       page,
       limit,
@@ -249,43 +163,29 @@ export class InvoicesService {
   }
 
   /**
-   * Récupère les invoices pour un utilisateur
-   * Inclut les invoices créées par l'utilisateur (businessOwnerId) ou reçues (clientUserId)
+   * Get all company invoices for a business
    */
-  async getInvoicesByUserId(
-    userId: string,
-    status?: InvoiceStatus,
+  async getCompanyInvoicesByBusiness(
+    businessId: string,
     page = 1,
     limit = 10
-  ): Promise<{
-    invoices: InvoiceResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    const query = {
-      $or: [
-        { businessOwnerId: userId }, // Invoices created by this user
-        { clientUserId: userId }, // Invoices sent to this user
-      ],
-      $and: [
-        {
-          $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-        },
-      ],
-      ...(status && { status }),
-    };
-
-    const total = await this.invoiceModel.countDocuments(query);
-    const invoices = await this.invoiceModel
-      .find({ ...query })
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+  ): Promise<InvoiceListResponseDto> {
+    const skip = (page - 1) * limit;
+    const [invoices, total] = await Promise.all([
+      this.companyInvoiceModel
+        .find({ businessId })
+        .sort({ issuedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.companyInvoiceModel.countDocuments({ businessId }),
+    ]);
 
     return {
-      invoices: invoices.map((inv) => this.formatInvoiceResponse(inv)),
+      invoices: invoices.map((inv) => {
+        const typed = inv as unknown as CompanyInvoice;
+        return this.formatCompanyInvoiceResponse(typed);
+      }),
       total,
       page,
       limit,
@@ -294,511 +194,389 @@ export class InvoicesService {
   }
 
   /**
-   * Récupère une facture unique par son ID
+   * Get invoices received by a user (personal invoices)
    */
-  async getInvoiceByInvoiceId(id: string): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id).where({
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-    });
+  async getPersonalInvoicesForUser(
+    clientUserId: string,
+    page = 1,
+    limit = 10
+  ): Promise<InvoiceListResponseDto> {
+    const skip = (page - 1) * limit;
+    const [invoices, total] = await Promise.all([
+      this.personalInvoiceModel
+        .find({ clientUserId })
+        .sort({ issuedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.personalInvoiceModel.countDocuments({ clientUserId }),
+    ]);
 
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    return this.formatInvoiceResponse(invoice);
+    return {
+      invoices: invoices.map((inv) => {
+        const typed = inv as unknown as PersonalInvoice;
+        return this.formatPersonalInvoiceResponse(typed);
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
-   * Met à jour une facture
+   * Get invoices received by a business
    */
-  async updateInvoice(
-    id: string,
-    businessOwnerId: string,
-    updateInvoiceDto: UpdateInvoiceDto
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
+  async getCompanyInvoicesForBusiness(
+    clientBusinessId: string,
+    page = 1,
+    limit = 10
+  ): Promise<InvoiceListResponseDto> {
+    const skip = (page - 1) * limit;
+    const [invoices, total] = await Promise.all([
+      this.companyInvoiceModel
+        .find({ clientBusinessId })
+        .sort({ issuedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      this.companyInvoiceModel.countDocuments({ clientBusinessId }),
+    ]);
 
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
-    }
-
-    // Seules les factures DRAFT peuvent être modifiées
-    if (invoice.status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException('Only draft invoices can be modified');
-    }
-
-    // Mettre à jour les champs
-    if (updateInvoiceDto.clientName) {
-      invoice.clientName = updateInvoiceDto.clientName;
-    }
-    if (updateInvoiceDto.clientEmail) {
-      invoice.clientEmail = updateInvoiceDto.clientEmail;
-    }
-    if (updateInvoiceDto.clientPhone) {
-      invoice.clientPhone = updateInvoiceDto.clientPhone;
-    }
-    if (updateInvoiceDto.lineItems) {
-      invoice.lineItems = updateInvoiceDto.lineItems.map((item) => ({
-        id: crypto.randomUUID(),
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: Math.round(item.quantity * item.unitPrice * 100) / 100,
-      }));
-    }
-    if (updateInvoiceDto.issueDate) {
-      invoice.issueDate = new Date(updateInvoiceDto.issueDate);
-    }
-    if (updateInvoiceDto.dueDate) {
-      invoice.dueDate = new Date(updateInvoiceDto.dueDate);
-    }
-
-    // Validation: dueDate > issueDate
-    if (new Date(invoice.dueDate) <= new Date(invoice.issueDate)) {
-      throw new BadRequestException('Due date must be after issue date');
-    }
-
-    if (updateInvoiceDto.taxRate !== undefined) {
-      invoice.taxRate = updateInvoiceDto.taxRate;
-    }
-    if (updateInvoiceDto.notes !== undefined) {
-      invoice.notes = updateInvoiceDto.notes;
-    }
-    if (updateInvoiceDto.currency) {
-      invoice.currency = updateInvoiceDto.currency;
-    }
-
-    // Recalculer les totaux
-    const { subtotal, taxAmount, total } = this.calculateTotals(
-      invoice.lineItems,
-      invoice.taxRate
-    );
-    invoice.subtotal = subtotal;
-    invoice.taxAmount = taxAmount;
-    invoice.total = total;
-
-    await invoice.save();
-    return this.formatInvoiceResponse(invoice);
+    return {
+      invoices: invoices.map((inv) =>
+        this.formatCompanyInvoiceResponse(inv as CompanyInvoice)
+      ),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
-   * Supprime une facture (soft delete)
+   * Get a personal invoice by ID
    */
-  async deleteInvoice(id: string, businessOwnerId: string): Promise<void> {
-    const invoice = await this.invoiceModel.findById(id);
-
+  async getPersonalInvoiceById(
+    invoiceId: string
+  ): Promise<PersonalInvoiceResponseDto> {
+    const invoice = await this.personalInvoiceModel.findById(invoiceId);
     if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+      throw new NotFoundException('Personal invoice not found');
     }
-
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
-    }
-
-    // Seules les factures DRAFT peuvent être supprimées
-    if (invoice.status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException('Only draft invoices can be deleted');
-    }
-
-    invoice.deletedAt = new Date();
-    await invoice.save();
+    return this.formatPersonalInvoiceResponse(invoice);
   }
 
   /**
-   * Envoie une facture (change le statut à SENT)
+   * Get a company invoice by ID
    */
-  async sendInvoice(
-    id: string,
-    businessOwnerId: string,
-    customMessage?: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
-
+  async getCompanyInvoiceById(
+    invoiceId: string
+  ): Promise<CompanyInvoiceResponseDto> {
+    const invoice = await this.companyInvoiceModel.findById(invoiceId);
     if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+      throw new NotFoundException('Company invoice not found');
     }
-
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
-    }
-
-    if (invoice.status !== InvoiceStatus.DRAFT) {
-      throw new BadRequestException('Only draft invoices can be sent');
-    }
-
-    invoice.status = InvoiceStatus.SENT;
-    invoice.sentAt = new Date();
-    await invoice.save();
-
-    // Trigger Email Notification to client (non-blocking)
-    const businessName = await this.getBusinessName(businessOwnerId);
-
-    this.emailService
-      .sendInvoiceNotification(
-        invoice.clientEmail,
-        invoice.invoiceNumber,
-        invoice.total,
-        invoice.currency || 'USD',
-        invoice.dueDate,
-        businessName,
-        customMessage
-      )
-      .catch(() => {
-        // Silently handle email failure
-      });
-    return this.formatInvoiceResponse(invoice);
+    return this.formatCompanyInvoiceResponse(invoice);
   }
 
   /**
-   * Marquer la facture comme payée (après vérification du paiement)
+   * Update personal invoice (mark as paid)
    */
-  async markInvoiceAsPaid(
-    id: string,
-    clientEmail: string,
-    _paymentId?: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findOne({
-      _id: id,
-      clientEmail: clientEmail,
-    });
-
+  async updatePersonalInvoice(
+    invoiceId: string,
+    businessId: string,
+    dto: UpdateInvoiceDto
+  ): Promise<PersonalInvoiceResponseDto> {
+    const invoice = await this.personalInvoiceModel.findById(invoiceId);
     if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+      throw new NotFoundException('Personal invoice not found');
     }
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      return this.formatInvoiceResponse(invoice); // Déjà payée
+    if (invoice.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Invoice does not belong to this business');
     }
 
-    invoice.status = InvoiceStatus.PAID;
-    invoice.paidAt = new Date();
-    // On pourrait stocker le paymentId ici si le schéma l'autorise, mais pour l'instant on met juste à jour le statut
-    await invoice.save();
+    if (dto.paid !== undefined) {
+      invoice.paid = dto.paid;
+      invoice.paidAt = dto.paid ? new Date() : undefined;
+    }
 
-    // Trigger Email Notification for payment success (non-blocking)
-    const businessName = await this.getBusinessName(
-      invoice.businessOwnerId.toString()
+    const updated = await invoice.save();
+    return this.formatPersonalInvoiceResponse(updated);
+  }
+
+  /**
+   * Update company invoice (mark as paid)
+   */
+  async updateCompanyInvoice(
+    invoiceId: string,
+    businessId: string,
+    dto: UpdateInvoiceDto
+  ): Promise<CompanyInvoiceResponseDto> {
+    const invoice = await this.companyInvoiceModel.findById(invoiceId);
+    if (!invoice) {
+      throw new NotFoundException('Company invoice not found');
+    }
+
+    if (invoice.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Invoice does not belong to this business');
+    }
+
+    if (dto.paid !== undefined) {
+      invoice.paid = dto.paid;
+      invoice.paidAt = dto.paid ? new Date() : undefined;
+    }
+
+    const updated = await invoice.save();
+    return this.formatCompanyInvoiceResponse(updated);
+  }
+
+  /**
+   * Delete personal invoice
+   */
+  async deletePersonalInvoice(
+    invoiceId: string,
+    businessId: string
+  ): Promise<void> {
+    const invoice = await this.personalInvoiceModel.findById(invoiceId);
+    if (!invoice) {
+      throw new NotFoundException('Personal invoice not found');
+    }
+
+    if (invoice.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Invoice does not belong to this business');
+    }
+
+    // Restore product quantity
+    await this.productModel.findByIdAndUpdate(
+      invoice.productId,
+      { $inc: { quantity: invoice.quantity } },
+      { new: true }
     );
 
-    this.emailService
-      .sendInvoiceNotification(
-        invoice.clientEmail,
-        invoice.invoiceNumber,
-        invoice.total,
-        invoice.currency || 'USD',
-        invoice.dueDate, // Pas grave si c'est la date d'échéance, idéalement c'est la date de paiement
-        businessName,
-        `Your payment of ${invoice.total.toFixed(2)} ${invoice.currency || 'USD'} has been successfully processed via Flouci. Thank you!`
-      )
-      .catch(() => {
-        // Silently handle email failure
-      });
-
-    // Notify Business Owner in-app
-    this.notificationsService
-      .createNotification({
-        type: NotificationType.INVOICE_PAID,
-        message: `Invoice ${invoice.invoiceNumber} has been paid by ${invoice.clientName}`,
-        targetBusinessId: invoice.businessOwnerId.toString(),
-        payload: {
-          invoiceId: invoice._id.toString(),
-          amount: invoice.total,
-        },
-      })
-      .catch(() => {
-        // Silently handle notification failure
-      });
-
-    return this.formatInvoiceResponse(invoice);
+    await this.personalInvoiceModel.findByIdAndDelete(invoiceId);
   }
 
   /**
-   * Marquer la facture comme payée manuellement par le Business Owner
+   * Delete company invoice
    */
-  async markInvoiceAsPaidManual(
-    id: string,
-    businessOwnerId: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
-
+  async deleteCompanyInvoice(
+    invoiceId: string,
+    businessId: string
+  ): Promise<void> {
+    const invoice = await this.companyInvoiceModel.findById(invoiceId);
     if (!invoice) {
-      throw new NotFoundException('Invoice not found');
+      throw new NotFoundException('Company invoice not found');
     }
 
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
+    if (invoice.businessId.toString() !== businessId) {
+      throw new ForbiddenException('Invoice does not belong to this business');
     }
 
-    if (invoice.status === InvoiceStatus.PAID) {
-      return this.formatInvoiceResponse(invoice);
-    }
+    // Restore product quantity
+    await this.productModel.findByIdAndUpdate(
+      invoice.productId,
+      { $inc: { quantity: invoice.quantity } },
+      { new: true }
+    );
 
-    invoice.status = InvoiceStatus.PAID;
-    invoice.paidAt = new Date();
-    await invoice.save();
-
-    // Notify client that payment was marked as received
-    const businessName = await this.getBusinessName(businessOwnerId);
-    this.emailService
-      .sendInvoiceNotification(
-        invoice.clientEmail,
-        invoice.invoiceNumber,
-        invoice.total,
-        invoice.currency || 'USD',
-        invoice.dueDate,
-        businessName,
-        `Your invoice has been marked as paid. Thank you for your business!`
-      )
-      .catch(() => {
-        // Silently handle email failure
-      });
-
-    // Notify Business Owner in-app
-    this.notificationsService
-      .createNotification({
-        type: NotificationType.INVOICE_PAID,
-        message: `Invoice ${invoice.invoiceNumber} has been marked as paid for ${invoice.clientName}`,
-        targetBusinessId: invoice.businessOwnerId.toString(),
-        payload: {
-          invoiceId: invoice._id.toString(),
-          amount: invoice.total,
-        },
-      })
-      .catch(() => {
-        // Silently handle notification failure
-      });
-
-    return this.formatInvoiceResponse(invoice);
+    await this.companyInvoiceModel.findByIdAndDelete(invoiceId);
   }
 
-  /**
-   * Active ou désactive les rappels pour une facture spécifique
-   */
-  async toggleInvoiceReminders(
-    id: string,
-    businessOwnerId: string,
-    muted: boolean
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
-    }
-
-    invoice.remindersMuted = muted;
-    await invoice.save();
-
-    return this.formatInvoiceResponse(invoice);
-  }
-
-  /**
-   * Envoie manuellement un rappel de paiement
-   */
-  async sendManualReminder(
-    id: string,
-    businessOwnerId: string
-  ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(id);
-
-    if (!invoice) {
-      throw new NotFoundException('Invoice not found');
-    }
-
-    if (invoice.businessOwnerId.toString() !== businessOwnerId) {
-      throw new ForbiddenException('You do not have access to this invoice');
-    }
-
-    // Autorisé pour SENT, PENDING, OVERDUE
-    const notAllowedStatuses = [InvoiceStatus.DRAFT, InvoiceStatus.PAID];
-    if (notAllowedStatuses.includes(invoice.status)) {
-      throw new BadRequestException(
-        'Can only remind for sent, pending or overdue invoices'
-      );
-    }
-
-    const businessName = await this.getBusinessName(businessOwnerId);
-
-    // 1. Send Email
-    await this.emailService
-      .sendInvoiceReminderEmail(
-        invoice.clientEmail,
-        invoice.clientName,
-        businessName,
-        invoice.invoiceNumber,
-        `${invoice.total.toFixed(2)} ${invoice.currency}`,
-        invoice.dueDate.toLocaleDateString(),
-        0 // 0 means manual reminder
-      )
-      .catch(() => {
-        // Silently handle email failure
-      });
-
-    // 2. Create In-App Notification for Client
-    await this.notificationsService
-      .createNotification({
-        type: NotificationType.INVOICE_REMINDED,
-        message: `Reminder: Invoice ${invoice.invoiceNumber} from ${businessName} is awaiting payment.`,
-        targetUserEmail: invoice.clientEmail,
-        payload: {
-          invoiceId: invoice._id.toString(),
-          businessName,
-          amount: invoice.total,
-        },
-      })
-      .catch(() => {
-        // Silently handle notification failure
-      });
-
-    // 3. Record in history
-    if (!invoice.reminderHistory) invoice.reminderHistory = [];
-    invoice.reminderHistory.push({
-      sentAt: new Date(),
-      intervalDays: 0, // Manual
-    });
-    await invoice.save();
-
-    return this.formatInvoiceResponse(invoice);
-  }
-
-  /**
-   * Cron Job to automatically mark invoices as OVERDUE and send reminders
-   * Runs every day at midnight.
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  async handleOverdueInvoices() {
-    const now = new Date();
-
-    // 1. Sync Status: Mark PENDING/SENT invoices as OVERDUE if dueDate is passed
-    const justOverdueInvoices = await this.invoiceModel.find({
-      status: { $in: [InvoiceStatus.PENDING, InvoiceStatus.SENT] },
-      dueDate: { $lt: now },
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-    });
-
-    for (const invoice of justOverdueInvoices) {
-      invoice.status = InvoiceStatus.OVERDUE;
-      await invoice.save();
-
-      // Notify owner in-app
-      this.notificationsService
-        .createNotification({
-          type: NotificationType.INVOICE_OVERDUE,
-          message: `Status: Invoice ${invoice.invoiceNumber} for ${invoice.clientName} is now OVERDUE.`,
-          targetBusinessId: invoice.businessOwnerId.toString(),
-          payload: {
-            invoiceId: invoice._id.toString(),
-            dueDate: invoice.dueDate,
-          },
-        })
-        .catch(() => {
-          // Silently handle notification failure
-        });
-    }
-
-    // 2. Automated Reminders: Check all OVERDUE invoices for 5, 10, 20 day intervals
-    const overdueInvoices = await this.invoiceModel.find({
-      status: InvoiceStatus.OVERDUE,
-      remindersMuted: { $ne: true },
-      $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-    });
-
-    for (const invoice of overdueInvoices) {
-      const business = await this.businessModel
-        .findById(invoice.businessOwnerId.toString())
-        .select('name automationSettings')
-        .lean();
-
-      // Skip if business reminders are explicitly disabled
-      if (business?.automationSettings?.remindersEnabled === false) continue;
-
-      const diffTime = Math.abs(
-        now.getTime() - new Date(invoice.dueDate).getTime()
-      );
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      // Professional intervals: 5, 10, 20
-      const targetIntervals = [5, 10, 20];
-      const intervalToRemind = targetIntervals.find((i) => diffDays >= i);
-
-      if (intervalToRemind) {
-        // Check if reminder was already sent for this specific interval
-        const alreadySent = invoice.reminderHistory?.some(
-          (h) => h.intervalDays === intervalToRemind
-        );
-
-        if (!alreadySent) {
-          await this.emailService
-            .sendInvoiceReminderEmail(
-              invoice.clientEmail,
-              invoice.clientName,
-              business?.name ?? 'Accountia Professional',
-              invoice.invoiceNumber,
-              `${invoice.total.toFixed(2)} ${invoice.currency}`,
-              invoice.dueDate.toLocaleDateString(),
-              intervalToRemind
-            )
-            .catch(() => {
-              // Silently handle email failure
-            });
-
-          // Record history
-          if (!invoice.reminderHistory) invoice.reminderHistory = [];
-          invoice.reminderHistory.push({
-            sentAt: new Date(),
-            intervalDays: intervalToRemind,
-          });
-          await invoice.save();
-        }
-      }
-    }
-  }
-
-  /**
-   * Formate la réponse d'une facture
-   */
-  private formatInvoiceResponse(invoice: InvoiceDocument): InvoiceResponseDto {
+  private formatPersonalInvoiceResponse(
+    invoice: PersonalInvoice
+  ): PersonalInvoiceResponseDto {
     return {
       id: invoice._id.toString(),
-      invoiceNumber: invoice.invoiceNumber,
-      businessOwnerId: invoice.businessOwnerId.toString(),
-      clientName: invoice.clientName,
-      clientEmail: invoice.clientEmail,
-      clientPhone: invoice.clientPhone,
-      lineItems: invoice.lineItems.map((item) => ({
-        id: item.id,
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: item.total,
-      })),
-      subtotal: invoice.subtotal,
-      taxRate: invoice.taxRate,
-      taxAmount: invoice.taxAmount,
-      total: invoice.total,
-      issueDate: invoice.issueDate,
-      dueDate: invoice.dueDate,
-      status: invoice.status as unknown as InvoiceStatusDto,
-      notes: invoice.notes,
-      currency: invoice.currency,
-      sentAt: invoice.sentAt,
-      paidAt: invoice.paidAt,
-      remindersMuted: invoice.remindersMuted,
-      reminderHistory: invoice.reminderHistory
-        ? invoice.reminderHistory.map((h) => ({
-            sentAt: h.sentAt,
-            intervalDays: h.intervalDays,
-          }))
-        : [],
-      createdAt: invoice.createdAt ?? new Date(),
-      updatedAt: invoice.updatedAt ?? new Date(),
+      businessId: invoice.businessId.toString(),
+      productId: invoice.productId.toString(),
+      clientUserId: invoice.clientUserId.toString(),
+      quantity: invoice.quantity,
+      amount: invoice.amount,
+      issuedAt: invoice.issuedAt,
+      paid: invoice.paid,
+      paidAt: invoice.paidAt ?? undefined,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt,
     };
+  }
+
+  private formatCompanyInvoiceResponse(
+    invoice: CompanyInvoice
+  ): CompanyInvoiceResponseDto {
+    return {
+      id: invoice._id.toString(),
+      businessId: invoice.businessId.toString(),
+      productId: invoice.productId.toString(),
+      clientBusinessId: invoice.clientBusinessId.toString(),
+      clientCompanyName: invoice.clientCompanyName,
+      clientContactEmail: invoice.clientContactEmail,
+      quantity: invoice.quantity,
+      amount: invoice.amount,
+      issuedAt: invoice.issuedAt,
+      paid: invoice.paid,
+      paidAt: invoice.paidAt ?? undefined,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt,
+    };
+  }
+
+  /**
+   * Import personal invoices from parsed CSV/Excel data
+   */
+  async importPersonalInvoices(
+    businessId: string,
+    records: Record<string, unknown>[]
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const errors: string[] = [];
+    let imported = 0;
+
+    for (const [i, record] of records.entries()) {
+      const rowNum = i + 2;
+
+      try {
+        const clientUserId = record.clientUserId as string;
+        const productId = record.productId as string;
+        const quantity = record.quantity as number;
+
+        if (!clientUserId?.trim()) {
+          throw new Error('Missing required field: clientUserId');
+        }
+        if (!productId?.trim()) {
+          throw new Error('Missing required field: productId');
+        }
+
+        const parsedQuantity = Number(quantity);
+        if (Number.isNaN(parsedQuantity) || parsedQuantity < 1) {
+          throw new Error('quantity must be a valid positive number');
+        }
+
+        // Fetch product and validate
+        const product = await this.productModel.findById(productId);
+        if (!product) {
+          throw new Error('Product not found');
+        }
+
+        if (product.businessId.toString() !== businessId) {
+          throw new Error('Product does not belong to this business');
+        }
+
+        if (product.quantity < parsedQuantity) {
+          throw new Error('Insufficient product quantity');
+        }
+
+        // Calculate amount and create invoice
+        const amount = parsedQuantity * product.unitPrice;
+        const invoice = new this.personalInvoiceModel({
+          businessId,
+          clientUserId: clientUserId.trim(),
+          productId,
+          quantity: parsedQuantity,
+          amount,
+          issuedAt: new Date(),
+          paid: false,
+        });
+
+        await invoice.save();
+
+        // Deduct quantity from product
+        await this.productModel.findByIdAndUpdate(
+          productId,
+          { $inc: { quantity: -parsedQuantity } },
+          { new: true }
+        );
+
+        imported++;
+      } catch (error) {
+        errors.push(`Row ${rowNum}: ${(error as Error).message}`);
+      }
+    }
+
+    return { imported, failed: errors.length, errors };
+  }
+
+  /**
+   * Import company invoices from parsed CSV/Excel data
+   */
+  async importCompanyInvoices(
+    businessId: string,
+    records: Record<string, unknown>[]
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const errors: string[] = [];
+    let imported = 0;
+
+    for (const [i, record] of records.entries()) {
+      const rowNum = i + 2;
+
+      try {
+        const clientBusinessId = record.clientBusinessId as string;
+        const clientCompanyName = record.clientCompanyName as string;
+        const clientContactEmail = record.clientContactEmail as string;
+        const productId = record.productId as string;
+        const quantity = record.quantity as number;
+
+        if (!clientBusinessId?.trim()) {
+          throw new Error('Missing required field: clientBusinessId');
+        }
+        if (!clientCompanyName?.trim()) {
+          throw new Error('Missing required field: clientCompanyName');
+        }
+        if (!clientContactEmail?.trim()) {
+          throw new Error('Missing required field: clientContactEmail');
+        }
+        if (!productId?.trim()) {
+          throw new Error('Missing required field: productId');
+        }
+
+        const parsedQuantity = Number(quantity);
+        if (Number.isNaN(parsedQuantity) || parsedQuantity < 1) {
+          throw new Error('quantity must be a valid positive number');
+        }
+
+        // Fetch product and validate
+        const product = await this.productModel.findById(productId);
+        if (!product) {
+          throw new Error('Product not found');
+        }
+
+        if (product.businessId.toString() !== businessId) {
+          throw new Error('Product does not belong to this business');
+        }
+
+        if (product.quantity < parsedQuantity) {
+          throw new Error('Insufficient product quantity');
+        }
+
+        // Calculate amount and create invoice
+        const amount = parsedQuantity * product.unitPrice;
+        const invoice = new this.companyInvoiceModel({
+          businessId,
+          clientBusinessId: clientBusinessId.trim(),
+          clientCompanyName: clientCompanyName.trim(),
+          clientContactEmail: clientContactEmail.trim(),
+          productId,
+          quantity: parsedQuantity,
+          amount,
+          issuedAt: new Date(),
+          paid: false,
+        });
+
+        await invoice.save();
+
+        // Deduct quantity from product
+        await this.productModel.findByIdAndUpdate(
+          productId,
+          { $inc: { quantity: -parsedQuantity } },
+          { new: true }
+        );
+
+        imported++;
+      } catch (error) {
+        errors.push(`Row ${rowNum}: ${(error as Error).message}`);
+      }
+    }
+
+    return { imported, failed: errors.length, errors };
   }
 }

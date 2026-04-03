@@ -14,10 +14,6 @@ import {
   BusinessUserSchema,
 } from '@/business/schemas/business-user.schema';
 import { User, UserSchema } from '@/users/schemas/user.schema';
-import {
-  Transaction,
-  TransactionSchema,
-} from '@/business/schemas/transaction.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -31,7 +27,6 @@ import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
       { name: BusinessApplication.name, schema: BusinessApplicationSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
       { name: User.name, schema: UserSchema },
-      { name: Transaction.name, schema: TransactionSchema },
     ]),
   ],
   controllers: [BusinessController],

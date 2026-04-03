@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 @Schema({ collection: 'businesses', timestamps: true })
-export class Business {
+export class Business extends Document {
   @Prop({ required: true })
   name: string;
 
@@ -24,9 +24,6 @@ export class Business {
     default: 'pending',
   })
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
-
-  @Prop({ default: false })
-  isActive: boolean;
 
   @Prop()
   logo?: string;
@@ -51,5 +48,4 @@ export class Business {
   updatedAt: Date;
 }
 
-export type BusinessDocument = Business & Document;
 export const BusinessSchema = SchemaFactory.createForClass(Business);
