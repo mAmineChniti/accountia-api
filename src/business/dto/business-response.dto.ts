@@ -17,7 +17,6 @@ export class BusinessResponseDto {
       phone: '+1-555-0123',
       databaseName: 'tech_solutions_inc_1708198200000',
       status: 'approved',
-      isActive: true,
       logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
       tags: ['technology', 'software'],
       createdAt: '2024-02-17T16:30:00.000Z',
@@ -32,7 +31,6 @@ export class BusinessResponseDto {
     phone: string;
     databaseName: string;
     status: string;
-    isActive: boolean;
     logo?: string;
     tags: string[];
     automationSettings?: {
@@ -61,7 +59,6 @@ export class BusinessesListResponseDto {
         name: 'Tech Solutions Inc.',
         phone: '+1-555-0123',
         status: 'approved',
-        isActive: true,
         createdAt: '2024-02-17T16:30:00.000Z',
       },
     ],
@@ -71,7 +68,6 @@ export class BusinessesListResponseDto {
     name: string;
     phone: string;
     status: string;
-    isActive: boolean;
     createdAt: Date;
   }[];
 }

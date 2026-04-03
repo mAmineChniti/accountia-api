@@ -7,7 +7,6 @@ import {
   Delete,
   Body,
   Param,
-  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -44,6 +43,11 @@ import { type UserPayload } from '@/auth/types/auth.types';
 import { Role } from '@/auth/enums/role.enum';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import {
   type TenantContext,
   type TenantMetadata,
@@ -186,13 +190,13 @@ export class BusinessController {
   }
 
   // Business Management Endpoints
-  @Get('my')
+  @Get('my-businesses')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Get my businesses',
+    summary: 'Get my businesses (Owners and Admins)',
     description:
-      'Retrieve all businesses associated with the current user. Includes businesses where user is owner or assigned member.',
+      'Retrieve all businesses where current user is owner or admin. Only returns businesses managed by the user.',
   })
   @ApiResponse({
     status: 200,
@@ -202,6 +206,11 @@ export class BusinessController {
   @ApiResponse({
     status: 401,
     description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Forbidden - Only business owners and admins can view their businesses',
   })
   async getMyBusinesses(
     @CurrentUser() user: UserPayload
@@ -313,12 +322,13 @@ export class BusinessController {
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update business',
     description:
-      'Update business information. Only accessible by business owners or platform administrators.',
+      'Update business information. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -360,7 +370,8 @@ export class BusinessController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete business' })
@@ -383,12 +394,13 @@ export class BusinessController {
 
   // Business User Management Endpoints
   @Post(':id/users')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assign user to business',
     description:
-      'Assign a user to a business with a specific role. Only accessible by business owners.',
+      'Assign a user to a business with a specific role. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -432,13 +444,14 @@ export class BusinessController {
   }
 
   @Delete(':id/users/:userId')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Unassign user from business',
     description:
-      'Remove a user assignment from a business. Only accessible by business owners.',
+      'Remove a user assignment from a business. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -481,12 +494,13 @@ export class BusinessController {
   }
 
   @Get(':id/clients')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Get all clients for a business',
     description:
-      'Retrieve all users linked to this business with the role client. Only accessible by business owners.',
+      'Retrieve all users linked to this business with the role client. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -517,12 +531,13 @@ export class BusinessController {
   }
 
   @Patch(':id/clients/:clientId/role')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Change a client role in the business',
     description:
-      'Change the role of a user within the business (e.g., promote from client to admin).',
+      'Change the role of a user within the business (e.g., promote from client to admin). Only accessible by business owners or administrators.',
   })
   @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'Client User ID' })
@@ -562,13 +577,14 @@ export class BusinessController {
   }
 
   @Delete(':id/clients/:clientId')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Remove a user from the business',
     description:
-      'Unlink/remove a user from this business. Cannot remove business owner.',
+      'Unlink/remove a user from this business. Cannot remove business owner. Only accessible by business owners or administrators.',
   })
   @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'User ID to remove' })
@@ -598,44 +614,5 @@ export class BusinessController {
     @CurrentUser() user: UserPayload
   ) {
     return this.businessService.deleteClient(id, clientId, user.id, user.role);
-  }
-
-  @Get(':id/managed-financials')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Roles(Role.CLIENT)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get financial data for managed clients',
-    description: 'Retrieve financial data for managed clients in the business.',
-  })
-  @ApiParam({ name: 'id', description: 'Business ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Financial data retrieved successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description:
-      'Forbidden - Insufficient permissions (BUSINESS_OWNER or CLIENT required)',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Business not found',
-  })
-  async getManagedFinancials(
-    @Param('id') businessId: string,
-    @CurrentUser() user: UserPayload,
-    @Query('clientId') clientId?: string
-  ) {
-    return this.businessService.getManagedFinancials(
-      businessId,
-      user.id,
-      user.role,
-      clientId
-    );
   }
 }

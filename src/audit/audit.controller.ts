@@ -16,10 +16,18 @@ import { PaginatedAuditLogsDto } from './dto/audit-log.dto';
 
 @ApiTags('Audit')
 @Controller('audit')
-// On restreint l'accès aux Platform Admins / Owners pour la sécurité et la conformité
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN)
 @ApiBearerAuth()
+@ApiResponse({
+  status: 401,
+  description: 'Unauthorized - Invalid or missing JWT token',
+})
+@ApiResponse({
+  status: 403,
+  description: 'Forbidden - Insufficient permissions',
+})
+@ApiResponse({ status: 500, description: 'Internal Server Error' })
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 

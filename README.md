@@ -8,8 +8,6 @@ Complete API reference for Accountia API endpoints with all possible requests an
 - [Authentication Headers](#authentication-headers)
 - [Authentication Endpoints](#-authentication-endpoints)
 - [Business Management Endpoints](#-business-management-endpoints)
-- [Invoices Endpoints](#-invoices-endpoints)
-- [Managed Invoices Endpoints](#-managed-invoices-endpoints)
 - [Chat Endpoints](#-chat-endpoints)
 - [Notifications Endpoints](#-notifications-endpoints)
 - [Audit Endpoints](#-audit-endpoints)
@@ -33,6 +31,32 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 ```
 
+## Multi-Tenancy & Business Context
+
+This API uses a **multi-tenant architecture** where resources are scoped to specific businesses. When working with business-specific routes, you must provide the business context:
+
+### Providing Business Context
+
+**Option 1: Route Parameter** (when available)
+
+```http
+GET /business/:id/clients    # businessId in the path
+```
+
+**Option 2: Header** (for consolidated routes)
+
+```http
+GET /chat
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+The tenant context comes from:
+
+1. Route parameter (e.g., `:id` in `/business/:id`)
+2. `X-Business-ID` header for routes without a business ID parameter
+
+If neither is provided, the request will be rejected with a **400 Bad Request** error.
+
 ---
 
 ## 🔐 Authentication Endpoints
@@ -54,9 +78,50 @@ Redirects to Google OAuth consent screen.
 
 ---
 
+### POST /auth/google/exchange
+
+Exchange Google OAuth authorization code for authentication tokens.
+
+**Request Body:**
+
+```json
+{
+  "code": "4/0AX4XfWh...",
+  "redirectUri": "http://localhost:3000/auth/callback"
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "accessTokenExpiresAt": "2024-02-19T14:07:00.000Z",
+  "refreshTokenExpiresAt": "2024-02-26T14:07:00.000Z",
+  "user": {
+    "id": "615f2e0a6c6d5c0e1a1e4a01",
+    "email": "user@gmail.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "role": "CLIENT"
+  }
+}
+```
+
+**400 Bad Request**
+Invalid authorization code or missing parameters.
+
+**500 Internal Server Error**
+Google OAuth exchange failed.
+
+---
+
 ### GET /auth/google/callback
 
-Handle Google OAuth callback and redirect to frontend.
+Handle Google OAuth callback and redirect to frontend (legacy redirect flow).
 
 **Query Parameters:**
 
@@ -1101,7 +1166,6 @@ Authorization: Bearer <access_token>
       "name": "Tech Solutions Inc.",
       "phone": "+1-555-0123",
       "status": "approved",
-      "isActive": true,
       "createdAt": "2024-02-17T16:30:00.000Z"
     }
   ]
@@ -1138,7 +1202,6 @@ Authorization: Bearer <access_token>
       "name": "Tech Solutions Inc.",
       "phone": "+1-555-0123",
       "status": "approved",
-      "isActive": true,
       "createdAt": "2024-02-17T16:30:00.000Z"
     }
   ]
@@ -1182,7 +1245,6 @@ Authorization: Bearer <access_token>
     "phone": "+1-555-0123",
     "databaseName": "tech_solutions_inc_1708198200000",
     "status": "approved",
-    "isActive": true,
     "tags": ["technology", "software"],
     "createdAt": "2024-02-17T16:30:00.000Z",
     "updatedAt": "2024-02-17T16:30:00.000Z"
@@ -1242,7 +1304,6 @@ Content-Type: application/json
     "phone": "+1-555-0123",
     "databaseName": "tech_solutions_inc_1708198200000",
     "status": "approved",
-    "isActive": true,
     "tags": ["technology", "software", "innovation"],
     "createdAt": "2024-02-17T16:30:00.000Z",
     "updatedAt": "2024-02-18T10:15:00.000Z"
@@ -1338,7 +1399,6 @@ Content-Type: application/json
     "userId": "507f1f77bcf86cd799439012",
     "role": "admin",
     "assignedBy": "615f2e0a6c6d5c0e1a1e4a01",
-    "isActive": true,
     "createdAt": "2024-02-17T16:30:00.000Z"
   }
 }
@@ -1394,576 +1454,7 @@ Business or user assignment not found.
 
 ---
 
-## 💰 Invoices Endpoints
-
-### POST /business/:businessId/invoices
-
-Create a new invoice.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-
-**Request Body:**
-
-```json
-{
-  "clientName": "Acme Corp",
-  "clientEmail": "billing@acmecorp.com",
-  "clientPhone": "+1-555-0789",
-  "issueDate": "2024-02-17",
-  "dueDate": "2024-03-17",
-  "lineItems": [
-    {
-      "description": "Web Development Services",
-      "quantity": 40,
-      "unitPrice": 100
-    }
-  ],
-  "taxRate": 19,
-  "currency": "TND",
-  "notes": "Payment due by March 17, 2024",
-  "status": "DRAFT"
-}
-```
-
-**Responses:**
-
-**201 Created**
-
-```json
-{
-  "id": "507f1f77bcf86cd799439014",
-  "invoiceNumber": "INV-A1B2-XYZ123",
-  "businessOwnerId": "507f1f77bcf86cd799439011",
-  "clientName": "Acme Corp",
-  "clientEmail": "billing@acmecorp.com",
-  "clientPhone": "+1-555-0789",
-  "lineItems": [
-    {
-      "id": "item-uuid-1",
-      "description": "Web Development Services",
-      "quantity": 40,
-      "unitPrice": 100,
-      "total": 4000
-    }
-  ],
-  "subtotal": 4000,
-  "taxRate": 19,
-  "taxAmount": 760,
-  "total": 4760,
-  "currency": "TND",
-  "status": "DRAFT",
-  "issueDate": "2024-02-17T00:00:00.000Z",
-  "dueDate": "2024-03-17T00:00:00.000Z",
-  "notes": "Payment due by March 17, 2024",
-  "createdAt": "2024-02-17T16:30:00.000Z"
-}
-```
-
-**400 Bad Request**
-Invalid invoice data or validation errors.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
----
-
-### GET /business/:businessId/invoices
-
-Get all invoices for a business (paginated).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-
-**Query Parameters:**
-
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 10)
-- `status` (optional): Filter by status - DRAFT | PENDING | SENT | PAID | OVERDUE
-
-**Responses:**
-
-**200 OK**
-
-```json
-{
-  "invoices": [
-    {
-      "id": "507f1f77bcf86cd799439014",
-      "invoiceNumber": "INV-A1B2-XYZ123",
-      "clientName": "Acme Corp",
-      "total": 4760,
-      "status": "DRAFT",
-      "dueDate": "2024-03-17T00:00:00.000Z",
-      "createdAt": "2024-02-17T16:30:00.000Z"
-    }
-  ],
-  "total": 5,
-  "page": 1,
-  "limit": 10,
-  "totalPages": 1
-}
-```
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
----
-
-### GET /business/:businessId/invoices/:id
-
-Get a specific invoice.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Responses:**
-
-**200 OK**
-Returns full invoice object (same as POST response).
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### PATCH /business/:businessId/invoices/:id
-
-Update a draft invoice (cannot update sent/paid invoices).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Request Body:**
-Same as POST (can be partial update).
-
-**Responses:**
-
-**200 OK**
-Returns updated invoice object.
-
-**400 Bad Request**
-Cannot update non-draft invoice or validation errors.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### DELETE /business/:businessId/invoices/:id
-
-Delete an invoice (soft delete, only draft invoices).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Responses:**
-
-**204 No Content**
-Invoice deleted successfully.
-
-**400 Bad Request**
-Cannot delete non-draft invoice.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### POST /business/:businessId/invoices/:id/send
-
-Send an invoice to client (mark as SENT and send email).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Request Body (optional):**
-
-```json
-{
-  "customMessage": "Thank you for your business!"
-}
-```
-
-**Responses:**
-
-**200 OK**
-Returns updated invoice with status SENT.
-
-**400 Bad Request**
-Cannot send already sent invoice.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### POST /business/:businessId/invoices/:id/mark-paid
-
-Manually mark invoice as paid (without payment processing).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Responses:**
-
-**200 OK**
-Returns updated invoice with status PAID.
-
-**400 Bad Request**
-Cannot mark already paid invoice.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### PATCH /business/:businessId/invoices/:id/reminders
-
-Toggle automatic payment reminders for an invoice.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Request Body:**
-
-```json
-{
-  "muted": true
-}
-```
-
-**Responses:**
-
-**200 OK**
-Returns updated invoice with reminder status toggled.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### POST /business/:businessId/invoices/:id/remind
-
-Manually send a payment reminder email to client.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `businessId` (string): Business ID
-- `id` (string): Invoice ID
-
-**Responses:**
-
-**200 OK**
-Returns updated invoice with reminder history updated.
-
-**400 Bad Request**
-Cannot send reminder on draft or paid invoices.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### GET /invoices/client/my
-
-Get my invoices (for authenticated clients).
-
-Returns invoices addressed to the authenticated user's email.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**Query Parameters:**
-
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 10)
-- `status` (optional): Filter by status - DRAFT | PENDING | SENT | PAID | OVERDUE
-
-**Responses:**
-
-**200 OK**
-
-```json
-{
-  "invoices": [
-    {
-      "id": "507f1f77bcf86cd799439014",
-      "invoiceNumber": "INV-A1B2-XYZ123",
-      "businessOwnerId": "507f1f77bcf86cd799439011",
-      "clientName": "Acme Corp",
-      "total": 4760,
-      "status": "SENT",
-      "dueDate": "2024-03-17T00:00:00.000Z",
-      "createdAt": "2024-02-17T16:30:00.000Z"
-    }
-  ],
-  "total": 3,
-  "page": 1,
-  "limit": 10,
-  "totalPages": 1
-}
-```
-
-**401 Unauthorized**
-Invalid access token.
-
----
-
-## 📋 Managed Invoices Endpoints
-
-Managed invoices are for clients created by Business Owners. These clients can access their invoices via a dedicated endpoint.
-
-### GET /managed/invoices
-
-Get managed client invoices (paginated).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**Query Parameters:**
-
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 10)
-- `status` (optional): Filter by status - DRAFT | PENDING | SENT | PAID | OVERDUE
-
-**Responses:**
-
-**200 OK**
-
-```json
-{
-  "invoices": [
-    {
-      "id": "507f1f77bcf86cd799439014",
-      "invoiceNumber": "INV-A1B2-XYZ123",
-      "clientName": "Acme Corp",
-      "total": 4760,
-      "status": "SENT",
-      "dueDate": "2024-03-17T00:00:00.000Z"
-    }
-  ],
-  "total": 2,
-  "page": 1,
-  "limit": 10,
-  "totalPages": 1
-}
-```
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Only managed clients can access this endpoint.
-
----
-
-### GET /managed/invoices/:id
-
-Get a specific managed invoice.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-```
-
-**URL Parameters:**
-
-- `id` (string): Invoice ID
-
-**Responses:**
-
-**200 OK**
-Returns full invoice object.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-### POST /managed/invoices/:id/pay
-
-Initiate Flouci payment for an invoice.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**URL Parameters:**
-
-- `id` (string): Invoice ID
-
-**Request Body:**
-
-```json
-{
-  "successUrl": "https://yourapp.com/success",
-  "failUrl": "https://yourapp.com/failed"
-}
-```
-
-**Responses:**
-
-**201 Created**
-
-```json
-{
-  "success": true,
-  "link": "https://flouci.com/pay/xyz123..."
-}
-```
-
-**400 Bad Request**
-Invalid request data or invoice not in PENDING/SENT status.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Only managed clients can access this endpoint.
-
-**404 Not Found**
-Invoice not found.
-
----
-
-## 💬 Chat Endpoints
+## Chat Endpoints
 
 ### POST /chat/message
 
@@ -2319,24 +1810,24 @@ All error responses follow this format:
 
 ## Endpoint Access by Role
 
-| Endpoint               | GET | POST | PATCH | DELETE | CLIENT       | BUSINESS_ADMIN | BUSINESS_OWNER | PLATFORM_ADMIN | PLATFORM_OWNER |
-| ---------------------- | --- | ---- | ----- | ------ | ------------ | -------------- | -------------- | -------------- | -------------- |
-| /auth/register         |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/login            |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/fetchuser        | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/users            | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
-| /auth/change-role      |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
-| /auth/users/:id/ban    |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
-| /business/apply        |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /business/my           | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /business/:id          | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /business/:id/invoices | ✅  |      |       |        | ❌           | ✅             | ✅             | ✅             | ✅             |
-| /invoices/client/my    | ✅  |      |       |        | ✅           | ❌             | ❌             | ❌             | ❌             |
-| /managed/invoices      | ✅  |      |       |        | ✅ (managed) | ❌             | ❌             | ❌             | ❌             |
-| /chat/message          |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /notifications         | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /audit                 | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
-| /email/send            |     | ✅   |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
+| Endpoint            | GET | POST | PATCH | DELETE | CLIENT       | BUSINESS_ADMIN | BUSINESS_OWNER | PLATFORM_ADMIN | PLATFORM_OWNER |
+| ------------------- | --- | ---- | ----- | ------ | ------------ | -------------- | -------------- | -------------- | -------------- |
+| /auth/register      |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /auth/login         |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /auth/fetchuser     | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /auth/users         | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
+| /auth/change-role   |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
+| /auth/users/:id/ban |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
+| /business/apply     |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /business/my        | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /business/:id       | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /invoices           | ✅  | ✅   | ✅    | ✅     | ❌           | ✅             | ✅             | ✅             | ✅             |
+| /invoices/client/my | ✅  |      |       |        | ✅           | ❌             | ❌             | ❌             | ❌             |
+| /invoices/managed   | ✅  |      |       |        | ✅ (managed) | ❌             | ❌             | ❌             | ❌             |
+| /chat/message       |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /notifications      | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
+| /audit              | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
+| /email/send         |     | ✅   |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
 
 **Legend:**
 

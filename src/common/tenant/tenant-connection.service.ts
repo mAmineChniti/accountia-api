@@ -37,7 +37,6 @@ export class TenantConnectionService {
       TenantConnectionService.TENANT_USERS_COLLECTION
     );
     await usersCollection.createIndex({ userId: 1 }, { unique: true });
-    await usersCollection.createIndex({ isActive: 1 });
 
     const metadataCollection = tenantDb.collection(
       TenantConnectionService.TENANT_METADATA_COLLECTION
@@ -63,7 +62,6 @@ export class TenantConnectionService {
       userId: params.ownerUserId,
       role: BusinessUserRole.OWNER,
       assignedBy: params.assignedBy,
-      isActive: true,
     });
   }
 
@@ -73,7 +71,6 @@ export class TenantConnectionService {
       userId: string;
       role: BusinessUserRole;
       assignedBy: string;
-      isActive: boolean;
     }
   ): Promise<void> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
@@ -94,7 +91,6 @@ export class TenantConnectionService {
           userId: params.userId,
           role: params.role,
           assignedBy: params.assignedBy,
-          isActive: params.isActive,
           updatedAt: new Date(),
         },
         $setOnInsert: {
@@ -108,7 +104,7 @@ export class TenantConnectionService {
   async deactivateTenantUser(
     databaseName: string,
     userId: string,
-    assignedBy: string
+    _assignedBy: string
   ): Promise<void> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
 
@@ -116,16 +112,7 @@ export class TenantConnectionService {
       TenantConnectionService.TENANT_USERS_COLLECTION
     );
 
-    await usersCollection.updateOne(
-      { userId },
-      {
-        $set: {
-          isActive: false,
-          assignedBy,
-          updatedAt: new Date(),
-        },
-      }
-    );
+    await usersCollection.deleteOne({ userId });
   }
 
   async dropTenantDatabase(databaseName: string): Promise<void> {

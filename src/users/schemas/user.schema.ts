@@ -2,10 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { Role } from '@/auth/enums/role.enum';
 
-export type UserDocument = User & Document;
-
 @Schema({ collection: 'users', timestamps: true })
-export class User {
+export class User extends Document {
   @Prop({ required: true, unique: true })
   username: string;
 
@@ -96,15 +94,6 @@ export class User {
 
   @Prop()
   bannedReason?: string;
-
-  @Prop()
-  address?: string;
-
-  @Prop()
-  vatNumber?: string;
-
-  @Prop()
-  iban?: string;
 
   @Prop()
   createdAt: Date;

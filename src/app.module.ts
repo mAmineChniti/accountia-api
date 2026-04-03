@@ -8,9 +8,10 @@ import { EmailModule } from '@/email/email.module';
 import { AuditModule } from '@/audit/audit.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
 import { ChatModule } from '@/chat/chat.module';
-import { InvoicesModule } from '@/invoices/invoices.module';
 
 import { ScheduleModule } from '@nestjs/schedule';
+import { ProductsModule } from '@/products/products.module';
+import { InvoicesModule } from '@/invoices/invoices.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     AuditModule,
     NotificationsModule,
     ChatModule,
+    ProductsModule,
     InvoicesModule,
   ],
   controllers: [],

@@ -7,336 +7,394 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   HttpCode,
   HttpStatus,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { type Multer } from 'multer';
 import {
   ApiTags,
-  ApiBearerAuth,
+  ApiOperation,
   ApiCreatedResponse,
   ApiOkResponse,
-  ApiOperation,
-  ApiResponse,
+  ApiNotFoundResponse,
+  ApiBadRequestResponse,
+  ApiForbiddenResponse,
   ApiParam,
+  ApiQuery,
+  ApiBearerAuth,
+  ApiConsumes,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
-import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
-import { CurrentUser } from '@/auth/decorators/current-user.decorator';
-import { type UserPayload } from '@/auth/types/auth.types';
 import { InvoicesService } from './invoices.service';
-import { CreateInvoiceDto } from './dto/create-invoice.dto';
-import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import { InvoiceStatus } from '@/invoices/schemas/invoice.schema';
-import { BusinessService } from '@/business/business.service';
+import {
+  CreatePersonalInvoiceDto,
+  CreateCompanyInvoiceDto,
+  UpdateInvoiceDto,
+  PersonalInvoiceResponseDto,
+  CompanyInvoiceResponseDto,
+  InvoiceListResponseDto,
+} from '@/invoices/dto/invoice.dto';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
+import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import { parseFile } from '@/common/utils/file-parser.util';
+import type { TenantContext } from '@/common/tenant/tenant.types';
 
 @ApiTags('Invoices')
-@Controller('business/:businessId/invoices')
-@UseGuards(JwtAuthGuard, TenantContextGuard)
+@Controller('invoices')
 @ApiBearerAuth()
-@ApiResponse({
-  status: 401,
-  description: 'Unauthorized - Invalid or missing JWT token',
-})
-@ApiResponse({
-  status: 403,
-  description: 'Forbidden - Insufficient permissions',
-})
-@ApiResponse({
-  status: 404,
-  description: 'Not Found - Invoice or business not found',
-})
-@ApiResponse({ status: 500, description: 'Internal Server Error' })
+@UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
 export class InvoicesController {
-  constructor(
-    private invoicesService: InvoicesService,
-    private businessService: BusinessService
-  ) {}
+  constructor(private readonly invoicesService: InvoicesService) {}
 
-  /**
-   * Create a new invoice
-   * POST /business/:businessId/invoices
-   */
-  @Post()
+  // Personal Invoices Endpoints
+  @Post('personal')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create a new invoice',
-    description: 'Create a new invoice for a business',
+    summary: 'Create a personal invoice',
+    description: 'Issue a personal invoice to an individual',
   })
   @ApiCreatedResponse({
-    description: 'Invoice created successfully',
-    type: InvoiceResponseDto,
+    description: 'Personal invoice created successfully',
+    type: PersonalInvoiceResponseDto,
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Invalid input data or validation errors',
+  @ApiBadRequestResponse({
+    description: 'Invalid input data or insufficient product quantity',
   })
-  async createInvoice(
-    @Param('businessId') businessId: string,
-    @Body() createInvoiceDto: CreateInvoiceDto,
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.createInvoice(businessId, createInvoiceDto);
-  }
-
-  /**
-   * Get all invoices for a business
-   * GET /business/:businessId/invoices
-   */
-  @Get()
-  @ApiOperation({
-    summary: 'Get all invoices for a business',
-    description: 'Retrieve paginated list of invoices for a specific business',
+  @ApiForbiddenResponse({
+    description:
+      'Insufficient permissions or product does not belong to business',
   })
-  @ApiOkResponse({
-    description: 'List of invoices retrieved successfully',
-    type: [InvoiceResponseDto],
-  })
-  async getInvoices(
-    @Param('businessId') businessId: string,
-    @CurrentUser() _user: UserPayload,
-    @Query('status') status?: InvoiceStatus,
-    @Query('page') page = 1,
-    @Query('limit') limit = 10
-  ): Promise<{
-    invoices: InvoiceResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    return this.invoicesService.getInvoicesByBusinessId(
-      businessId,
-      status,
-      Math.max(1, page),
-      Math.max(1, limit)
+  async createPersonalInvoice(
+    @Body() createInvoiceDto: CreatePersonalInvoiceDto,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<PersonalInvoiceResponseDto> {
+    return this.invoicesService.createPersonalInvoice(
+      tenant.businessId,
+      createInvoiceDto
     );
   }
 
-  /**
-   * Get a specific invoice
-   * GET /business/:businessId/invoices/:id
-   */
-  @Get(':id')
+  @Get('personal/business')
   @ApiOperation({
-    summary: 'Get a specific invoice',
-    description: 'Retrieve details of a specific invoice',
+    summary: 'Get all personal invoices issued by business',
+    description:
+      'Retrieve paginated list of personal invoices issued by the current business',
   })
   @ApiOkResponse({
-    description: 'Invoice retrieved successfully',
-    type: InvoiceResponseDto,
+    description: 'Personal invoices retrieved successfully',
+    type: InvoiceListResponseDto,
   })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async getInvoice(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.getInvoiceById(invoiceId, businessId);
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 10)',
+  })
+  async getPersonalInvoicesByBusiness(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10
+  ): Promise<InvoiceListResponseDto> {
+    return this.invoicesService.getPersonalInvoicesByBusiness(
+      tenant.businessId,
+      page,
+      limit
+    );
   }
 
-  /**
-   * Update an invoice
-   * PATCH /business/:businessId/invoices/:id
-   */
-  @Patch(':id')
+  @Get('personal/:id')
   @ApiOperation({
-    summary: 'Update a draft invoice',
-    description: 'Update details of a draft invoice',
+    summary: 'Get a personal invoice by ID',
   })
   @ApiOkResponse({
-    description: 'Invoice updated successfully',
-    type: InvoiceResponseDto,
+    description: 'Personal invoice retrieved successfully',
+    type: PersonalInvoiceResponseDto,
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Cannot update non-draft invoice',
+  @ApiNotFoundResponse({ description: 'Personal invoice not found' })
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
   })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async updateInvoice(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
+  async getPersonalInvoiceById(
+    @Param('id') id: string
+  ): Promise<PersonalInvoiceResponseDto> {
+    return this.invoicesService.getPersonalInvoiceById(id);
+  }
+
+  @Patch('personal/:id')
+  @ApiOperation({
+    summary: 'Update a personal invoice',
+    description: 'Update invoice details (e.g., mark as paid)',
+  })
+  @ApiOkResponse({
+    description: 'Personal invoice updated successfully',
+    type: PersonalInvoiceResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Personal invoice not found' })
+  @ApiForbiddenResponse({
+    description: 'Invoice does not belong to your business',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
+  })
+  async updatePersonalInvoice(
+    @Param('id') id: string,
     @Body() updateInvoiceDto: UpdateInvoiceDto,
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.updateInvoice(
-      invoiceId,
-      businessId,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<PersonalInvoiceResponseDto> {
+    return this.invoicesService.updatePersonalInvoice(
+      id,
+      tenant.businessId,
       updateInvoiceDto
     );
   }
 
-  /**
-   * Delete an invoice (soft delete)
-   * DELETE /business/:businessId/invoices/:id
-   */
-  @Delete(':id')
+  @Delete('personal/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Delete an invoice',
-    description: 'Soft delete an invoice (can only delete draft invoices)',
+    summary: 'Delete a personal invoice',
   })
-  @ApiResponse({
-    status: 204,
-    description: 'Invoice deleted successfully',
+  @ApiNotFoundResponse({ description: 'Personal invoice not found' })
+  @ApiForbiddenResponse({
+    description: 'Invoice does not belong to your business',
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Cannot delete non-draft invoice',
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
   })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async deleteInvoice(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @CurrentUser() _user: UserPayload
+  async deletePersonalInvoice(
+    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext
   ): Promise<void> {
-    await this.invoicesService.deleteInvoice(invoiceId, businessId);
+    return this.invoicesService.deletePersonalInvoice(id, tenant.businessId);
   }
 
-  /**
-   * Send an invoice to client
-   * POST /business/:businessId/invoices/:id/send
-   */
-  @Post(':id/send')
+  // Company Invoices Endpoints
+  @Post('company')
+  @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Send an invoice to client',
-    description: 'Mark invoice as SENT and send notification email to client',
+    summary: 'Create a company invoice',
+    description: 'Issue a company invoice to another business',
   })
-  @ApiOkResponse({
-    description: 'Invoice sent successfully',
-    type: InvoiceResponseDto,
+  @ApiCreatedResponse({
+    description: 'Company invoice created successfully',
+    type: CompanyInvoiceResponseDto,
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Cannot send already sent invoice',
+  @ApiBadRequestResponse({
+    description: 'Invalid input data or insufficient product quantity',
   })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async sendInvoice(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @Body() body: { customMessage?: string },
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.sendInvoice(
-      invoiceId,
-      businessId,
-      body?.customMessage
-    );
-  }
-
-  /**
-   * Manually mark invoice as paid
-   * POST /business/:businessId/invoices/:id/mark-paid
-   */
-  @Post(':id/mark-paid')
-  @ApiOperation({
-    summary: 'Manually mark invoice as paid',
-    description: 'Mark an invoice as paid without payment processing',
-  })
-  @ApiOkResponse({
-    description: 'Invoice marked as paid successfully',
-    type: InvoiceResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Cannot mark already paid invoice',
-  })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async markAsPaidManual(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.markInvoiceAsPaidManual(invoiceId, businessId);
-  }
-
-  /**
-   * Toggle payment reminders for an invoice
-   * PATCH /business/:businessId/invoices/:id/reminders
-   */
-  @Patch(':id/reminders')
-  @ApiOperation({
-    summary: 'Toggle payment reminders',
-    description: 'Enable or disable automatic payment reminders for an invoice',
-  })
-  @ApiOkResponse({
-    description: 'Invoice reminders toggled successfully',
-    type: InvoiceResponseDto,
-  })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async toggleReminders(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @Body() body: { muted: boolean },
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.toggleInvoiceReminders(
-      invoiceId,
-      businessId,
-      body.muted
-    );
-  }
-
-  /**
-   * Manually send payment reminder
-   * POST /business/:businessId/invoices/:id/remind
-   */
-  @Post(':id/remind')
-  @ApiOperation({
-    summary: 'Manually send a payment reminder',
-    description: 'Send an immediate reminder email to invoice client',
-  })
-  @ApiOkResponse({
-    description: 'Reminder sent successfully',
-    type: InvoiceResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Cannot remind on draft or paid invoices',
-  })
-  @ApiParam({ name: 'id', description: 'Invoice ID' })
-  async sendReminder(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @CurrentUser() _user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    return this.invoicesService.sendManualReminder(invoiceId, businessId);
-  }
-
-  /**
-   * Get invoices for authenticated client
-   * GET /invoices/client/my
-   *
-   * Returns only invoices addressed to the authenticated user's email
-   */
-  @Get('client/my')
-  @ApiOperation({
-    summary: 'Get my invoices (client endpoint)',
+  @ApiForbiddenResponse({
     description:
-      'Retrieve your invoices (for regular clients, not business owners)',
+      'Insufficient permissions or product does not belong to business',
+  })
+  async createCompanyInvoice(
+    @Body() createInvoiceDto: CreateCompanyInvoiceDto,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<CompanyInvoiceResponseDto> {
+    return this.invoicesService.createCompanyInvoice(
+      tenant.businessId,
+      createInvoiceDto
+    );
+  }
+
+  @Get('company/business')
+  @ApiOperation({
+    summary: 'Get all company invoices issued by business',
+    description:
+      'Retrieve paginated list of company invoices issued by the current business',
   })
   @ApiOkResponse({
-    description: 'Invoices retrieved successfully',
-    type: [InvoiceResponseDto],
+    description: 'Company invoices retrieved successfully',
+    type: InvoiceListResponseDto,
   })
-  async getMyInvoices(
-    @CurrentUser() user: UserPayload,
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Items per page (default: 10)',
+  })
+  async getCompanyInvoicesByBusiness(
+    @CurrentTenant() tenant: TenantContext,
     @Query('page') page = 1,
-    @Query('limit') limit = 10,
-    @Query('status') status?: InvoiceStatus
-  ): Promise<{
-    invoices: InvoiceResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
-    return this.invoicesService.getInvoicesByUserId(
-      user.id,
-      status,
-      Math.max(1, page),
-      Math.max(1, limit)
+    @Query('limit') limit = 10
+  ): Promise<InvoiceListResponseDto> {
+    return this.invoicesService.getCompanyInvoicesByBusiness(
+      tenant.businessId,
+      page,
+      limit
+    );
+  }
+
+  @Get('company/:id')
+  @ApiOperation({
+    summary: 'Get a company invoice by ID',
+  })
+  @ApiOkResponse({
+    description: 'Company invoice retrieved successfully',
+    type: CompanyInvoiceResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Company invoice not found' })
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
+  })
+  async getCompanyInvoiceById(
+    @Param('id') id: string
+  ): Promise<CompanyInvoiceResponseDto> {
+    return this.invoicesService.getCompanyInvoiceById(id);
+  }
+
+  @Patch('company/:id')
+  @ApiOperation({
+    summary: 'Update a company invoice',
+    description: 'Update invoice details (e.g., mark as paid)',
+  })
+  @ApiOkResponse({
+    description: 'Company invoice updated successfully',
+    type: CompanyInvoiceResponseDto,
+  })
+  @ApiNotFoundResponse({ description: 'Company invoice not found' })
+  @ApiForbiddenResponse({
+    description: 'Invoice does not belong to your business',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
+  })
+  async updateCompanyInvoice(
+    @Param('id') id: string,
+    @Body() updateInvoiceDto: UpdateInvoiceDto,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<CompanyInvoiceResponseDto> {
+    return this.invoicesService.updateCompanyInvoice(
+      id,
+      tenant.businessId,
+      updateInvoiceDto
+    );
+  }
+
+  @Delete('company/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a company invoice',
+  })
+  @ApiNotFoundResponse({ description: 'Company invoice not found' })
+  @ApiForbiddenResponse({
+    description: 'Invoice does not belong to your business',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Invoice ID',
+  })
+  async deleteCompanyInvoice(
+    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<void> {
+    return this.invoicesService.deleteCompanyInvoice(id, tenant.businessId);
+  }
+
+  @Post('personal/import')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import personal invoices from CSV or Excel',
+    description:
+      'Bulk import personal invoices from a CSV or Excel file. Required columns: clientUserId, productId, quantity',
+  })
+  @ApiCreatedResponse({
+    description: 'Personal invoices imported successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        imported: { type: 'number' },
+        failed: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file format or data' })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions',
+  })
+  async importPersonalInvoices(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const records = await parseFile(
+      (file as unknown as { buffer: Buffer; originalname: string }).buffer,
+      (file as unknown as { buffer: Buffer; originalname: string }).originalname
+    );
+    return this.invoicesService.importPersonalInvoices(
+      tenant.businessId,
+      records
+    );
+  }
+
+  @Post('company/import')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import company invoices from CSV or Excel',
+    description:
+      'Bulk import company invoices from a CSV or Excel file. Required columns: clientBusinessId, clientCompanyName, clientContactEmail, productId, quantity',
+  })
+  @ApiCreatedResponse({
+    description: 'Company invoices imported successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        imported: { type: 'number' },
+        failed: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file format or data' })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions',
+  })
+  async importCompanyInvoices(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const records = await parseFile(
+      (file as unknown as { buffer: Buffer; originalname: string }).buffer,
+      (file as unknown as { buffer: Buffer; originalname: string }).originalname
+    );
+    return this.invoicesService.importCompanyInvoices(
+      tenant.businessId,
+      records
     );
   }
 }

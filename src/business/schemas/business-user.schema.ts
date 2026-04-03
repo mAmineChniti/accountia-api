@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 @Schema({ collection: 'business_users', timestamps: true })
-export class BusinessUser {
+export class BusinessUser extends Document {
   @Prop({ required: true })
   businessId: string;
 
@@ -16,13 +16,9 @@ export class BusinessUser {
   @Prop({ required: true })
   assignedBy: string; // User who assigned this role
 
-  @Prop({ default: true })
-  isActive: boolean;
-
   createdAt: Date;
   updatedAt: Date;
 }
 
-export type BusinessUserDocument = BusinessUser & Document;
 export const BusinessUserSchema = SchemaFactory.createForClass(BusinessUser);
 BusinessUserSchema.index({ businessId: 1, userId: 1 }, { unique: true });

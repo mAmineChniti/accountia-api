@@ -10,17 +10,11 @@ import { Connection, Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '@/audit/audit.service';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
-import { Business, BusinessDocument } from '@/business/schemas/business.schema';
-import {
-  BusinessApplication,
-  BusinessApplicationDocument,
-} from '@/business/schemas/business-application.schema';
-import {
-  BusinessUser,
-  BusinessUserDocument,
-} from '@/business/schemas/business-user.schema';
+import { Business } from '@/business/schemas/business.schema';
+import { BusinessApplication } from '@/business/schemas/business-application.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
-import { User, UserDocument } from '@/users/schemas/user.schema';
+import { User } from '@/users/schemas/user.schema';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
 import {
   CreateBusinessApplicationDto,
@@ -37,13 +31,8 @@ import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
-import {
-  Transaction,
-  TransactionDocument,
-} from '@/business/schemas/transaction.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { ChangeClientRoleDto } from '@/business/dto/business-user.dto';
-import { Invoice, InvoiceStatus } from '@/invoices/schemas/invoice.schema';
 import {
   type TenantContext,
   type TenantMetadata,
@@ -55,16 +44,12 @@ import { NotificationType } from '@/notifications/schemas/notification.schema';
 export class BusinessService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    @InjectModel(Business.name) private businessModel: Model<BusinessDocument>,
+    @InjectModel(Business.name) private businessModel: Model<Business>,
     @InjectModel(BusinessApplication.name)
-    private businessApplicationModel: Model<BusinessApplicationDocument>,
+    private businessApplicationModel: Model<BusinessApplication>,
     @InjectModel(BusinessUser.name)
-    private businessUserModel: Model<BusinessUserDocument>,
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-    @InjectModel(Transaction.name)
-    private transactionModel: Model<TransactionDocument>,
-    @InjectModel(Invoice.name)
-    private invoiceModel: Model<Invoice>,
+    private businessUserModel: Model<BusinessUser>,
+    @InjectModel(User.name) private userModel: Model<User>,
     private emailService: EmailService,
     private tenantConnectionService: TenantConnectionService,
     private auditService: AuditService,
@@ -182,7 +167,6 @@ export class BusinessService {
         phone: application.phone,
         databaseName,
         status: 'approved',
-        isActive: true,
       });
 
       const session = await this.connection.startSession();
@@ -234,7 +218,7 @@ export class BusinessService {
           });
       }
 
-      void this.auditService.logAction({
+      await this.auditService.logAction({
         action: AuditAction.APPROVE_BUSINESS,
         userId: reviewer.id,
         userEmail: reviewer.email ?? 'Unknown',
@@ -262,7 +246,7 @@ export class BusinessService {
           });
       }
 
-      void this.auditService.logAction({
+      await this.auditService.logAction({
         action: AuditAction.REJECT_BUSINESS,
         userId: reviewer.id,
         userEmail: reviewer.email ?? 'Unknown',
@@ -350,7 +334,6 @@ export class BusinessService {
         phone: business.phone,
         databaseName: business.databaseName,
         status: business.status,
-        isActive: business.isActive,
         logo: business.logo,
         tags: business.tags,
         automationSettings: business.automationSettings,
@@ -386,7 +369,6 @@ export class BusinessService {
         phone: updatedBusiness.phone,
         databaseName: updatedBusiness.databaseName,
         status: updatedBusiness.status,
-        isActive: updatedBusiness.isActive,
         logo: updatedBusiness.logo,
         tags: updatedBusiness.tags,
         automationSettings: updatedBusiness.automationSettings,
@@ -442,13 +424,16 @@ export class BusinessService {
   }
 
   async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
+    // Find all businesses where user is OWNER or ADMIN at the business level
     let businessUsers = (await this.businessUserModel
-      .find({ userId, isActive: true })
+      .find({
+        userId,
+        role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN] },
+      })
       .select('businessId')
       .lean()) as Array<{ businessId: string }>;
 
-    // Rescue Logic: If user has no business linked but is a BUSINESS_OWNER,
-    // check if they have an APPROVED application and link it now.
+    // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
       const approvedApplication = await this.businessApplicationModel.findOne({
         applicantId: userId,
@@ -484,7 +469,7 @@ export class BusinessService {
 
     const businesses = await this.businessModel
       .find({ _id: { $in: businessIds } })
-      .select('name phone status isActive createdAt')
+      .select('name phone status createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -495,7 +480,6 @@ export class BusinessService {
         name: business.name,
         phone: business.phone,
         status: business.status,
-        isActive: business.isActive,
         createdAt: business.createdAt,
       })),
     };
@@ -510,7 +494,7 @@ export class BusinessService {
 
     const businesses = await this.businessModel
       .find()
-      .select('name phone status isActive createdAt')
+      .select('name phone status createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -521,7 +505,6 @@ export class BusinessService {
         name: business.name,
         phone: business.phone,
         status: business.status,
-        isActive: business.isActive,
         createdAt: business.createdAt,
       })),
     };
@@ -567,7 +550,6 @@ export class BusinessService {
     const existingAssignment = await this.businessUserModel.findOne({
       businessId,
       userId: assignDto.userId,
-      isActive: true,
     });
 
     if (existingAssignment) {
@@ -592,7 +574,6 @@ export class BusinessService {
           userId: assignDto.userId,
           role: assignDto.role,
           assignedBy: userId,
-          isActive: true,
         }
       );
     } catch {
@@ -610,7 +591,6 @@ export class BusinessService {
         userId: savedBusinessUser.userId,
         role: savedBusinessUser.role,
         assignedBy: savedBusinessUser.assignedBy,
-        isActive: savedBusinessUser.isActive,
         createdAt: savedBusinessUser.createdAt,
       },
     };
@@ -627,7 +607,6 @@ export class BusinessService {
     const businessUser = await this.businessUserModel.findOne({
       businessId,
       userId: targetUserId,
-      isActive: true,
     });
 
     if (!businessUser) {
@@ -646,8 +625,8 @@ export class BusinessService {
       throw new NotFoundException('Business not found');
     }
 
-    await this.businessUserModel.findByIdAndUpdate(businessUser._id, {
-      isActive: false,
+    await this.businessUserModel.deleteOne({
+      _id: businessUser._id,
     });
 
     try {
@@ -657,8 +636,11 @@ export class BusinessService {
         userId
       );
     } catch {
-      await this.businessUserModel.findByIdAndUpdate(businessUser._id, {
-        isActive: true,
+      await this.businessUserModel.create({
+        businessId,
+        userId: targetUserId,
+        role: businessUser.role,
+        assignedBy: businessUser.assignedBy,
       });
       throw new InternalServerErrorException(
         'Failed to sync tenant user unassignment'
@@ -739,17 +721,21 @@ export class BusinessService {
     const businessUser = await this.businessUserModel.findOne({
       businessId,
       userId,
-      isActive: true,
     });
 
     if (!businessUser) {
       throw new ForbiddenException('You do not have access to this business');
     }
 
-    // If ownership is required (for update/delete), only owners can proceed
-    if (requireOwnership && businessUser.role !== BusinessUserRole.OWNER) {
+    // If ownership is required (for update/delete), owners and admins can proceed
+    if (
+      requireOwnership &&
+      ![BusinessUserRole.OWNER, BusinessUserRole.ADMIN].includes(
+        businessUser.role
+      )
+    ) {
       throw new ForbiddenException(
-        'Only business owners can modify business settings'
+        'Only business owners and administrators can modify business settings'
       );
     }
   }
@@ -767,7 +753,6 @@ export class BusinessService {
       const businessUser = await this.businessUserModel.findOne({
         businessId,
         userId,
-        isActive: true,
       });
 
       if (
@@ -807,9 +792,6 @@ export class BusinessService {
         lastName: c.lastName,
         email: c.email,
         phoneNumber: c.phoneNumber,
-        address: c.address,
-        vatNumber: c.vatNumber,
-        iban: c.iban,
         createdAt: c.createdAt,
       })),
     };
@@ -844,7 +826,6 @@ export class BusinessService {
         userId: updatedBusinessUser.userId,
         role: updatedBusinessUser.role,
         assignedBy: updatedBusinessUser.assignedBy,
-        isActive: updatedBusinessUser.isActive,
         createdAt: updatedBusinessUser.createdAt,
       },
     };
@@ -862,7 +843,6 @@ export class BusinessService {
     const businessUser = await this.businessUserModel.findOne({
       businessId,
       userId: clientId,
-      isActive: true,
     });
 
     if (!businessUser) {
@@ -884,95 +864,6 @@ export class BusinessService {
 
     return {
       message: 'User removed from business successfully',
-    };
-  }
-
-  // Financial Data Management
-  async getManagedFinancials(
-    businessId: string,
-    userId: string,
-    userRole: Role,
-    clientId?: string
-  ): Promise<{ transactions: Array<Record<string, unknown>> }> {
-    // Check business access (clients allowed to see their own data)
-    await this.checkBusinessAccess(businessId, userId, userRole);
-
-    const query: Record<string, unknown> = { businessId };
-    let clientEmail: string | undefined = undefined;
-
-    // Strict isolation: Clients only see their own assigned transactions
-    if (userRole === Role.CLIENT) {
-      query.clientId = userId;
-      // Get the client's email to fetch associated invoices
-      const user = await this.userModel.findById(userId).select('email').lean();
-      clientEmail = user?.email ?? undefined;
-    } else if (clientId) {
-      // Owners can filter by a specific client if provided
-      query.clientId = clientId;
-      const user = await this.userModel
-        .findById(clientId)
-        .select('email')
-        .lean();
-      clientEmail = user?.email ?? undefined;
-    }
-
-    const transactions = (await this.transactionModel
-      .find({ ...query })
-      .sort({ date: 1 })
-      .lean()) as unknown as Array<Record<string, unknown>>;
-
-    // Include invoices as real data points (treated as expenditures for the client)
-    const invoiceTransactions: Array<Record<string, unknown>> = [];
-    if (clientEmail) {
-      const invoices = await this.invoiceModel
-        .find({
-          clientEmail,
-          status: {
-            $in: [
-              InvoiceStatus.SENT,
-              InvoiceStatus.PAID,
-              InvoiceStatus.PENDING,
-            ],
-          },
-          $or: [{ deletedAt: { $exists: false } }, { deletedAt: undefined }],
-        })
-        .lean();
-
-      for (const inv of invoices) {
-        invoiceTransactions.push({
-          id: inv._id.toString(),
-          date: inv.issueDate,
-          amount: inv.total,
-          revenue: 0,
-          expenditure: inv.total,
-          netIncome: -inv.total,
-          cashFlow: inv.status === InvoiceStatus.PAID ? -inv.total : 0,
-          accountType: 'Invoice',
-          description: `Invoice ${inv.invoiceNumber}`,
-        });
-      }
-    }
-
-    const combinedTransactions = [
-      ...transactions.map((t) => ({
-        id: String(t._id),
-        date: t.date,
-        amount: t.amount,
-        revenue: t.revenue,
-        expenditure: t.expenditure,
-        netIncome: t.netIncome,
-        cashFlow: t.cashFlow,
-        accountType: t.accountType,
-      })),
-      ...invoiceTransactions,
-    ].toSorted(
-      (a: Record<string, unknown>, b: Record<string, unknown>) =>
-        new Date(a.date as string | number | Date).getTime() -
-        new Date(b.date as string | number | Date).getTime()
-    );
-
-    return {
-      transactions: combinedTransactions,
     };
   }
 }
