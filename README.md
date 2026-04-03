@@ -13,7 +13,6 @@ Complete API reference for Accountia API endpoints with all possible requests an
 - [Chat Endpoints](#-chat-endpoints)
 - [Notifications Endpoints](#-notifications-endpoints)
 - [Audit Endpoints](#-audit-endpoints)
-- [Email Endpoints](#-email-endpoints)
 - [Health Check](#-health-check)
 - [Error Response Format](#-error-response-format)
 - [Role Permissions](#-role-permissions)
@@ -2532,96 +2531,6 @@ Insufficient permissions.
 
 ---
 
-## 📧 Email Endpoints
-
-### POST /email/send
-
-Send email notification (Platform Admin/Owner only).
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Required Roles:** `PLATFORM_ADMIN`, `PLATFORM_OWNER`
-
-**Request Body:**
-
-```json
-{
-  "to": "user@example.com",
-  "subject": "Business Application Approved",
-  "htmlContent": "<h1>Congratulations!</h1><p>Your business has been approved...</p>"
-}
-```
-
-**Responses:**
-
-**200 OK**
-
-```json
-{
-  "success": true,
-  "messageId": "email-msg-12345",
-  "recipient": "user@example.com"
-}
-```
-
-**400 Bad Request**
-Invalid request data.
-
-**401 Unauthorized**
-Invalid access token.
-
-**403 Forbidden**
-Insufficient permissions.
-
-**500 Internal Server Error**
-Email service error.
-
----
-
-### POST /email/test
-
-Send test email to verify configuration.
-
-**Headers:**
-
-```http
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-**Request Body:**
-
-```json
-{
-  "to": "test@example.com"
-}
-```
-
-**Responses:**
-
-**200 OK**
-
-```json
-{
-  "success": true,
-  "messageId": "test-email-12345",
-  "recipient": "test@example.com"
-}
-```
-
-**401 Unauthorized**
-Invalid access token.
-
-**500 Internal Server Error**
-Email service error.
-
----
-
 ## 🏥 Health Check
 
 ### GET /health
@@ -2675,13 +2584,13 @@ All error responses follow this format:
 
 ## 🔐 Role Permissions
 
-| Role           | Applications | Businesses | Invoices | Managed Invoices | Chat | Notifications | Audit | Email | 2FA | Ban Users |
-| -------------- | ------------ | ---------- | -------- | ---------------- | ---- | ------------- | ----- | ----- | --- | --------- |
-| CLIENT         | ✅           | ✅ (own)   | ✅ (own) | ✅ (managed)     | ✅   | ✅ (own)      | ❌    | ❌    | ✅  | ❌        |
-| BUSINESS_ADMIN | ✅           | ✅ (own)   | ✅ (own) | ❌               | ✅   | ✅ (own)      | ❌    | ❌    | ✅  | ❌        |
-| BUSINESS_OWNER | ✅           | ✅ (own)   | ✅ (own) | ❌               | ✅   | ✅ (own)      | ❌    | ❌    | ✅  | ❌        |
-| PLATFORM_ADMIN | ✅           | ✅ (all)   | ✅ (all) | ✅ (all)         | ✅   | ✅ (all)      | ✅    | ✅    | ✅  | ✅ (no\*) |
-| PLATFORM_OWNER | ✅           | ✅ (all)   | ✅ (all) | ✅ (all)         | ✅   | ✅ (all)      | ✅    | ✅    | ✅  | ✅        |
+| Role           | Applications | Businesses | Invoices | Managed Invoices | Chat | Notifications | Audit | 2FA | Ban Users |
+| -------------- | ------------ | ---------- | -------- | ---------------- | ---- | ------------- | ----- | --- | --------- |
+| CLIENT         | ✅           | ✅ (own)   | ✅ (own) | ✅ (managed)     | ✅   | ✅ (own)      | ❌    | ✅  | ❌        |
+| BUSINESS_ADMIN | ✅           | ✅ (own)   | ✅ (own) | ❌               | ✅   | ✅ (own)      | ❌    | ✅  | ❌        |
+| BUSINESS_OWNER | ✅           | ✅ (own)   | ✅ (own) | ❌               | ✅   | ✅ (own)      | ❌    | ✅  | ❌        |
+| PLATFORM_ADMIN | ✅           | ✅ (all)   | ✅ (all) | ✅ (all)         | ✅   | ✅ (all)      | ✅    | ✅  | ✅ (no\*) |
+| PLATFORM_OWNER | ✅           | ✅ (all)   | ✅ (all) | ✅ (all)         | ✅   | ✅ (all)      | ✅    | ✅  | ✅        |
 
 **Legend:**
 
@@ -2716,7 +2625,6 @@ All error responses follow this format:
 | /chat/message         |     | ✅   |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
 | /notifications        | ✅  |      |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
 | /audit                | ✅  |      |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
-| /email/send           |     | ✅   |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
 
 **Legend:**
 
@@ -2892,20 +2800,7 @@ curl -X GET "http://localhost:3000/api/audit?page=1&limit=20&action=CREATE_INVOI
   -H "Authorization: Bearer <admin_token>"
 ```
 
-### 11. Send Email (Admin Only)
-
-```bash
-curl -X POST http://localhost:3000/api/email/send \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "user@example.com",
-    "subject": "Business Application Approved",
-    "htmlContent": "<h1>Congratulations!</h1><p>Your application has been approved.</p>"
-  }'
-```
-
-### 12. Google OAuth Login
+### 11. Google OAuth Login
 
 ```bash
 # Start OAuth flow
@@ -2920,14 +2815,14 @@ curl -X POST http://localhost:3000/api/auth/google/exchange \
   }'
 ```
 
-### 13. Refresh Tokens
+### 12. Refresh Tokens
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/refresh \
   -H "Authorization: Bearer <refresh_token>"
 ```
 
-### 14. Get Client's Own Invoices
+### 13. Get Client's Own Invoices
 
 ```bash
 # Clients can view invoices addressed to them
@@ -2935,7 +2830,7 @@ curl -X GET "http://localhost:3000/api/invoices/client/my?page=1&limit=10" \
   -H "Authorization: Bearer <client_token>"
 ```
 
-### 15. Initiate Payment (Managed Client)
+### 14. Initiate Payment (Managed Client)
 
 ```bash
 curl -X POST http://localhost:3000/api/managed/invoices/<invoiceId>/pay \
@@ -3734,7 +3629,6 @@ socket.on('reconnect_attempt', () => {});
 | **notifications.controller.ts**    | 3      | WebSocket, notification retrieval               |
 | **chat.controller.ts**             | 1      | AI message processing                           |
 | **audit.controller.ts**            | 1      | Compliance log retrieval                        |
-| **email.controller.ts**            | 2      | Email sending, testing                          |
 
 ### Core Services
 
