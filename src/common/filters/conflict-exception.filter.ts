@@ -15,7 +15,7 @@ export class ConflictExceptionFilter implements ExceptionFilter {
 
     if (
       typeof exceptionResponse === 'object' &&
-      exceptionResponse !== null &&
+      exceptionResponse !== undefined &&
       'type' in exceptionResponse
     ) {
       response.status(409).json(exceptionResponse);

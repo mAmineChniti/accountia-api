@@ -7,6 +7,7 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
     string,
     { count: number; lastAttempt: Date }
   >();
+  private oauthStateRequests = new Map<string, Date[]>();
   private cleanupInterval: NodeJS.Timeout;
 
   private readonly maxLoginAttempts = 5;
@@ -14,6 +15,8 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
   private readonly blockDuration = 15 * 60 * 1000;
   private readonly maxEmailAttempts = 5;
   private readonly emailWindow = 5 * 60 * 1000;
+  private readonly maxOAuthStateRequests = 10;
+  private readonly oauthStateWindow = 1 * 60 * 1000; // 1 minute
   private readonly cleanupIntervalMs = 5 * 60 * 1000;
 
   onModuleInit() {
@@ -30,7 +33,11 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
 
   private cleanupExpiredEntries() {
     const now = new Date();
-    const maxWindow = Math.max(this.loginWindow, this.blockDuration);
+    const maxWindow = Math.max(
+      this.loginWindow,
+      this.blockDuration,
+      this.oauthStateWindow
+    );
 
     for (const [key, attempts] of this.loginAttempts.entries()) {
       const recentAttempts = attempts.filter(
@@ -50,6 +57,18 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
 
       if (timeSinceLastAttempt > this.emailWindow) {
         this.emailAttempts.delete(userId);
+      }
+    }
+
+    for (const [ip, requests] of this.oauthStateRequests.entries()) {
+      const recentRequests = requests.filter(
+        (request) => now.getTime() - request.getTime() < this.oauthStateWindow
+      );
+
+      if (recentRequests.length === 0) {
+        this.oauthStateRequests.delete(ip);
+      } else {
+        this.oauthStateRequests.set(ip, recentRequests);
       }
     }
   }
@@ -135,5 +154,28 @@ export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
     attempts.lastAttempt = now;
 
     this.emailAttempts.set(userId, attempts);
+  }
+
+  checkOAuthStateRequests(ip: string): { allowed: boolean } {
+    const now = new Date();
+    const requests = this.oauthStateRequests.get(ip) ?? [];
+
+    const recentRequests = requests.filter(
+      (request) => now.getTime() - request.getTime() < this.oauthStateWindow
+    );
+
+    if (recentRequests.length >= this.maxOAuthStateRequests) {
+      return { allowed: false };
+    }
+
+    this.oauthStateRequests.set(ip, recentRequests);
+    return { allowed: true };
+  }
+
+  recordOAuthStateRequest(ip: string): void {
+    const now = new Date();
+    const requests = this.oauthStateRequests.get(ip) ?? [];
+    requests.push(now);
+    this.oauthStateRequests.set(ip, requests);
   }
 }

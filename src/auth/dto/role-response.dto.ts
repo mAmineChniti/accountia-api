@@ -8,7 +8,7 @@ export class RoleResponseDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
   userId: string;
 
-  @ApiProperty({ enum: Role, enumName: 'Role', example: Role.BUSINESS_OWNER })
+  @ApiProperty({ enum: Role, enumName: 'Role', example: Role.PLATFORM_ADMIN })
   newRole: Role;
 
   @ApiProperty({ enum: Role, enumName: 'Role', example: Role.CLIENT })

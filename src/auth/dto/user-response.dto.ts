@@ -38,14 +38,6 @@ export class PrivateUserDto extends PublicUserDto {
   twoFactorEnabled?: boolean;
 }
 
-export class UserResponseDto {
-  @ApiProperty({ example: 'User profile retrieved successfully' })
-  message: string;
-
-  @ApiProperty({ type: PublicUserDto })
-  user: PublicUserDto;
-}
-
 export class PrivateUserResponseDto {
   @ApiProperty({ example: 'User profile retrieved successfully' })
   message: string;

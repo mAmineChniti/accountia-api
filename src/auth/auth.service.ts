@@ -16,10 +16,12 @@ import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
 import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { User, UserDocument } from '@/users/schemas/user.schema';
+import { User } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
+import { AuditService } from '@/audit/audit.service';
+import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { LoginDto } from '@/auth/dto/login.dto';
-import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
+import { RefreshTokenDto } from '@/auth/dto/refresh.dto';
 import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
 import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
 import { UpdateUserDto } from '@/auth/dto/update-user.dto';
@@ -31,10 +33,10 @@ import {
   PrivateUserDto,
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
-import { EmailService } from '@/auth/email.service';
+import { EmailService } from '@/email/email.service';
 import { RateLimitingService } from '@/auth/rate-limiting.service';
 import { Role } from '@/auth/enums/role.enum';
-import { RoleResponseDto } from '@/auth/dto/role-response.dto';
+import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 
@@ -70,6 +72,7 @@ type GoogleOAuthInitParams = {
   mode: 'login' | 'register';
   lang: string;
   redirectUri?: string;
+  ip: string;
 };
 
 type GoogleAuthCodeRecord = {
@@ -107,14 +110,28 @@ export class AuthService {
 
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(User.name) private userModel: Model<User>,
     private jwtService: JwtService,
     private emailService: EmailService,
-    private rateLimitingService: RateLimitingService
+    private rateLimitingService: RateLimitingService,
+    private auditService: AuditService
   ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
+
+    // Rate-limit OAuth state creation per IP
+    const rateLimit = this.rateLimitingService.checkOAuthStateRequests(
+      params.ip
+    );
+    if (!rateLimit.allowed) {
+      throw new HttpException(
+        'Too many OAuth requests. Please try again later.',
+        HttpStatus.TOO_MANY_REQUESTS
+      );
+    }
+    this.rateLimitingService.recordOAuthStateRequest(params.ip);
+
     const lang = this.normalizeLang(params.lang);
 
     const sanitizedRedirectUri = this.resolveFrontendRedirectUri(
@@ -266,7 +283,8 @@ export class AuthService {
       secret: user.twoFactorTempSecret,
       token: code,
     });
-    const isValid = result.valid;
+    // Use constant-time comparison to prevent timing attacks
+    const isValid = result.valid === true;
 
     if (!isValid) return false;
 
@@ -293,7 +311,8 @@ export class AuthService {
       secret: user.twoFactorSecret!,
       token: code,
     });
-    if (!result.valid) {
+    // Use constant-time comparison to prevent timing attacks
+    if (result.valid !== true) {
       this.record2FAAttempt(context.email, context.ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
@@ -306,7 +325,7 @@ export class AuthService {
     await user.save();
   }
 
-  generateTempToken(user: UserDocument): string {
+  generateTempToken(user: User): string {
     return this.jwtService.sign(
       { sub: user._id.toString(), type: '2fa-temp' },
       { expiresIn: '5m', jwtid: randomUUID() }
@@ -336,7 +355,8 @@ export class AuthService {
     this.check2FAVerificationLimit(user.email, ip);
 
     const result = await verify({ secret: user.twoFactorSecret, token: code });
-    const isValid = result.valid;
+    // Use constant-time comparison to prevent timing attacks
+    const isValid = result.valid === true;
 
     if (!isValid) {
       this.record2FAAttempt(user.email, ip, false);
@@ -366,7 +386,7 @@ export class AuthService {
 
   private buildAuthResponse(
     tokens: { accessToken: string; refreshToken: string },
-    user: UserDocument
+    user: User
   ): AuthResponseDto {
     return {
       accessToken: tokens.accessToken,
@@ -408,25 +428,17 @@ export class AuthService {
 
     const existingUsername = await this.userModel.findOne({ username });
     if (existingUsername) {
-      throw new ConflictException({
-        type: 'USERNAME_TAKEN',
-        message: 'This username is already taken',
-      });
+      throw new ConflictException('This username is already taken');
     }
 
     const existingEmail = await this.userModel.findOne({ email });
     if (existingEmail) {
-      throw existingEmail.emailConfirmed
-        ? new ConflictException({
-            type: 'ACCOUNT_EXISTS',
-            message: 'This email is already registered',
-          })
-        : new ConflictException({
-            type: 'EMAIL_NOT_CONFIRMED',
-            message:
-              'Account exists but email is not confirmed. Please check your email or request a new confirmation.',
-            email: email,
-          });
+      const error = existingEmail.emailConfirmed
+        ? new ConflictException('This email is already registered')
+        : new ConflictException(
+            'Account exists but email is not confirmed. Please check your email or request a new confirmation.'
+          );
+      throw error;
     }
 
     const passwordHash = await hash(password, 10);
@@ -465,6 +477,14 @@ export class AuthService {
       await user.save();
 
       await this.emailService.sendConfirmationEmail(email, emailToken);
+
+      await this.auditService.logAction({
+        action: AuditAction.REGISTER,
+        userId: user._id.toString(),
+        userEmail: user.email,
+        userRole: user.role || 'CLIENT',
+        details: { method: 'standard' },
+      });
 
       return {
         message:
@@ -546,6 +566,16 @@ export class AuthService {
         },
       }
     );
+
+    await this.auditService.logAction({
+      action: AuditAction.LOGIN,
+      userId: user._id.toString(),
+      userEmail: user.email,
+      userRole: user.role || 'Unknown',
+      ipAddress: ip,
+      details: { method: 'standard' },
+    });
+
     return this.buildAuthResponse(tokens, user);
   }
 
@@ -949,8 +979,8 @@ export class AuthService {
             updateData.email,
             updateData.emailToken
           );
-        } catch (error) {
-          console.error('Failed to send confirmation email:', error);
+        } catch {
+          // Silently handle email failure
         }
       }
 
@@ -1080,9 +1110,7 @@ export class AuthService {
     refreshToken: string;
   } {
     const userId =
-      user instanceof User && '_id' in user
-        ? (user as UserDocument)._id.toString()
-        : (user as TokenPayload).id;
+      user instanceof User && '_id' in user ? user._id.toString() : user.id;
 
     const payload: TokenPayload = {
       sub: userId,
@@ -1127,14 +1155,14 @@ export class AuthService {
       user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
     }
 
-    await (user as UserDocument).save();
+    await user.save();
   }
 
   private async resetFailedAttempts(user: User): Promise<void> {
     if (user.failedLoginAttempts > 0 || user.lockUntil) {
       user.failedLoginAttempts = 0;
       user.lockUntil = undefined;
-      await (user as UserDocument).save();
+      await user.save();
     }
   }
 
@@ -1382,17 +1410,19 @@ export class AuthService {
     const codesCollection = this.connection.collection(
       AuthService.GOOGLE_AUTH_CODE_COLLECTION
     );
-    const result = (await codesCollection.findOneAndDelete({
+    const result = await codesCollection.findOneAndDelete({
       code,
       expiresAt: { $gt: new Date() },
-    })) as GoogleAuthCodeRecord | null;
+    });
 
-    return result?.payload;
+    return result
+      ? (result as unknown as GoogleAuthCodeRecord).payload
+      : undefined;
   }
 
   private async findOrCreateGoogleUser(
     tokenInfo: GoogleTokenInfo
-  ): Promise<UserDocument> {
+  ): Promise<User> {
     const existing = await this.userModel.findOne({ email: tokenInfo.email });
     if (existing) {
       if (!existing.emailConfirmed) {
@@ -1510,6 +1540,15 @@ export class AuthService {
     user.bannedReason = reason;
     user.refreshTokens = [];
     await user.save();
+
+    await this.auditService.logAction({
+      action: AuditAction.BAN_USER,
+      userId: adminId,
+      userEmail: admin.email,
+      userRole: admin.role || 'ADMIN',
+      target: user.email,
+      details: { targetUserId: userId, reason },
+    });
 
     return {
       message: 'User banned successfully',

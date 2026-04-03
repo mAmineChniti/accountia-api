@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsMongoId, IsEnum } from 'class-validator';
-import { BusinessUserRole } from '@/business/schemas/business-user.schema';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 export class AssignBusinessUserDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
@@ -21,7 +21,7 @@ export class BusinessUserResponseDto {
     example: 'User assigned to business successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Business user assignment object with complete details',
@@ -31,17 +31,26 @@ export class BusinessUserResponseDto {
       userId: '507f1f77bcf86cd799439012',
       role: 'admin',
       assignedBy: '615f2e0a6c6d5c0e1a1e4a01',
-      isActive: true,
       createdAt: '2024-02-17T16:30:00.000Z',
     },
   })
-  businessUser: {
+  businessUser!: {
     id: string;
     businessId: string;
     userId: string;
     role: string;
     assignedBy: string;
-    isActive: boolean;
     createdAt: Date;
   };
+}
+
+export class ChangeClientRoleDto {
+  @ApiProperty({
+    enum: BusinessUserRole,
+    enumName: 'BusinessUserRole',
+    example: BusinessUserRole.ADMIN,
+    description: 'New role for the client in the business',
+  })
+  @IsEnum(BusinessUserRole)
+  role: BusinessUserRole;
 }

@@ -1,4 +1,17 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "eslint.config.mjs",
+    "**/*.py",
+    "**/__pycache__/**",
+    "**/*.html",
+    ".env*",
+    "*.md",
+    ".git",
+    ".gitignore"
+  ]
 }

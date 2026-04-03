@@ -23,8 +23,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { RefreshTokenDto } from '@/auth/dto/refresh-token.dto';
-import { RefreshResponseDto } from '@/auth/dto/refresh-response.dto';
+import { RefreshTokenDto, RefreshResponseDto } from '@/auth/dto/refresh.dto';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { readFile } from 'node:fs/promises';
@@ -44,8 +43,7 @@ import {
 } from '@/auth/dto/user-response.dto';
 import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
 import { ResendConfirmationDto } from '@/auth/dto/resend-confirmation.dto';
-import { ChangeRoleDto } from '@/auth/dto/change-role.dto';
-import { RoleResponseDto } from '@/auth/dto/role-response.dto';
+import { ChangeRoleDto, RoleResponseDto } from '@/auth/dto/role.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
@@ -54,9 +52,11 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { Role } from '@/auth/enums/role.enum';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { type UserPayload } from '@/auth/types/auth.types';
-import { TwoFASetupResponseDto } from '@/auth/dto/2fa-setup.dto';
-import { TwoFAVerifyDto } from '@/auth/dto/2fa-verify.dto';
-import { TwoFALoginDto } from '@/auth/dto/2fa-login.dto';
+import {
+  TwoFASetupResponseDto,
+  TwoFAVerifyDto,
+  TwoFALoginDto,
+} from '@/auth/dto/2fa.dto';
 import { BanUserDto, BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
 import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';

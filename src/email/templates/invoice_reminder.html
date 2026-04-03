@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment Reminder - Accountia</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        line-height: 1.6;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+      }
+      .wrapper {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .brand {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #8b0000;
+        letter-spacing: -0.5px;
+      }
+      .container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .header-bar {
+        background-color: #8b0000;
+        padding: 32px 40px;
+        text-align: center;
+      }
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 20px;
+      }
+      .invoice-box {
+        background-color: #fcf8f8;
+        border: 1px solid #fbdada;
+        padding: 24px;
+        border-radius: 8px;
+        margin-bottom: 32px;
+      }
+      .invoice-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .invoice-label {
+        color: #64748b;
+        font-size: 13px;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .invoice-value {
+        color: #1e293b;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .total-row {
+        border-top: 1px solid #fbdada;
+        margin-top: 16px;
+        padding-top: 12px;
+      }
+      .total-value {
+        color: #8b0000;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .cta-wrapper {
+        text-align: center;
+        margin: 32px 0;
+      }
+      .button {
+        display: inline-block;
+        background-color: #8b0000;
+        color: #ffffff !important;
+        padding: 14px 36px;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.2px;
+      }
+      .footer {
+        text-align: center;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+        line-height: 1.8;
+      }
+      .urgent-tag {
+        display: inline-block;
+        background-color: #ef4444;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
+      </div>
+
+      <div class="container">
+        <div class="header-bar">
+          <h1>{{.Title}}</h1>
+        </div>
+
+        <div class="body">
+          <p>Hello {{.ClientName}},</p>
+          <p>{{.Message}}</p>
+
+          <div class="invoice-box">
+            <div class="invoice-row">
+              <span class="invoice-label">Invoice Number</span>
+              <span class="invoice-value">{{.InvoiceNumber}}</span>
+            </div>
+            <div class="invoice-row">
+              <span class="invoice-label">Status</span>
+              <span class="invoice-value urgent-tag">Overdue</span>
+            </div>
+            <div class="invoice-row">
+              <span class="invoice-label">Original Due Date</span>
+              <span class="invoice-value">{{.DueDate}}</span>
+            </div>
+            <div class="invoice-row total-row">
+              <span class="invoice-label">Outstanding Amount</span>
+              <span class="invoice-value total-value">{{.Amount}}</span>
+            </div>
+          </div>
+
+          <div class="cta-wrapper">
+            <a href="{{.InvoicesUrl}}" class="button">{{.ButtonLabel}}</a>
+          </div>
+
+          <p>
+            If you have already sent payment, please disregard this message. For
+            any questions, please contact <strong>{{.BusinessName}}</strong>.
+          </p>
+        </div>
+
+        <div class="footer">
+          <p>&copy; {{.Year}} Accountia Professional. All rights reserved.</p>
+          <p>
+            This is an automated reminder — please do not reply to this email.
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

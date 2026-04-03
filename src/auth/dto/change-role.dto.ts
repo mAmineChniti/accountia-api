@@ -14,7 +14,7 @@ export class ChangeRoleDto {
     description: 'New role to assign to the user',
     enum: Role,
     enumName: 'Role',
-    example: Role.BUSINESS_OWNER,
+    example: Role.PLATFORM_ADMIN,
   })
   @IsEnum(Role)
   newRole: Role;
