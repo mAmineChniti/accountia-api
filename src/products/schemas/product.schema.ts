@@ -22,6 +22,9 @@ export class Product extends Document {
   @Prop({ required: true, type: Number, default: 0 })
   quantity!: number;
 
+  @Prop({ required: true, default: 'TND' })
+  currency!: string;
+
   createdAt!: Date;
   updatedAt!: Date;
 }

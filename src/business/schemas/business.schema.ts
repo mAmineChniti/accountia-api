@@ -15,6 +15,9 @@ export class Business extends Document {
   @Prop({ required: true })
   phone: string;
 
+  @Prop({ required: true })
+  email: string;
+
   @Prop({ required: true, unique: true })
   databaseName: string; // Multi-tenant database identifier
 
@@ -24,25 +27,6 @@ export class Business extends Document {
     default: 'pending',
   })
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
-
-  @Prop()
-  logo?: string;
-
-  @Prop([String])
-  tags: string[];
-
-  @Prop({
-    type: {
-      remindersEnabled: { type: Boolean, default: true },
-      reminderIntervals: { type: [Number], default: [5, 10, 20] },
-    },
-    _id: false,
-    default: { remindersEnabled: true, reminderIntervals: [5, 10, 20] },
-  })
-  automationSettings: {
-    remindersEnabled: boolean;
-    reminderIntervals: number[];
-  };
 
   createdAt: Date;
   updatedAt: Date;

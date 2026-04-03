@@ -10,6 +10,10 @@ import {
   NotificationSchema,
 } from './schemas/notification.schema';
 import { User, UserSchema } from '@/users/schemas/user.schema';
+import {
+  BusinessUser,
+  BusinessUserSchema,
+} from '@/business/schemas/business-user.schema';
 
 @Global()
 @Module({
@@ -17,6 +21,7 @@ import { User, UserSchema } from '@/users/schemas/user.schema';
     MongooseModule.forFeature([
       { name: Notification.name, schema: NotificationSchema },
       { name: User.name, schema: UserSchema },
+      { name: BusinessUser.name, schema: BusinessUserSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

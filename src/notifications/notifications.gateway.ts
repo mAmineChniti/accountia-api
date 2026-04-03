@@ -12,7 +12,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Server, Socket } from 'socket.io';
 import { User } from '@/users/schemas/user.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { Role } from '@/auth/enums/role.enum';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import type { NotificationEvent } from './notifications.service';
 
 interface AuthenticatedSocket extends Socket {
@@ -34,8 +36,15 @@ interface AuthenticatedSocket extends Socket {
  *
  * Client Usage:
  * ```typescript
+ * // For individual client notifications
  * const socket = io('http://localhost:3000', {
  *   query: { token: 'your-jwt-token' },
+ *   autoConnect: true,
+ * });
+ *
+ * // For business team notifications
+ * const socket = io('http://localhost:3000', {
+ *   query: { token: 'your-jwt-token', businessId: 'business-id' },
  *   autoConnect: true,
  * });
  *
@@ -50,8 +59,8 @@ interface AuthenticatedSocket extends Socket {
  *
  * Rooms:
  * - 'admin' - Platform owner/admin notifications
- * - 'business:{businessId}' - Business owner/team lead notifications
- * - 'client:{email}' - Client notifications
+ * - 'business:{businessId}' - Business team notifications (all owner/admin members)
+ * - 'client:{email}' - Individual client notifications
  */
 @Injectable()
 @WebSocketGateway({
@@ -64,11 +73,13 @@ export class NotificationsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   constructor(
     private readonly jwtService: JwtService,
-    @InjectModel(User.name) private readonly userModel: Model<User>
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+    @InjectModel(BusinessUser.name)
+    private readonly businessUserModel: Model<BusinessUser>
   ) {}
 
   afterInit(server: Server) {
@@ -136,6 +147,33 @@ export class NotificationsGateway
       void socket.join('admin');
     } else if (isClient) {
       void socket.join(`client:${socket.userEmail}`);
+    }
+
+    // Join business room if businessId is provided
+    if (socket.businessId) {
+      this.joinBusinessRoom(socket).catch((error) => {
+        console.error('Error joining business room:', error);
+      });
+    }
+  }
+
+  private async joinBusinessRoom(socket: AuthenticatedSocket): Promise<void> {
+    try {
+      // Check if user is admin/owner in this business
+      const businessUser = await this.businessUserModel
+        .findOne({
+          businessId: socket.businessId,
+          userId: socket.userId,
+          role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN] },
+        })
+        .lean();
+
+      if (businessUser) {
+        // Join business-specific room
+        await socket.join(`business:${socket.businessId}`);
+      }
+    } catch (error) {
+      console.error('Error joining business room:', error);
     }
   }
 

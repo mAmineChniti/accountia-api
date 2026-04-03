@@ -15,10 +15,9 @@ export class BusinessResponseDto {
       description: 'A technology company specializing in software development',
       website: 'https://techsolutions.com',
       phone: '+1-555-0123',
+      email: 'contact@techsolutions.com',
       databaseName: 'tech_solutions_inc_1708198200000',
       status: 'approved',
-      logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-      tags: ['technology', 'software'],
       createdAt: '2024-02-17T16:30:00.000Z',
       updatedAt: '2024-02-17T16:30:00.000Z',
     },
@@ -29,14 +28,9 @@ export class BusinessResponseDto {
     description: string;
     website?: string;
     phone: string;
+    email: string;
     databaseName: string;
     status: string;
-    logo?: string;
-    tags: string[];
-    automationSettings?: {
-      remindersEnabled: boolean;
-      reminderIntervals: number[];
-    };
     createdAt: Date;
     updatedAt: Date;
   };
