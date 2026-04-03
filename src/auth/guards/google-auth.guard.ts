@@ -25,10 +25,18 @@ export class GoogleAuthGuard extends AuthGuard('google') {
         ? request.query.redirectUri
         : undefined;
 
+    // Get IP address from request
+    const ip =
+      request.ip ??
+      request.socket?.remoteAddress ??
+      request.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ??
+      'unknown';
+
     request.googleOauthState = await this.authService.buildGoogleOAuthState({
       mode,
       lang,
       redirectUri,
+      ip,
     });
 
     const activate = await super.canActivate(context);

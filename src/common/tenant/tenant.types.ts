@@ -1,4 +1,4 @@
-import { type BusinessUserRole } from '@/business/schemas/business-user.schema';
+import { type BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 export type TenantContext = {
   businessId: string;

@@ -7,23 +7,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
-import {
-  Business,
-  type BusinessDocument,
-} from '@/business/schemas/business.schema';
-import {
-  BusinessUser,
-  type BusinessUserDocument,
-} from '@/business/schemas/business-user.schema';
+import { Business } from '@/business/schemas/business.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { type TenantContext } from '@/common/tenant/tenant.types';
 
 @Injectable()
 export class TenantContextService {
   constructor(
     @InjectModel(Business.name)
-    private readonly businessModel: Model<BusinessDocument>,
+    private readonly businessModel: Model<Business>,
     @InjectModel(BusinessUser.name)
-    private readonly businessUserModel: Model<BusinessUserDocument>
+    private readonly businessUserModel: Model<BusinessUser>
   ) {}
 
   async resolveTenantContext(
@@ -32,13 +26,13 @@ export class TenantContextService {
   ): Promise<TenantContext> {
     const business = await this.businessModel
       .findById(businessId)
-      .select('databaseName isActive status');
+      .select('databaseName status');
 
     if (!business) {
       throw new NotFoundException('Business not found');
     }
 
-    if (!business.isActive || business.status !== 'approved') {
+    if (business.status !== 'approved') {
       throw new ForbiddenException('Business is not active');
     }
 
@@ -57,7 +51,6 @@ export class TenantContextService {
       .findOne({
         businessId,
         userId: user.id,
-        isActive: true,
       })
       .select('role');
 

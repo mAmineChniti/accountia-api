@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 @Schema({ collection: 'businesses', timestamps: true })
-export class Business {
+export class Business extends Document {
   @Prop({ required: true })
   name: string;
 
@@ -15,6 +15,9 @@ export class Business {
   @Prop({ required: true })
   phone: string;
 
+  @Prop({ required: true })
+  email: string;
+
   @Prop({ required: true, unique: true })
   databaseName: string; // Multi-tenant database identifier
 
@@ -25,18 +28,8 @@ export class Business {
   })
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
 
-  @Prop({ default: false })
-  isActive: boolean;
-
-  @Prop()
-  logo?: string;
-
-  @Prop([String])
-  tags: string[];
-
   createdAt: Date;
   updatedAt: Date;
 }
 
-export type BusinessDocument = Business & Document;
 export const BusinessSchema = SchemaFactory.createForClass(Business);

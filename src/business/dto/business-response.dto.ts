@@ -5,7 +5,7 @@ export class BusinessResponseDto {
     example: 'Business retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Business object with complete details',
@@ -15,26 +15,22 @@ export class BusinessResponseDto {
       description: 'A technology company specializing in software development',
       website: 'https://techsolutions.com',
       phone: '+1-555-0123',
+      email: 'contact@techsolutions.com',
       databaseName: 'tech_solutions_inc_1708198200000',
       status: 'approved',
-      isActive: true,
-      logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
-      tags: ['technology', 'software'],
       createdAt: '2024-02-17T16:30:00.000Z',
       updatedAt: '2024-02-17T16:30:00.000Z',
     },
   })
-  business: {
+  business!: {
     id: string;
     name: string;
     description: string;
     website?: string;
     phone: string;
+    email: string;
     databaseName: string;
     status: string;
-    isActive: boolean;
-    logo?: string;
-    tags: string[];
     createdAt: Date;
     updatedAt: Date;
   };
@@ -45,7 +41,7 @@ export class BusinessesListResponseDto {
     example: 'Businesses retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Array of businesses with basic details',
@@ -57,17 +53,15 @@ export class BusinessesListResponseDto {
         name: 'Tech Solutions Inc.',
         phone: '+1-555-0123',
         status: 'approved',
-        isActive: true,
         createdAt: '2024-02-17T16:30:00.000Z',
       },
     ],
   })
-  businesses: {
+  businesses!: {
     id: string;
     name: string;
     phone: string;
     status: string;
-    isActive: boolean;
     createdAt: Date;
   }[];
 }
@@ -77,7 +71,7 @@ export class BusinessApplicationListResponseDto {
     example: 'Business applications retrieved successfully',
     description: 'Success message describing the operation result',
   })
-  message: string;
+  message!: string;
 
   @ApiProperty({
     description: 'Array of business applications with details',
@@ -92,18 +86,22 @@ export class BusinessApplicationListResponseDto {
         website: 'https://techsolutions.com',
         phone: '+1-555-0123',
         applicantId: '615f2e0a6c6d5c0e1a1e4a01',
+        applicantEmail: 'john@example.com',
+        applicantName: 'John Doe',
         status: 'pending',
         createdAt: '2024-02-17T16:30:00.000Z',
       },
     ],
   })
-  applications: {
+  applications!: {
     id: string;
     businessName: string;
     description: string;
     website?: string;
     phone: string;
     applicantId: string;
+    applicantEmail?: string;
+    applicantName?: string;
     status: string;
     createdAt: Date;
   }[];

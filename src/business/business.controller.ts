@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -20,17 +21,20 @@ import {
 import { BusinessService } from '@/business/business.service';
 import {
   CreateBusinessApplicationDto,
+  BusinessApplicationResponseDto,
   ReviewBusinessApplicationDto,
 } from '@/business/dto/business-application.dto';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
-import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
+import {
+  AssignBusinessUserDto,
+  ChangeClientRoleDto,
+  BusinessUserResponseDto,
+} from '@/business/dto/business-user.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
 } from '@/business/dto/business-response.dto';
-import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
-import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -39,6 +43,11 @@ import { type UserPayload } from '@/auth/types/auth.types';
 import { Role } from '@/auth/enums/role.enum';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import {
   type TenantContext,
   type TenantMetadata,
@@ -93,6 +102,24 @@ export class BusinessController {
       user.id
     );
   }
+
+  /* 
+  @Get(':id/invoices')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all invoices for a business',
+    description: 'Retrieve invoices. Strictly isolated for clients.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  async getBusinessInvoices(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload,
+    @Query('clientId') clientId?: string
+  ) {
+    return this.businessService.getBusinessInvoices(id, user.id, user.role, clientId);
+  }
+  */
 
   @Get('applications')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -159,21 +186,17 @@ export class BusinessController {
     @Body() reviewDto: ReviewBusinessApplicationDto,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessApplicationResponseDto> {
-    return this.businessService.reviewBusinessApplication(
-      id,
-      reviewDto,
-      user.id
-    );
+    return this.businessService.reviewBusinessApplication(id, reviewDto, user);
   }
 
   // Business Management Endpoints
-  @Get('my')
+  @Get('my-businesses')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Get my businesses',
+    summary: 'Get my businesses (Owners and Admins)',
     description:
-      'Retrieve all businesses associated with the current user. Includes businesses where user is owner or assigned member.',
+      'Retrieve all businesses where current user is owner or admin. Only returns businesses managed by the user.',
   })
   @ApiResponse({
     status: 200,
@@ -183,6 +206,11 @@ export class BusinessController {
   @ApiResponse({
     status: 401,
     description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Forbidden - Only business owners and admins can view their businesses',
   })
   async getMyBusinesses(
     @CurrentUser() user: UserPayload
@@ -294,12 +322,13 @@ export class BusinessController {
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update business',
     description:
-      'Update business information. Only accessible by business owners or platform administrators.',
+      'Update business information. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -341,7 +370,8 @@ export class BusinessController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete business' })
@@ -364,12 +394,13 @@ export class BusinessController {
 
   // Business User Management Endpoints
   @Post(':id/users')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assign user to business',
     description:
-      'Assign a user to a business with a specific role. Only accessible by business owners.',
+      'Assign a user to a business with a specific role. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -413,13 +444,14 @@ export class BusinessController {
   }
 
   @Delete(':id/users/:userId')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Unassign user from business',
     description:
-      'Remove a user assignment from a business. Only accessible by business owners.',
+      'Remove a user assignment from a business. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'id',
@@ -459,5 +491,128 @@ export class BusinessController {
       user.id,
       user.role
     );
+  }
+
+  @Get(':id/clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all clients for a business',
+    description:
+      'Retrieve all users linked to this business with the role client. Only accessible by business owners or administrators.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID (MongoDB ObjectId)',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Clients retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to access this business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getBusinessClients(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
+    return this.businessService.getBusinessClients(id, user.id, user.role);
+  }
+
+  @Patch(':id/clients/:clientId/role')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Change a client role in the business',
+    description:
+      'Change the role of a user within the business (e.g., promote from client to admin). Only accessible by business owners or administrators.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiParam({ name: 'clientId', description: 'Client User ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Client role changed successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid role data',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to change client role',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business or user not found',
+  })
+  async changeClientRole(
+    @Param('id') id: string,
+    @Param('clientId') clientId: string,
+    @Body() changeRoleDto: ChangeClientRoleDto,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.changeClientRole(
+      id,
+      clientId,
+      changeRoleDto,
+      user.id,
+      user.role
+    );
+  }
+
+  @Delete(':id/clients/:clientId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Remove a user from the business',
+    description:
+      'Unlink/remove a user from this business. Cannot remove business owner. Only accessible by business owners or administrators.',
+  })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiParam({ name: 'clientId', description: 'User ID to remove' })
+  @ApiResponse({
+    status: 200,
+    description: 'User removed successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Cannot remove business owner',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to remove users',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business or user not found',
+  })
+  async deleteClient(
+    @Param('id') id: string,
+    @Param('clientId') clientId: string,
+    @CurrentUser() user: UserPayload
+  ) {
+    return this.businessService.deleteClient(id, clientId, user.id, user.role);
   }
 }
