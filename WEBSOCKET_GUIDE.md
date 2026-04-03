@@ -469,13 +469,7 @@ socket.on('connect_error', (error) => {});
 socket.on('reconnect', () => {});
 ```
 
-## Examples
-
-### Next.js Implementation
-
-See [FRONTEND.md](FRONTEND.md) for comprehensive Next.js component examples.
-
-### Testing
+## Testing
 
 ```typescript
 import { io } from 'socket.io-client';
