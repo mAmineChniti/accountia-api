@@ -2427,16 +2427,6 @@ When an invoice is issued, the recipient(s) receive **both**:
 1. **Email notification** - Sent to email address (personal user email or business contact email)
 2. **WebSocket notification** - Real-time browser/app notification
 
-### Frontend Implementation
-
-See [WEBSOCKET_GUIDE.md](WEBSOCKET_GUIDE.md) for comprehensive implementation guide including:
-
-- React hooks
-- Next.js components
-- Multi-business dashboard
-- Error handling
-- Best practices
-
 ### Connection Behavior
 
 - **Automatic room assignment** - Users join appropriate rooms on connect
@@ -2873,8 +2863,6 @@ socket.on('notification', (data) => {
 socket.on('connect_error', (error) => {
   console.error('❌ Connection error:', error.message);
 });
-
-// See WEBSOCKET_GUIDE.md for complete documentation
 ```
 
 ### 8. Get Recent Notifications
