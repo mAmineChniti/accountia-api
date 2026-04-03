@@ -8,6 +8,8 @@ Complete API reference for Accountia API endpoints with all possible requests an
 - [Authentication Headers](#authentication-headers)
 - [Authentication Endpoints](#-authentication-endpoints)
 - [Business Management Endpoints](#-business-management-endpoints)
+- [Products Endpoints](#-products-endpoints)
+- [Invoices Endpoints](#-invoices-endpoints)
 - [Chat Endpoints](#-chat-endpoints)
 - [Notifications Endpoints](#-notifications-endpoints)
 - [Audit Endpoints](#-audit-endpoints)
@@ -1141,7 +1143,7 @@ Application not found.
 
 ---
 
-### GET /business/my
+### GET /business/my-businesses
 
 Get my businesses.
 
@@ -1454,6 +1456,841 @@ Business or user assignment not found.
 
 ---
 
+### GET /business/:id/tenant/metadata
+
+Get tenant metadata for business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+```
+
+**URL Parameters:**
+
+- `id` (string): Business ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Tenant metadata retrieved successfully",
+  "tenant": {
+    "businessId": "507f1f77bcf86cd799439011",
+    "databaseName": "business_tenant_db_123"
+  },
+  "metadata": {
+    "invoicesCount": 150,
+    "activeClients": 45,
+    "lastModified": "2024-02-17T16:30:00.000Z"
+  }
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Business not found.
+
+---
+
+## 🛍️ Products Endpoints
+
+### POST /products
+
+Create a new product.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Required Roles:** Business Owner, Admin
+
+**Request Body:**
+
+```json
+{
+  "name": "Web Development Service",
+  "description": "Professional web development and design",
+  "unitPrice": 150.0,
+  "currency": "TND"
+}
+```
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439020",
+  "businessId": "507f1f77bcf86cd799439011",
+  "name": "Web Development Service",
+  "description": "Professional web development and design",
+  "unitPrice": 150.0,
+  "currency": "TND",
+  "createdAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid product data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /products
+
+Get all products for the business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "products": [
+    {
+      "id": "507f1f77bcf86cd799439020",
+      "name": "Web Development Service",
+      "unitPrice": 150.0,
+      "currency": "TND",
+      "createdAt": "2024-02-17T16:30:00.000Z"
+    }
+  ],
+  "total": 25,
+  "page": 1,
+  "limit": 10
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /products/:id
+
+Get product by ID.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Product ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439020",
+  "businessId": "507f1f77bcf86cd799439011",
+  "name": "Web Development Service",
+  "description": "Professional web development and design",
+  "unitPrice": 150.0,
+  "currency": "TND",
+  "createdAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Product not found.
+
+---
+
+### PATCH /products/:id
+
+Update product.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Product ID
+
+**Request Body:**
+
+```json
+{
+  "unitPrice": 175.0,
+  "description": "Updated description"
+}
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439020",
+  "name": "Web Development Service",
+  "unitPrice": 175.0,
+  "currency": "TND"
+}
+```
+
+**400 Bad Request**
+Invalid update data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Product not found.
+
+---
+
+### DELETE /products/:id
+
+Delete product.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Product ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Product deleted successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Product not found.
+
+---
+
+### POST /products/import
+
+Import products from CSV file.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Form Data:**
+
+- `file` (required): CSV file with columns: name, description, unitPrice, currency
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "imported": 25,
+  "failed": 0,
+  "skipped": 0,
+  "message": "Products imported successfully"
+}
+```
+
+**400 Bad Request**
+Invalid file format or data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+## 📋 Invoices Endpoints
+
+### POST /invoices/personal
+
+Create a personal invoice.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Required Roles:** Business Owner, Admin
+
+**Request Body:**
+
+```json
+{
+  "clientUserId": "507f1f77bcf86cd799439012",
+  "lineItems": [
+    {
+      "productId": "507f1f77bcf86cd799439020",
+      "quantity": 10
+    }
+  ],
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z"
+}
+```
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439021",
+  "businessId": "507f1f77bcf86cd799439011",
+  "clientUserId": "507f1f77bcf86cd799439012",
+  "amount": 1500.0,
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z",
+  "paid": false,
+  "createdAt": "2024-02-17T16:30:00.000Z"
+}
+```
+
+**400 Bad Request**
+Invalid invoice data or insufficient product quantity.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /invoices/personal/business
+
+Get all personal invoices issued by the business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+- `status` (optional): DRAFT, SENT, PENDING, PAID, OVERDUE
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "invoices": [
+    {
+      "id": "507f1f77bcf86cd799439021",
+      "businessId": "507f1f77bcf86cd799439011",
+      "clientUserId": "507f1f77bcf86cd799439012",
+      "amount": 1500.0,
+      "status": "SENT",
+      "paid": false,
+      "issuedAt": "2024-02-17T00:00:00.000Z",
+      "dueDate": "2024-03-17T00:00:00.000Z"
+    }
+  ],
+  "total": 50,
+  "page": 1,
+  "limit": 10
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /invoices/personal/:id
+
+Get personal invoice by ID.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Invoice ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439021",
+  "businessId": "507f1f77bcf86cd799439011",
+  "clientUserId": "507f1f77bcf86cd799439012",
+  "lineItems": [
+    {
+      "productId": "507f1f77bcf86cd799439020",
+      "productName": "Web Development Service",
+      "quantity": 10,
+      "unitPrice": 150.0,
+      "total": 1500.0
+    }
+  ],
+  "amount": 1500.0,
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z",
+  "paid": false,
+  "paidAt": null
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### PATCH /invoices/personal/:id
+
+Update personal invoice.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Invoice ID
+
+**Request Body:**
+
+```json
+{
+  "dueDate": "2024-03-30T00:00:00.000Z",
+  "lineItems": [...],
+  "paid": true,
+  "paidAt": "2024-03-20T00:00:00.000Z"
+}
+```
+
+**Responses:**
+
+**200 OK**
+Updated invoice object (same as GET response).
+
+**400 Bad Request**
+Invalid update data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### DELETE /invoices/personal/:id
+
+Delete personal invoice (soft delete/archive).
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**URL Parameters:**
+
+- `id` (string): Invoice ID
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Invoice deleted successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### POST /invoices/company
+
+Create a company invoice.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Request Body:**
+
+```json
+{
+  "clientBusinessId": "507f1f77bcf86cd799439013",
+  "clientCompanyName": "Acme Corporation",
+  "clientContactEmail": "billing@acme.com",
+  "lineItems": [
+    {
+      "productId": "507f1f77bcf86cd799439020",
+      "quantity": 20
+    }
+  ],
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z"
+}
+```
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439022",
+  "businessId": "507f1f77bcf86cd799439011",
+  "clientBusinessId": "507f1f77bcf86cd799439013",
+  "clientCompanyName": "Acme Corporation",
+  "amount": 3000.0,
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z",
+  "paid": false
+}
+```
+
+**400 Bad Request**
+Invalid invoice data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /invoices/company/business
+
+Get all company invoices issued by the business.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Query Parameters:**
+
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+- `status` (optional): DRAFT, SENT, PENDING, PAID, OVERDUE
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "invoices": [
+    {
+      "id": "507f1f77bcf86cd799439022",
+      "clientCompanyName": "Acme Corporation",
+      "amount": 3000.0,
+      "status": "SENT",
+      "paid": false,
+      "issuedAt": "2024-02-17T00:00:00.000Z"
+    }
+  ],
+  "total": 30,
+  "page": 1,
+  "limit": 10
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+---
+
+### GET /invoices/company/:id
+
+Get company invoice by ID.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439022",
+  "businessId": "507f1f77bcf86cd799439011",
+  "clientBusinessId": "507f1f77bcf86cd799439013",
+  "clientCompanyName": "Acme Corporation",
+  "clientContactEmail": "billing@acme.com",
+  "amount": 3000.00,
+  "lineItems": [...],
+  "issuedAt": "2024-02-17T00:00:00.000Z",
+  "dueDate": "2024-03-17T00:00:00.000Z",
+  "paid": false
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### PATCH /invoices/company/:id
+
+Update company invoice.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: application/json
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Request Body:**
+
+```json
+{
+  "clientCompanyName": "Updated Company Name",
+  "dueDate": "2024-03-30T00:00:00.000Z",
+  "paid": true
+}
+```
+
+**Responses:**
+
+**200 OK**
+Updated invoice object.
+
+**400 Bad Request**
+Invalid update data.
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### DELETE /invoices/company/:id
+
+Delete company invoice.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Responses:**
+
+**200 OK**
+
+```json
+{
+  "message": "Invoice deleted successfully"
+}
+```
+
+**401 Unauthorized**
+Invalid access token.
+
+**403 Forbidden**
+Insufficient permissions.
+
+**404 Not Found**
+Invoice not found.
+
+---
+
+### POST /invoices/personal/import
+
+Import personal invoices from CSV file.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Form Data:**
+
+- `file` (required): CSV file with invoice data
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "imported": 15,
+  "failed": 2,
+  "message": "Personal invoices imported"
+}
+```
+
+---
+
+### POST /invoices/company/import
+
+Import company invoices from CSV file.
+
+**Headers:**
+
+```http
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+X-Business-ID: 507f1f77bcf86cd799439011
+```
+
+**Form Data:**
+
+- `file` (required): CSV file with invoice data
+
+**Responses:**
+
+**201 Created**
+
+```json
+{
+  "imported": 10,
+  "failed": 0,
+  "message": "Company invoices imported"
+}
+```
+
+---
+
 ## Chat Endpoints
 
 ### POST /chat/message
@@ -1471,12 +2308,8 @@ Content-Type: application/json
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "query": "How can I optimize my invoicing process?",
-  "context": "BUSINESS_OWNER",
-  "systemContext": {
-    "totalInvoices": 150,
-    "averagePaymentTime": "14"
-  },
   "history": [
     {
       "role": "user",
@@ -1492,9 +2325,8 @@ Content-Type: application/json
 
 **Parameters:**
 
+- `businessId` (required): Business ID for context
 - `query` (required): User message
-- `context` (optional): Role override (default: user's role)
-- `systemContext` (optional): Additional data context
 - `history` (optional): Conversation history
 
 **Responses:**
@@ -1509,6 +2341,9 @@ Content-Type: application/json
 
 **401 Unauthorized**
 Invalid access token.
+
+**403 Forbidden**
+You do not have access to this business.
 
 ---
 
@@ -1810,24 +2645,27 @@ All error responses follow this format:
 
 ## Endpoint Access by Role
 
-| Endpoint            | GET | POST | PATCH | DELETE | CLIENT       | BUSINESS_ADMIN | BUSINESS_OWNER | PLATFORM_ADMIN | PLATFORM_OWNER |
-| ------------------- | --- | ---- | ----- | ------ | ------------ | -------------- | -------------- | -------------- | -------------- |
-| /auth/register      |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/login         |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/fetchuser     | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /auth/users         | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
-| /auth/change-role   |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
-| /auth/users/:id/ban |     |      | ✅    |        | ❌           | ❌             | ❌             | ✅\*           | ✅             |
-| /business/apply     |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /business/my        | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /business/:id       | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /invoices           | ✅  | ✅   | ✅    | ✅     | ❌           | ✅             | ✅             | ✅             | ✅             |
-| /invoices/client/my | ✅  |      |       |        | ✅           | ❌             | ❌             | ❌             | ❌             |
-| /invoices/managed   | ✅  |      |       |        | ✅ (managed) | ❌             | ❌             | ❌             | ❌             |
-| /chat/message       |     | ✅   |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /notifications      | ✅  |      |       |        | ✅           | ✅             | ✅             | ✅             | ✅             |
-| /audit              | ✅  |      |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
-| /email/send         |     | ✅   |       |        | ❌           | ❌             | ❌             | ✅             | ✅             |
+| Endpoint              | GET | POST | PATCH | DELETE | CLIENT | BUSINESS_ADMIN | BUSINESS_OWNER | PLATFORM_ADMIN | PLATFORM_OWNER |
+| --------------------- | --- | ---- | ----- | ------ | ------ | -------------- | -------------- | -------------- | -------------- |
+| /auth/register        |     | ✅   |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /auth/login           |     | ✅   |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /auth/fetchuser       | ✅  |      |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /auth/users           | ✅  |      |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
+| /auth/change-role     |     |      | ✅    |        | ❌     | ❌             | ❌             | ✅\*           | ✅             |
+| /auth/users/:id/ban   |     |      | ✅    |        | ❌     | ❌             | ❌             | ✅\*           | ✅             |
+| /business/apply       |     | ✅   |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /business/my-apps     | ✅  |      |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /business/all         | ✅  |      |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
+| /business/:id         | ✅  |      | ✅    | ✅     | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /business/:id/users   |     | ✅   |       | ✅     | ❌     | ❌             | ✅\*           | ✅             | ✅             |
+| /business/:id/clients | ✅  |      | ✅    | ✅     | ❌     | ❌             | ✅\*           | ✅             | ✅             |
+| /products             | ✅  | ✅   | ✅    | ✅     | ❌     | ✅             | ✅             | ✅             | ✅             |
+| /invoices/personal    | ✅  | ✅   | ✅    | ✅     | ❌     | ✅             | ✅             | ✅             | ✅             |
+| /invoices/company     | ✅  | ✅   | ✅    | ✅     | ❌     | ✅             | ✅             | ✅             | ✅             |
+| /chat/message         |     | ✅   |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /notifications        | ✅  |      |       |        | ✅     | ✅             | ✅             | ✅             | ✅             |
+| /audit                | ✅  |      |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
+| /email/send           |     | ✅   |       |        | ❌     | ❌             | ❌             | ✅             | ✅             |
 
 **Legend:**
 
