@@ -2347,13 +2347,11 @@ You do not have access to this business.
 
 ---
 
-## 🔔 Notifications Endpoints
+## 🔔 Real-Time Notifications
 
-### WebSocket Connection
+The API provides real-time WebSocket notifications for invoices and business events. All users automatically subscribe to relevant notification rooms based on their role.
 
-Real-time notifications via WebSocket (socket.io).
-
-**Connection URL:**
+### Quick Start
 
 ```typescript
 import { io } from 'socket.io-client';
@@ -2362,26 +2360,89 @@ const socket = io('http://localhost:3000', {
   query: { token: accessToken },
 });
 
-socket.on('notification', (data) => {
-  console.log('New notification:', data);
+socket.on('notification', (notification) => {
+  console.log('📬 New notification:', notification);
+});
+
+socket.on('connect_error', (error) => {
+  console.error('Connection failed:', error.message);
 });
 ```
 
-**Events:**
+### Notification Rooms
 
-Receive notifications in real-time:
+Users are automatically placed in:
+
+- **Personal notifications** (`client:{email}`) - For invoices issued to them
+- **Business notifications** (`business:{businessId}`) - For invoices issued to their business (admins/owners only)
+- **Platform notifications** (`admin`) - For system events (platform admins only)
+
+### Invoice Notifications
+
+When an invoice is created and issued:
+
+**Personal Invoice (Individual Client)**
 
 ```json
 {
   "id": "507f1f77bcf86cd799439015",
-  "type": "invoice.sent",
-  "message": "Invoice INV-123 was sent to Acme Corp",
-  "payload": { "invoiceId": "..." },
-  "createdAt": "2024-02-17T16:30:00.000Z"
+  "type": "INVOICE_CREATED",
+  "message": "New invoice from Tech Solutions",
+  "payload": {
+    "invoiceId": "507f1f77bcf86cd799439015",
+    "businessName": "Tech Solutions",
+    "amount": 1500.0,
+    "currency": "TND",
+    "dueDate": "2024-03-17T00:00:00.000Z"
+  },
+  "createdAt": "2024-02-17T10:00:00.000Z"
 }
 ```
 
-For complete WebSocket documentation, see [WEBSOCKET_GUIDE.md](WEBSOCKET_GUIDE.md).
+**Company Invoice (Business Client)**
+
+```json
+{
+  "id": "507f1f77bcf86cd799439016",
+  "type": "INVOICE_CREATED",
+  "message": "New invoice from Tech Solutions",
+  "payload": {
+    "invoiceId": "507f1f77bcf86cd799439016",
+    "businessName": "Tech Solutions",
+    "businessId": "507f1f77bcf86cd799439011",
+    "amount": 3500.0,
+    "currency": "TND",
+    "dueDate": "2024-03-17T00:00:00.000Z"
+  },
+  "createdAt": "2024-02-17T10:00:00.000Z"
+}
+```
+
+All admins and owners of the receiving business receive the notification simultaneously.
+
+### Integration with Email
+
+When an invoice is issued, the recipient(s) receive **both**:
+
+1. **Email notification** - Sent to email address (personal user email or business contact email)
+2. **WebSocket notification** - Real-time browser/app notification
+
+### Frontend Implementation
+
+See [WEBSOCKET_GUIDE.md](WEBSOCKET_GUIDE.md) for comprehensive implementation guide including:
+
+- React hooks
+- Next.js components
+- Multi-business dashboard
+- Error handling
+- Best practices
+
+### Connection Behavior
+
+- **Automatic room assignment** - Users join appropriate rooms on connect
+- **Reconnection handling** - Socket.IO auto-reconnects with exponential backoff
+- **Single connection** - One connection per browser/device
+- **Multi-room support** - Admins managing multiple businesses receive all notifications
 
 ---
 
