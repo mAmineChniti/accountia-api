@@ -10,7 +10,7 @@ export class BusinessUser extends Document {
   @Prop({ required: true })
   userId: string;
 
-  @Prop({ required: true, enum: BusinessUserRole })
+  @Prop({ required: true, type: String, enum: BusinessUserRole })
   role: BusinessUserRole;
 
   @Prop({ required: true })

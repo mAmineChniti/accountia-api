@@ -80,25 +80,25 @@ export class BusinessService {
 
     const savedApplication = await application.save();
 
-    // Send email notification about application submission (non-blocking)
+    // Send email notification about application submission
     const applicant = await this.userModel
       .findById(userId)
       .catch((_error) => undefined as never);
     if (applicant) {
-      void this.emailService
-        .sendBusinessApplicationEmail(
+      try {
+        await this.emailService.sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
           savedApplication.businessName
-        )
-        .catch(() => {
-          // Silently handle email failure
-        });
+        );
+      } catch {
+        // Email service handles errors internally, but catch any unexpected issues
+      }
     }
 
-    // Send real-time admin notification (non-blocking)
-    void this.notificationsService
-      .createNotification({
+    // Send real-time admin notification
+    try {
+      await this.notificationsService.createNotification({
         type: NotificationType.NEW_BUSINESS_APPLICATION,
         message: `New business application: "${savedApplication.businessName}"`,
         payload: {
@@ -106,10 +106,10 @@ export class BusinessService {
           businessName: savedApplication.businessName,
           applicantId: userId,
         },
-      })
-      .catch(() => {
-        // Silently handle notification failure
       });
+    } catch {
+      // Notification service handles errors internally
+    }
 
     return {
       message:
@@ -202,20 +202,20 @@ export class BusinessService {
         await session.endSession();
       }
 
-      // Send approval email (non-blocking)
+      // Send approval email
       const appUser = await this.userModel
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        void this.emailService
-          .sendBusinessApprovalEmail(
+        try {
+          await this.emailService.sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             approvedBusinessName
-          )
-          .catch(() => {
-            // Silently handle email failure
-          });
+          );
+        } catch {
+          // Email service handles errors internally
+        }
       }
 
       await this.auditService.logAction({
@@ -229,21 +229,21 @@ export class BusinessService {
     } else {
       await application.save();
 
-      // Send rejection email (non-blocking)
+      // Send rejection email
       const appUser = await this.userModel
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        void this.emailService
-          .sendBusinessRejectionEmail(
+        try {
+          await this.emailService.sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             application.businessName,
             reviewDto.reviewNotes ?? 'No specific reason provided'
-          )
-          .catch(() => {
-            // Silently handle email failure
-          });
+          );
+        } catch {
+          // Email service handles errors internally
+        }
       }
 
       await this.auditService.logAction({
