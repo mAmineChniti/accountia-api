@@ -28,6 +28,7 @@ import {
 } from '@/business/dto/business-response.dto';
 import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
+import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
@@ -39,6 +40,21 @@ import {
 } from '@/common/tenant/tenant.types';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const toNumberOrZero = (value: unknown): number =>
+  typeof value === 'number' ? value : 0;
+
+const toInvoiceStatus = (
+  value: unknown
+): 'paid' | 'pending' | 'overdue' | undefined => {
+  if (value === 'paid' || value === 'pending' || value === 'overdue') {
+    return value;
+  }
+  return undefined;
+};
 
 @Injectable()
 export class BusinessService {
@@ -860,6 +876,132 @@ export class BusinessService {
 
     return {
       message: 'User removed from business successfully',
+    };
+  }
+
+  async getBusinessStatistics(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<BusinessStatisticsResponseDto> {
+    // Check access
+    await this.checkBusinessAccess(businessId, userId, userRole, false);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // Connect to tenant database to fetch statistics
+    const tenantDb = this.connection.useDb(business.databaseName, {
+      useCache: true,
+    });
+
+    // Get products statistics
+    const productsCollection = tenantDb.collection('products');
+    const invoicesCollection = tenantDb.collection('invoices');
+
+    let productsStats = {
+      totalProducts: 0,
+      totalValue: 0,
+      lowStockProducts: 0,
+    };
+    let invoicesStats = {
+      totalInvoices: 0,
+      paidAmount: 0,
+      pendingAmount: 0,
+      overdueAmount: 0,
+      paidInvoices: 0,
+      pendingInvoices: 0,
+      overdueInvoices: 0,
+    };
+
+    try {
+      // Products stats
+      const products = await productsCollection.find({}).toArray();
+      if (products && products.length > 0) {
+        const safeProducts = products.filter((product) =>
+          isObjectRecord(product)
+        );
+        let totalValue = 0;
+        let lowStockProducts = 0;
+
+        for (const product of safeProducts) {
+          const unitPrice = toNumberOrZero(product.unitPrice);
+          const quantity = toNumberOrZero(product.quantity);
+          totalValue += unitPrice * quantity;
+          if (quantity < 10) {
+            lowStockProducts += 1;
+          }
+        }
+
+        productsStats = {
+          totalProducts: safeProducts.length,
+          totalValue,
+          lowStockProducts,
+        };
+      }
+
+      // Invoices stats
+      const invoices = await invoicesCollection.find({}).toArray();
+      if (invoices && invoices.length > 0) {
+        const safeInvoices = invoices.filter((invoice) =>
+          isObjectRecord(invoice)
+        );
+
+        let paidAmount = 0;
+        let pendingAmount = 0;
+        let overdueAmount = 0;
+        let paidInvoicesCount = 0;
+        let pendingInvoicesCount = 0;
+        let overdueInvoicesCount = 0;
+
+        for (const invoice of safeInvoices) {
+          const status = toInvoiceStatus(invoice.status);
+          const total = toNumberOrZero(invoice.total);
+          switch (status) {
+            case 'paid': {
+              paidAmount += total;
+              paidInvoicesCount += 1;
+              break;
+            }
+            case 'pending': {
+              pendingAmount += total;
+              pendingInvoicesCount += 1;
+              break;
+            }
+            case 'overdue': {
+              overdueAmount += total;
+              overdueInvoicesCount += 1;
+              break;
+            }
+            default: {
+              break;
+            }
+          }
+        }
+
+        invoicesStats = {
+          totalInvoices: safeInvoices.length,
+          paidAmount,
+          pendingAmount,
+          overdueAmount,
+          paidInvoices: paidInvoicesCount,
+          pendingInvoices: pendingInvoicesCount,
+          overdueInvoices: overdueInvoicesCount,
+        };
+      }
+    } catch {
+      // If collections don't exist yet, return zeros
+    }
+
+    return {
+      businessId: business._id.toString(),
+      businessName: business.name,
+      products: productsStats,
+      invoices: invoicesStats,
+      lastUpdated: new Date(),
     };
   }
 }

@@ -35,6 +35,7 @@ import {
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
 } from '@/business/dto/business-response.dto';
+import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -614,5 +615,42 @@ export class BusinessController {
     @CurrentUser() user: UserPayload
   ) {
     return this.businessService.deleteClient(id, clientId, user.id, user.role);
+  }
+
+  @Get(':id/statistics')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get business statistics',
+    description:
+      'Retrieve business statistics showing product and invoice summary. Only accessible by authorized business members.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Business statistics retrieved successfully',
+    type: BusinessStatisticsResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to access this business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getBusinessStatistics(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<BusinessStatisticsResponseDto> {
+    return this.businessService.getBusinessStatistics(id, user.id, user.role);
   }
 }
