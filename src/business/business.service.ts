@@ -442,12 +442,17 @@ export class BusinessService {
           approvedApplication.businessId
         );
         if (business) {
-          await this.businessUserModel.create({
-            businessId: approvedApplication.businessId,
-            userId,
-            role: BusinessUserRole.OWNER,
-            assignedBy: userId,
-          });
+          await this.businessUserModel.findOneAndUpdate(
+            {
+              businessId: approvedApplication.businessId,
+              userId,
+            },
+            {
+              role: BusinessUserRole.OWNER,
+              assignedBy: userId,
+            },
+            { upsert: true }
+          );
 
           businessUsers = [{ businessId: approvedApplication.businessId }];
         }
