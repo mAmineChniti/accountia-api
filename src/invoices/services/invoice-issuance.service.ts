@@ -87,6 +87,17 @@ export class InvoiceIssuanceService {
       description: item.description,
     }));
 
+    // Auto-generate invoiceNumber if not provided
+    // Format: INV-{YYYYMMDD}-{randomString}
+    // Example: INV-20250404-k7x9m2
+    let invoiceNumber = dto.invoiceNumber;
+    if (!invoiceNumber) {
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replaceAll('-', ''); // YYYYMMDD
+      const randomStr = Math.random().toString(36).slice(2, 8).toUpperCase(); // 6-char random string
+      invoiceNumber = `INV-${dateStr}-${randomStr}`;
+    }
+
     // Normalize recipient email for consistent matching
     const normalizedEmail = this.normalizeEmail(dto.recipient.email);
 
@@ -101,7 +112,7 @@ export class InvoiceIssuanceService {
     // Create invoice in draft state
     const invoice = await this.invoiceModel.create({
       issuerBusinessId: businessId,
-      invoiceNumber: dto.invoiceNumber,
+      invoiceNumber,
       recipient: {
         type: dto.recipient.type,
         platformId: dto.recipient.platformId,
@@ -111,7 +122,7 @@ export class InvoiceIssuanceService {
       },
       status: InvoiceStatus.DRAFT,
       totalAmount,
-      currency: dto.currency ?? 'USD',
+      currency: dto.currency ?? 'TND',
       amountPaid: 0,
       issuedDate: dto.issuedDate,
       dueDate: dto.dueDate,
