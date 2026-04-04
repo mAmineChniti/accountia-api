@@ -45,6 +45,28 @@ export class CompanyInvoice extends Document {
   @Prop({ type: Date })
   paidAt?: Date;
 
+  @Prop({
+    type: String,
+    enum: ['issued', 'received'],
+    default: 'issued',
+    description:
+      'Whether this invoice record is for issued or received invoices',
+  })
+  invoiceType?: 'issued' | 'received';
+
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    description:
+      'Reference to the original invoice ID if this is a received copy',
+  })
+  sourceInvoiceId?: string;
+
+  @Prop({
+    type: String,
+    description: 'Database name where the original invoice is stored',
+  })
+  sourceDatabaseName?: string;
+
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -58,3 +80,5 @@ CompanyInvoiceSchema.index({ clientBusinessId: 1 });
 CompanyInvoiceSchema.index({ businessId: 1, paid: 1 });
 CompanyInvoiceSchema.index({ businessId: 1, issuedAt: -1 });
 CompanyInvoiceSchema.index({ clientBusinessId: 1, issuedAt: -1 });
+CompanyInvoiceSchema.index({ invoiceType: 1 });
+CompanyInvoiceSchema.index({ sourceInvoiceId: 1 });
