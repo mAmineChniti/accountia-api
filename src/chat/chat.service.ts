@@ -10,8 +10,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
-import { PersonalInvoice } from '@/invoices/schemas/personal-invoice.schema';
-import { CompanyInvoice } from '@/invoices/schemas/company-invoice.schema';
+import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 
 export interface AiResponse {
   response: string;
@@ -45,10 +45,8 @@ export class ChatService {
     @InjectModel(Business.name) private businessModel: Model<Business>,
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUser>,
-    @InjectModel(PersonalInvoice.name)
-    private personalInvoiceModel: Model<PersonalInvoice>,
-    @InjectModel(CompanyInvoice.name)
-    private companyInvoiceModel: Model<CompanyInvoice>,
+    @InjectModel(Invoice.name)
+    private invoiceModel: Model<Invoice>,
     @InjectConnection() private connection: Connection
   ) {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -108,108 +106,109 @@ export class ChatService {
     // Get tenant connection for this business
     const tenantDb = this.connection.useDb(business.databaseName);
 
-    // Get invoice models for the tenant database
-    const tenantPersonalInvoiceModel = tenantDb.model(
-      PersonalInvoice.name,
-      this.personalInvoiceModel.schema
-    );
-    const tenantCompanyInvoiceModel = tenantDb.model(
-      CompanyInvoice.name,
-      this.companyInvoiceModel.schema
+    // Get invoice model for the tenant database
+    const tenantInvoiceModel = tenantDb.model(
+      Invoice.name,
+      this.invoiceModel.schema
     );
 
-    // Fetch all invoices for aggregation - cast to proper invoice types
-    const personalInvoices = (await tenantPersonalInvoiceModel
-      .find()
+    // Fetch all invoices issued by this business for analysis
+    const invoices = (await tenantInvoiceModel
+      .find({ issuerBusinessId: businessId })
       .lean()
-      .exec()) as Array<PersonalInvoice & { _id: unknown; __v?: number }>;
-    const companyInvoices = (await tenantCompanyInvoiceModel
-      .find()
-      .lean()
-      .exec()) as Array<CompanyInvoice & { _id: unknown; __v?: number }>;
-
-    // Combine all invoices with common properties
-    const allInvoices = [...personalInvoices, ...companyInvoices] as Array<
-      PersonalInvoice | CompanyInvoice
-    >;
+      .exec()) as Array<Invoice & { _id: unknown; __v?: number }>;
 
     // Calculate statistics
-    const totalInvoices = allInvoices.length;
-    const paidInvoices = allInvoices.filter((inv) => inv.paid).length;
-    const pendingInvoices = allInvoices.filter((inv) => !inv.paid).length;
+    const totalInvoices = invoices.length;
+    const paidInvoices = invoices.filter(
+      (inv) => inv.status === InvoiceStatus.PAID
+    ).length;
+    const pendingInvoices = invoices.filter(
+      (inv) =>
+        inv.status === InvoiceStatus.ISSUED ||
+        inv.status === InvoiceStatus.DRAFT ||
+        inv.status === InvoiceStatus.PARTIAL
+    ).length;
 
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     // Calculate overdue invoices (not paid and issued more than 30 days ago)
-    const overdueInvoices = allInvoices.filter(
-      (inv) => !inv.paid && new Date(inv.issuedAt) < thirtyDaysAgo
+    const overdueInvoices = invoices.filter(
+      (inv) =>
+        (inv.status === InvoiceStatus.ISSUED ||
+          inv.status === InvoiceStatus.OVERDUE) &&
+        new Date(inv.issuedDate) < thirtyDaysAgo
     ).length;
 
     // Calculate overdue amount
-    const overdueAmount = allInvoices
-      .filter((inv) => !inv.paid && new Date(inv.issuedAt) < thirtyDaysAgo)
-      .reduce((sum, inv) => sum + (inv.amount || 0), 0);
-
-    // Calculate total revenue (paid invoices)
-    const totalRevenue = allInvoices
-      .filter((inv) => inv.paid)
-      .reduce((sum, inv) => sum + (inv.amount || 0), 0);
-
-    // Calculate monthly revenue (paid invoices in last 30 days)
-    const monthlyRevenue = allInvoices
+    const overdueAmount = invoices
       .filter(
         (inv) =>
-          inv.paid &&
-          (inv.paidAt ? new Date(inv.paidAt) >= thirtyDaysAgo : false)
+          (inv.status === InvoiceStatus.ISSUED ||
+            inv.status === InvoiceStatus.OVERDUE) &&
+          new Date(inv.issuedDate) < thirtyDaysAgo
       )
-      .reduce((sum, inv) => sum + (inv.amount || 0), 0);
+      .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+    // Calculate total revenue (fully paid invoices)
+    const totalRevenue = invoices
+      .filter((inv) => inv.status === InvoiceStatus.PAID)
+      .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+    // Calculate monthly revenue (invoices paid in last 30 days)
+    const monthlyRevenue = invoices
+      .filter(
+        (inv) =>
+          inv.status === InvoiceStatus.PAID &&
+          inv.paymentDates?.some((date) => new Date(date) >= thirtyDaysAgo)
+      )
+      .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
     // Calculate revenue growth (compare last 30 days with previous 30 days)
     const previousThirtyDaysStart = new Date(
       thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000
     );
-    const previousMonthRevenue = allInvoices
+    const previousMonthRevenue = invoices
       .filter(
         (inv) =>
-          inv.paid &&
-          inv.paidAt &&
-          new Date(inv.paidAt) >= previousThirtyDaysStart &&
-          new Date(inv.paidAt) < thirtyDaysAgo
+          inv.status === InvoiceStatus.PAID &&
+          inv.paymentDates?.some(
+            (date) =>
+              new Date(date) >= previousThirtyDaysStart &&
+              new Date(date) < thirtyDaysAgo
+          )
       )
-      .reduce((sum, inv) => sum + (inv.amount || 0), 0);
+      .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
     const revenueGrowth =
       previousMonthRevenue > 0
         ? ((monthlyRevenue - previousMonthRevenue) / previousMonthRevenue) * 100
         : 0;
 
-    // Count unique clients
-    const uniqueClientUserIds = new Set<string>();
-    const uniqueClientBusinessIds = new Set<string>();
+    // Count unique recipients (both platform businesses and external contacts)
+    const uniqueRecipientIds = new Set<string>();
 
-    for (const inv of personalInvoices) {
-      if (inv.clientUserId) {
-        uniqueClientUserIds.add(inv.clientUserId);
+    for (const inv of invoices) {
+      if (inv.recipient?.platformId) {
+        uniqueRecipientIds.add(inv.recipient.platformId);
+      } else if (inv.recipient?.email) {
+        uniqueRecipientIds.add(inv.recipient.email);
       }
     }
 
-    for (const inv of companyInvoices) {
-      if (inv.clientBusinessId) {
-        uniqueClientBusinessIds.add(inv.clientBusinessId);
-      }
-    }
-
-    const clientCount = uniqueClientUserIds.size + uniqueClientBusinessIds.size;
+    const clientCount = uniqueRecipientIds.size;
 
     // Calculate average payment delay
-    const paidWithDelay = allInvoices
-      .filter((inv) => inv.paid && inv.paidAt)
-      .map((inv) => {
-        const issued = new Date(inv.issuedAt);
-        const paid = new Date(inv.paidAt!);
-        return (paid.getTime() - issued.getTime()) / (24 * 60 * 60 * 1000);
-      });
+    const paidWithDelay = invoices
+      .filter((inv) => inv.status === InvoiceStatus.PAID && inv.paymentDates)
+      .flatMap((inv) =>
+        (inv.paymentDates ?? []).map((paymentDate) => {
+          const issued = new Date(inv.issuedDate);
+          const paid = new Date(paymentDate);
+          return (paid.getTime() - issued.getTime()) / (24 * 60 * 60 * 1000);
+        })
+      );
 
     const averagePaymentDelay =
       paidWithDelay.length > 0
