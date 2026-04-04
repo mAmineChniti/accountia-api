@@ -9,6 +9,8 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,10 +23,13 @@ import {
   ApiParam,
   ApiQuery,
   ApiBearerAuth,
+  ApiConsumes,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   InvoiceIssuanceService,
   InvoiceReceiptService,
+  InvoiceImportService,
 } from '@/invoices/services';
 import {
   CreateInvoiceDto,
@@ -34,6 +39,10 @@ import {
   InvoiceListResponseDto,
   InvoiceReceiptListResponseDto,
 } from '@/invoices/dto/invoice.dto';
+import {
+  BulkImportInvoicesResponseDto,
+  ImportTemplateResponseDto,
+} from '@/invoices/dto/invoice-import.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -52,7 +61,8 @@ import type { UserPayload } from '@/auth/types/auth.types';
 export class InvoicesController {
   constructor(
     private readonly issuanceService: InvoiceIssuanceService,
-    private readonly receiptService: InvoiceReceiptService
+    private readonly receiptService: InvoiceReceiptService,
+    private readonly importService: InvoiceImportService
   ) {}
 
   /**
@@ -372,6 +382,65 @@ export class InvoicesController {
       undefined,
       user.id,
       user.email
+    );
+  }
+
+  /**
+   * ============================================
+   * IMPORT ENDPOINTS (Bulk Operations)
+   * ============================================
+   * Import invoices in bulk from CSV or Excel files
+   */
+
+  @Post('import/template')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Get import template and example',
+    description:
+      'Retrieve a CSV/Excel template and example format for bulk importing invoices',
+  })
+  @ApiOkResponse({
+    description: 'Import template with examples and column definitions',
+    type: ImportTemplateResponseDto,
+  })
+  getImportTemplate(): ImportTemplateResponseDto {
+    return this.importService.getImportTemplate();
+  }
+
+  @Post('import')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('file'))
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Bulk import invoices from CSV or Excel file',
+    description:
+      'Import multiple invoices at once from a CSV or XLSX file. ' +
+      'Each row represents one invoice. Supports multiple recipient types and line item formats. ' +
+      'Use GET /invoices/import/template to get the required format.',
+  })
+  @ApiOkResponse({
+    description: 'Import completed with detailed results',
+    type: BulkImportInvoicesResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid file format or structure',
+  })
+  async importInvoicesFromFile(
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<BulkImportInvoicesResponseDto> {
+    if (!file) {
+      throw new Error('File is required');
+    }
+    return await this.importService.importInvoicesFromFile(
+      file,
+      tenant.businessId,
+      tenant.databaseName,
+      user.id
     );
   }
 }
