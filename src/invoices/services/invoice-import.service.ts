@@ -188,7 +188,10 @@ export class InvoiceImportService {
       const worksheet = workbook.Sheets[sheetName];
 
       // Convert to JSON
-      const records = XLSX.utils.sheet_to_json(worksheet);
+      const records = XLSX.utils.sheet_to_json(worksheet) as Record<
+        string,
+        unknown
+      >[];
 
       this.logger.debug(
         `Parsed ${records.length} records from Excel sheet "${sheetName}"`
