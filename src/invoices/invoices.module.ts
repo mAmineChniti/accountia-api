@@ -1,15 +1,16 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { InvoicesService } from './invoices.service';
+import {
+  InvoiceIssuanceService,
+  InvoiceReceiptService,
+  RecipientResolutionService,
+} from './services';
 import { InvoicesController } from './invoices.controller';
+import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
 import {
-  PersonalInvoice,
-  PersonalInvoiceSchema,
-} from '@/invoices/schemas/personal-invoice.schema';
-import {
-  CompanyInvoice,
-  CompanyInvoiceSchema,
-} from '@/invoices/schemas/company-invoice.schema';
+  InvoiceReceipt,
+  InvoiceReceiptSchema,
+} from '@/invoices/schemas/invoice-receipt.schema';
 import { Product, ProductSchema } from '@/products/schemas/product.schema';
 import { Business, BusinessSchema } from '@/business/schemas/business.schema';
 import {
@@ -28,8 +29,8 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     EmailModule,
     NotificationsModule,
     MongooseModule.forFeature([
-      { name: PersonalInvoice.name, schema: PersonalInvoiceSchema },
-      { name: CompanyInvoice.name, schema: CompanyInvoiceSchema },
+      { name: Invoice.name, schema: InvoiceSchema },
+      { name: InvoiceReceipt.name, schema: InvoiceReceiptSchema },
       { name: Product.name, schema: ProductSchema },
       { name: Business.name, schema: BusinessSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
@@ -37,12 +38,14 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     ]),
   ],
   providers: [
-    InvoicesService,
+    InvoiceIssuanceService,
+    InvoiceReceiptService,
+    RecipientResolutionService,
     TenantConnectionService,
     TenantContextService,
     TenantContextGuard,
   ],
   controllers: [InvoicesController],
-  exports: [InvoicesService],
+  exports: [InvoiceIssuanceService, InvoiceReceiptService],
 })
 export class InvoicesModule {}
