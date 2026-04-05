@@ -57,10 +57,6 @@ export class InvoiceImportService {
     const results: ImportedInvoiceResultDto[] = [];
 
     try {
-      if (!file) {
-        throw new BadRequestException('No file provided');
-      }
-
       // Determine file type and parse
       const records = this.parseFile(file);
 
@@ -177,7 +173,7 @@ export class InvoiceImportService {
    */
   private parseExcel(buffer: Buffer): Record<string, unknown>[] {
     try {
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
 
       if (workbook.SheetNames.length === 0) {
         throw new BadRequestException('Excel file contains no sheets');
@@ -418,34 +414,41 @@ export class InvoiceImportService {
       }
     }
 
-    // Try comma-separated format
+    // Try multi-delimited format (supports both pipe and comma)
     if (record.productIds && record.quantities && record.unitPrices) {
-      const productIds = String((record.productIds as string) ?? '')
-        .split(',')
-        .map((x) => x.trim());
+      // Helper function to split on either pipe or comma delimiter
+      const smartSplit = (value: string): string[] => {
+        // Split on either pipe or comma, trim whitespace
+        return value
+          .split(/[,|]/)
+          .map((x) => x.trim())
+          .filter((x) => x.length > 0);
+      };
+
+      const productIds = smartSplit(
+        String((record.productIds as string) ?? '')
+      );
       const productNames = record.productNames
-        ? String((record.productNames as string) ?? '')
-            .split(',')
-            .map((x) => x.trim())
+        ? smartSplit(String((record.productNames as string) ?? ''))
         : productIds; // Default to IDs if names not provided
-      const quantities = String((record.quantities as string) ?? '')
-        .split(',')
-        .map((x) => {
-          const num = Number(x.trim());
-          if (Number.isNaN(num) || num < 0) {
-            throw new Error(`Row ${rowNumber}: Invalid quantity "${x}"`);
-          }
-          return num;
-        });
-      const unitPrices = String((record.unitPrices as string) ?? '')
-        .split(',')
-        .map((x) => {
-          const num = Number(x.trim());
-          if (Number.isNaN(num) || num < 0) {
-            throw new Error(`Row ${rowNumber}: Invalid unitPrice "${x}"`);
-          }
-          return num;
-        });
+      const quantities = smartSplit(
+        String((record.quantities as string) ?? '')
+      ).map((x) => {
+        const num = Number(x);
+        if (Number.isNaN(num) || num < 0) {
+          throw new Error(`Row ${rowNumber}: Invalid quantity "${x}"`);
+        }
+        return num;
+      });
+      const unitPrices = smartSplit(
+        String((record.unitPrices as string) ?? '')
+      ).map((x) => {
+        const num = Number(x);
+        if (Number.isNaN(num) || num < 0) {
+          throw new Error(`Row ${rowNumber}: Invalid unitPrice "${x}"`);
+        }
+        return num;
+      });
 
       // Validate array lengths match
       const maxLen = Math.max(
@@ -536,8 +539,10 @@ export class InvoiceImportService {
     if (dateValue instanceof Date) {
       date = dateValue;
     } else if (typeof dateValue === 'number') {
-      // Excel serial number
-      date = this.excelDateToJSDate(dateValue);
+      // With cellDates: true, numbers should not appear - they should be Date objects
+      throw new TypeError(
+        `Row ${rowNumber}: Invalid ${fieldName} format. Expected a date object or ISO string`
+      );
     } else if (typeof dateValue === 'string') {
       // Try to parse string
       date = new Date(dateValue);
@@ -559,24 +564,12 @@ export class InvoiceImportService {
   }
 
   /**
-   * Convert Excel serial date to JavaScript Date
-   * Excel stores dates as days since 1899-12-30
-   */
-  private excelDateToJSDate(excelDate: number): Date {
-    const excelEpoch = new Date(1899, 11, 30);
-    const jsDate = new Date(
-      excelEpoch.getTime() + excelDate * 24 * 60 * 60 * 1000
-    );
-    return jsDate;
-  }
-
-  /**
    * Get import template example
    */
   getImportTemplate(): {
     csvExample: string;
     csvColumns: string[];
-    recipientTypes: string[];
+    recipientTypes: InvoiceRecipientType[];
     notes: string;
   } {
     const csvColumns = [

@@ -11,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -392,7 +393,7 @@ export class InvoicesController {
    * Import invoices in bulk from CSV or Excel files
    */
 
-  @Post('import/template')
+  @Get('import/template')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
@@ -411,7 +412,27 @@ export class InvoicesController {
   @Post('import')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+        if (allowedMimes.includes(file.mimetype)) {
+          // eslint-disable-next-line unicorn/no-null
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException('Only CSV and XLSX files are allowed'),
+            false
+          );
+        }
+      },
+    })
+  )
   @HttpCode(HttpStatus.OK)
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -434,7 +455,7 @@ export class InvoicesController {
     @CurrentUser() user: UserPayload
   ): Promise<BulkImportInvoicesResponseDto> {
     if (!file) {
-      throw new Error('File is required');
+      throw new BadRequestException('File is required');
     }
     return await this.importService.importInvoicesFromFile(
       file,

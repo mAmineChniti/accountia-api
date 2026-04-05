@@ -118,7 +118,7 @@ export class Invoice extends Document {
    * Unique invoice number within the issuer's business
    * Auto-generated in format INV-{YYYYMMDD}-{randomString} if not provided
    */
-  @Prop()
+  @Prop({ required: true })
   invoiceNumber!: string;
 
   /**
