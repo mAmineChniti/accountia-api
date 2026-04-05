@@ -40,6 +40,7 @@ import {
 } from '@/common/tenant/tenant.types';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -50,10 +51,61 @@ const toNumberOrZero = (value: unknown): number =>
 const toInvoiceStatus = (
   value: unknown
 ): 'paid' | 'pending' | 'overdue' | undefined => {
-  if (value === 'paid' || value === 'pending' || value === 'overdue') {
-    return value;
+  if (typeof value !== 'string') {
+    return undefined;
   }
+
+  const normalized = value.trim().toUpperCase();
+  const invoiceStatusMap: Partial<
+    Record<InvoiceStatus, 'paid' | 'pending' | 'overdue'>
+  > = {
+    [InvoiceStatus.PAID]: 'paid',
+    [InvoiceStatus.OVERDUE]: 'overdue',
+    [InvoiceStatus.DRAFT]: 'pending',
+    [InvoiceStatus.ISSUED]: 'pending',
+    [InvoiceStatus.VIEWED]: 'pending',
+    [InvoiceStatus.PARTIAL]: 'pending',
+  };
+
+  const mappedEnumStatus = invoiceStatusMap[normalized as InvoiceStatus];
+  if (mappedEnumStatus) {
+    return mappedEnumStatus;
+  }
+
+  if (normalized === 'PENDING') {
+    return 'pending';
+  }
+
   return undefined;
+};
+
+const isMissingCollectionError = (error: unknown): boolean => {
+  if (!isObjectRecord(error)) {
+    return false;
+  }
+
+  const code = error.code;
+  const codeName = error.codeName;
+  const name = error.name;
+  const message = error.message;
+
+  const isNamespaceCode = code === 26;
+  const isNamespaceCodeName =
+    typeof codeName === 'string' &&
+    codeName.toUpperCase() === 'NAMESPACENOTFOUND';
+  const isNamespaceName =
+    typeof name === 'string' &&
+    name.toUpperCase().includes('NAMESPACENOTFOUND');
+  const isNamespaceMessage =
+    typeof message === 'string' &&
+    message.toUpperCase().includes('NAMESPACE NOT FOUND');
+
+  return (
+    isNamespaceCode ||
+    isNamespaceCodeName ||
+    isNamespaceName ||
+    isNamespaceMessage
+  );
 };
 
 @Injectable()
@@ -917,83 +969,161 @@ export class BusinessService {
       overdueInvoices: 0,
     };
 
+    const paidStatus = toInvoiceStatus(InvoiceStatus.PAID);
+    const pendingStatus = toInvoiceStatus('PENDING');
+    const overdueStatus = toInvoiceStatus(InvoiceStatus.OVERDUE);
+
+    const paidLabelUpper = (paidStatus ?? 'paid').toUpperCase();
+    const pendingLabelUpper = (pendingStatus ?? 'pending').toUpperCase();
+    const overdueLabelUpper = (overdueStatus ?? 'overdue').toUpperCase();
+
+    const pendingStatusVariants = [
+      pendingLabelUpper,
+      InvoiceStatus.DRAFT,
+      InvoiceStatus.ISSUED,
+      InvoiceStatus.VIEWED,
+      InvoiceStatus.PARTIAL,
+    ];
+
     try {
-      // Products stats
-      const products = await productsCollection.find({}).toArray();
-      if (products && products.length > 0) {
-        const safeProducts = products.filter((product) =>
-          isObjectRecord(product)
-        );
-        let totalValue = 0;
-        let lowStockProducts = 0;
+      const [productsAggregation] = await productsCollection
+        .aggregate<{
+          totalProducts: number;
+          totalValue: number;
+          lowStockProducts: number;
+        }>([
+          {
+            $group: {
+              _id: '_all',
+              totalProducts: { $sum: 1 },
+              totalValue: {
+                $sum: {
+                  $multiply: [
+                    { $ifNull: ['$unitPrice', 0] },
+                    { $ifNull: ['$quantity', 0] },
+                  ],
+                },
+              },
+              lowStockProducts: {
+                $sum: {
+                  $cond: [{ $lt: [{ $ifNull: ['$quantity', 0] }, 10] }, 1, 0],
+                },
+              },
+            },
+          },
+        ])
+        .toArray();
 
-        for (const product of safeProducts) {
-          const unitPrice = toNumberOrZero(product.unitPrice);
-          const quantity = toNumberOrZero(product.quantity);
-          totalValue += unitPrice * quantity;
-          if (quantity < 10) {
-            lowStockProducts += 1;
-          }
-        }
-
+      if (productsAggregation) {
         productsStats = {
-          totalProducts: safeProducts.length,
-          totalValue,
-          lowStockProducts,
+          totalProducts: toNumberOrZero(productsAggregation.totalProducts),
+          totalValue: toNumberOrZero(productsAggregation.totalValue),
+          lowStockProducts: toNumberOrZero(
+            productsAggregation.lowStockProducts
+          ),
         };
       }
 
-      // Invoices stats
-      const invoices = await invoicesCollection.find({}).toArray();
-      if (invoices && invoices.length > 0) {
-        const safeInvoices = invoices.filter((invoice) =>
-          isObjectRecord(invoice)
-        );
+      const [invoicesAggregation] = await invoicesCollection
+        .aggregate<{
+          totalInvoices: number;
+          paidAmount: number;
+          pendingAmount: number;
+          overdueAmount: number;
+          paidInvoices: number;
+          pendingInvoices: number;
+          overdueInvoices: number;
+        }>([
+          {
+            $addFields: {
+              normalizedStatus: {
+                $toUpper: { $ifNull: ['$status', ''] },
+              },
+              normalizedTotalAmount: {
+                $ifNull: ['$totalAmount', 0],
+              },
+            },
+          },
+          {
+            $group: {
+              _id: '_all',
+              totalInvoices: { $sum: 1 },
+              paidAmount: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$normalizedStatus', paidLabelUpper] },
+                    '$normalizedTotalAmount',
+                    0,
+                  ],
+                },
+              },
+              pendingAmount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $in: ['$normalizedStatus', pendingStatusVariants],
+                    },
+                    '$normalizedTotalAmount',
+                    0,
+                  ],
+                },
+              },
+              overdueAmount: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$normalizedStatus', overdueLabelUpper] },
+                    '$normalizedTotalAmount',
+                    0,
+                  ],
+                },
+              },
+              paidInvoices: {
+                $sum: {
+                  $cond: [{ $eq: ['$normalizedStatus', paidLabelUpper] }, 1, 0],
+                },
+              },
+              pendingInvoices: {
+                $sum: {
+                  $cond: [
+                    {
+                      $in: ['$normalizedStatus', pendingStatusVariants],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              overdueInvoices: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$normalizedStatus', overdueLabelUpper] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ])
+        .toArray();
 
-        let paidAmount = 0;
-        let pendingAmount = 0;
-        let overdueAmount = 0;
-        let paidInvoicesCount = 0;
-        let pendingInvoicesCount = 0;
-        let overdueInvoicesCount = 0;
-
-        for (const invoice of safeInvoices) {
-          const status = toInvoiceStatus(invoice.status);
-          const total = toNumberOrZero(invoice.total);
-          switch (status) {
-            case 'paid': {
-              paidAmount += total;
-              paidInvoicesCount += 1;
-              break;
-            }
-            case 'pending': {
-              pendingAmount += total;
-              pendingInvoicesCount += 1;
-              break;
-            }
-            case 'overdue': {
-              overdueAmount += total;
-              overdueInvoicesCount += 1;
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-        }
-
+      if (invoicesAggregation) {
         invoicesStats = {
-          totalInvoices: safeInvoices.length,
-          paidAmount,
-          pendingAmount,
-          overdueAmount,
-          paidInvoices: paidInvoicesCount,
-          pendingInvoices: pendingInvoicesCount,
-          overdueInvoices: overdueInvoicesCount,
+          totalInvoices: toNumberOrZero(invoicesAggregation.totalInvoices),
+          paidAmount: toNumberOrZero(invoicesAggregation.paidAmount),
+          pendingAmount: toNumberOrZero(invoicesAggregation.pendingAmount),
+          overdueAmount: toNumberOrZero(invoicesAggregation.overdueAmount),
+          paidInvoices: toNumberOrZero(invoicesAggregation.paidInvoices),
+          pendingInvoices: toNumberOrZero(invoicesAggregation.pendingInvoices),
+          overdueInvoices: toNumberOrZero(invoicesAggregation.overdueInvoices),
         };
       }
-    } catch {
-      // If collections don't exist yet, return zeros
+    } catch (error) {
+      if (!isMissingCollectionError(error)) {
+        console.error('Business statistics query failed', error);
+        throw error;
+      }
+      // Missing collections are treated as empty statistics.
     }
 
     return {
