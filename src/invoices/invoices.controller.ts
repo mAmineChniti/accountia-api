@@ -25,6 +25,7 @@ import {
   ApiQuery,
   ApiBearerAuth,
   ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -80,7 +81,12 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Create a new invoice (draft)',
     description:
-      'Create a new invoice in DRAFT state. Invoice becomes visible to recipient when transitioned to ISSUED.',
+      'Create a new invoice in DRAFT state. Invoice becomes visible to recipient when transitioned to ISSUED. Include businessId in the request body to resolve tenant context.',
+  })
+  @ApiBody({
+    description:
+      'Create invoice payload with businessId to resolve tenant context.',
+    type: CreateInvoiceDto,
   })
   @ApiCreatedResponse({
     description: 'Invoice created successfully',
@@ -107,7 +113,8 @@ export class InvoicesController {
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
     summary: 'List invoices issued by this business',
-    description: 'Retrieve all invoices created and managed by this business',
+    description:
+      'Retrieve all invoices created and managed by this business. Provide businessId in the request body to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'List of issued invoices',
@@ -149,6 +156,8 @@ export class InvoicesController {
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
     summary: 'Get a specific invoice issued by this business',
+    description:
+      'Retrieve a specific invoice. Include businessId in the request body to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'Invoice details',
@@ -179,7 +188,7 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Update a draft invoice',
     description:
-      'Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead.',
+      'Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead. Include businessId in the request body to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'Invoice updated',
@@ -187,6 +196,11 @@ export class InvoicesController {
   })
   @ApiBadRequestResponse({
     description: 'Cannot update non-draft invoice',
+  })
+  @ApiBody({
+    description:
+      'Draft invoice update payload with businessId to resolve tenant context.',
+    type: UpdateInvoiceDto,
   })
   @ApiParam({
     name: 'id',
@@ -212,7 +226,7 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Transition invoice to a new state',
     description:
-      'Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed.',
+      'Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed. Include businessId in the request body to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'Invoice state transitioned',
@@ -220,6 +234,11 @@ export class InvoicesController {
   })
   @ApiBadRequestResponse({
     description: 'Invalid state transition',
+  })
+  @ApiBody({
+    description:
+      'Invoice state transition payload with businessId to resolve tenant context.',
+    type: TransitionInvoiceStateDto,
   })
   @ApiParam({
     name: 'id',
@@ -251,7 +270,8 @@ export class InvoicesController {
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiOperation({
     summary: 'Get invoices received by this business',
-    description: 'Retrieve all invoices issued to your business by any issuer',
+    description:
+      'Retrieve all invoices issued to your business by any issuer. Provide businessId in the request body to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'List of received invoices',
@@ -330,7 +350,7 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Get full invoice details (business recipient)',
     description:
-      "Fetch the authoritative invoice document from the issuer's database",
+      "Fetch the authoritative invoice document from the issuer's database. Include businessId in the request body to resolve tenant context.",
   })
   @ApiOkResponse({
     description: 'Full invoice details',

@@ -27,6 +27,7 @@ import {
   ApiQuery,
   ApiBearerAuth,
   ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -58,7 +59,13 @@ export class ProductsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create a new product',
-    description: 'Create a new product for the current business',
+    description:
+      'Create a new product for the current business. Set the active business using businessId in the request body.',
+  })
+  @ApiBody({
+    description:
+      'Product payload with businessId to resolve current tenant context.',
+    type: CreateProductDto,
   })
   @ApiCreatedResponse({
     description: 'Product created successfully',
@@ -78,7 +85,8 @@ export class ProductsController {
   @Get()
   @ApiOperation({
     summary: 'Get all products for the business',
-    description: 'Retrieve paginated list of products for the current business',
+    description:
+      'Retrieve paginated list of products for the current business. Include businessId in the request body to set the current business context.',
   })
   @ApiOkResponse({
     description: 'Products retrieved successfully',
@@ -123,7 +131,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Get a product by ID',
     description:
-      'Get a specific product by ID (must belong to current business)',
+      'Get a specific product by ID (must belong to current business). Include businessId in the request body to set the current business context.',
   })
   @ApiOkResponse({
     description: 'Product retrieved successfully',
@@ -148,7 +156,13 @@ export class ProductsController {
   @Patch(':id')
   @ApiOperation({
     summary: 'Update a product',
-    description: 'Update a product (must belong to current business)',
+    description:
+      'Update a product (must belong to current business). Include businessId in the request body to set the current business context.',
+  })
+  @ApiBody({
+    description:
+      'Product update payload with businessId to resolve current tenant context.',
+    type: UpdateProductDto,
   })
   @ApiOkResponse({
     description: 'Product updated successfully',
@@ -176,7 +190,8 @@ export class ProductsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary: 'Delete a product',
-    description: 'Delete a product (must belong to current business)',
+    description:
+      'Delete a product (must belong to current business). Include businessId in the request body to set the current business context.',
   })
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiForbiddenResponse({
@@ -201,7 +216,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Import products from CSV or Excel',
     description:
-      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity',
+      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. Include businessId in the request body to set the current business context.',
   })
   @ApiCreatedResponse({
     description: 'Products imported successfully',
