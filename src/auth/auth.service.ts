@@ -705,7 +705,7 @@ export class AuthService {
             emailTokenGeneratedAt: '',
           },
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!result) {
