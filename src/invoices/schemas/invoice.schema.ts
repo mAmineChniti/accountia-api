@@ -116,6 +116,7 @@ export class Invoice extends Document {
 
   /**
    * Unique invoice number within the issuer's business
+   * Auto-generated in format INV-{YYYYMMDD}-{randomString} if not provided
    */
   @Prop({ required: true })
   invoiceNumber!: string;
@@ -144,7 +145,7 @@ export class Invoice extends Document {
   @Prop({ required: true, type: Number })
   totalAmount!: number;
 
-  @Prop({ required: true, type: String, default: 'USD' })
+  @Prop({ required: true, type: String, default: 'TND' })
   currency!: string;
 
   /**
