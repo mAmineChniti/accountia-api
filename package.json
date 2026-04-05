@@ -8,7 +8,7 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write .",
-    "lint": "eslint --fix .",
+    "lint": "eslint --fix . --max-warnings=0",
     "format:check": "prettier --check .",
     "lint:check": "eslint . --max-warnings=0",
     "start": "nest start",
