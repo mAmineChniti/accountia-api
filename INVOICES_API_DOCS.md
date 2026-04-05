@@ -75,6 +75,8 @@ These endpoints allow the business that issued an invoice to manage it.
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`  
 **Required Roles:** `OWNER`, `ADMIN`
 
+**Tenant Context:** `TenantContextGuard` reads `businessId` from the request body. Include `businessId` for protected invoice routes.
+
 ---
 
 ### 1. Create Invoice (Draft)
@@ -89,6 +91,7 @@ POST /invoices
 
 ```json
 {
+  "businessId": "biz-123",
   "invoiceNumber": "INV-2025-001",
   "issuedDate": "2025-04-04T00:00:00Z",
   "dueDate": "2025-05-04T00:00:00Z",
@@ -319,6 +322,7 @@ PATCH /invoices/issued/:id
 
 ```json
 {
+  "businessId": "biz-123",
   "description": "Updated description",
   "paymentTerms": "NET 45",
   "dueDate": "2025-05-19T00:00:00Z"
@@ -386,6 +390,7 @@ POST /invoices/issued/:id/transition
 
 ```json
 {
+  "businessId": "biz-123",
   "newStatus": "ISSUED",
   "reason": "Published to customer"
 }
@@ -395,6 +400,7 @@ POST /invoices/issued/:id/transition
 
 ```json
 {
+  "businessId": "biz-123",
   "newStatus": "PAID",
   "amountPaid": 2000.0,
   "reason": "Payment received via bank transfer"
@@ -461,6 +467,8 @@ GET /invoices/received/business?status=ISSUED&page=1&limit=10
 **Description:** Retrieve all invoices received by the current business from any issuer.
 
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected recipient invoice routes.
 
 **Query Parameters:**
 | Parameter | Type | Required | Description |
@@ -563,6 +571,8 @@ GET /invoices/received/:receiptId/details
 **Description:** Fetch the full authoritative invoice document from the issuer's database (for business recipients).
 
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected recipient invoice routes.
 
 **Path Parameters:**
 | Parameter | Type | Description |

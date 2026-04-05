@@ -34,29 +34,15 @@ Content-Type: application/json
 
 ## Multi-Tenancy & Business Context
 
-This API uses a **multi-tenant architecture** where resources are scoped to specific businesses. When working with business-specific routes, you must provide the business context:
+This API uses a **multi-tenant architecture** where resources are scoped to specific businesses. For routes protected by `TenantContextGuard`, the business context must be supplied as `businessId` in the request body.
 
 ### Providing Business Context
 
-**Option 1: Route Parameter** (when available)
+- `businessId` in the request body is required for `TenantContextGuard`-protected routes.
+- The previous `X-Business-ID` header, route parameter, and query string options are not used by `TenantContextGuard` for tenant resolution.
+- If `businessId` is not provided in the body, the request will be rejected with a **400 Bad Request** error.
 
-```http
-GET /business/:id/clients    # businessId in the path
-```
-
-**Option 2: Header** (for consolidated routes)
-
-```http
-GET /chat
-X-Business-ID: 507f1f77bcf86cd799439011
-```
-
-The tenant context comes from:
-
-1. Route parameter (e.g., `:id` in `/business/:id`)
-2. `X-Business-ID` header for routes without a business ID parameter
-
-If neither is provided, the request will be rejected with a **400 Bad Request** error.
+> Note: explicit route IDs may still be present in some URLs, but tenant resolution for guarded operations is determined from `body.businessId`.
 
 ---
 
@@ -1510,8 +1496,9 @@ Create a new product.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **Required Roles:** Business Owner, Admin
 
@@ -1519,6 +1506,7 @@ X-Business-ID: 507f1f77bcf86cd799439011
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "name": "Web Development Service",
   "description": "Professional web development and design",
   "unitPrice": 150.0,
@@ -1561,8 +1549,10 @@ Get all products for the business.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **Query Parameters:**
 
@@ -1606,8 +1596,10 @@ Get product by ID.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **URL Parameters:**
 
@@ -1649,8 +1641,9 @@ Update product.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **URL Parameters:**
 
@@ -1700,8 +1693,10 @@ Delete product.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **URL Parameters:**
 
@@ -1737,8 +1732,9 @@ Import products from CSV file.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: multipart/form-data
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` as a form field for tenant-protected product import routes.
 
 **Form Data:**
 
@@ -1779,8 +1775,9 @@ Create a personal invoice.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Required Roles:** Business Owner, Admin
 
@@ -1788,6 +1785,7 @@ X-Business-ID: 507f1f77bcf86cd799439011
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "clientUserId": "507f1f77bcf86cd799439012",
   "lineItems": [
     {
@@ -1836,8 +1834,10 @@ Get all personal invoices issued by the business.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Query Parameters:**
 
@@ -1885,8 +1885,10 @@ Get personal invoice by ID.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **URL Parameters:**
 
@@ -1938,8 +1940,9 @@ Update personal invoice.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **URL Parameters:**
 
@@ -1949,6 +1952,7 @@ X-Business-ID: 507f1f77bcf86cd799439011
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "dueDate": "2024-03-30T00:00:00.000Z",
   "lineItems": [...],
   "paid": true,
@@ -1983,8 +1987,10 @@ Delete personal invoice (soft delete/archive).
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **URL Parameters:**
 
@@ -2020,13 +2026,15 @@ Create a company invoice.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Request Body:**
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "clientBusinessId": "507f1f77bcf86cd799439013",
   "clientCompanyName": "Acme Corporation",
   "clientContactEmail": "billing@acme.com",
@@ -2077,8 +2085,10 @@ Get all company invoices issued by the business.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Query Parameters:**
 
@@ -2124,8 +2134,10 @@ Get company invoice by ID.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Responses:**
 
@@ -2166,13 +2178,15 @@ Update company invoice.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Request Body:**
 
 ```json
 {
+  "businessId": "507f1f77bcf86cd799439011",
   "clientCompanyName": "Updated Company Name",
   "dueDate": "2024-03-30T00:00:00.000Z",
   "paid": true
@@ -2206,8 +2220,10 @@ Delete company invoice.
 
 ```http
 Authorization: Bearer <access_token>
-X-Business-ID: 507f1f77bcf86cd799439011
+Content-Type: application/json
 ```
+
+**Tenant Context:** Include `businessId` in the request body for tenant-protected invoice routes.
 
 **Responses:**
 
@@ -2239,8 +2255,9 @@ Import personal invoices from CSV file.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: multipart/form-data
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` as a form field for tenant-protected invoice import routes.
 
 **Form Data:**
 
@@ -2269,8 +2286,9 @@ Import company invoices from CSV file.
 ```http
 Authorization: Bearer <access_token>
 Content-Type: multipart/form-data
-X-Business-ID: 507f1f77bcf86cd799439011
 ```
+
+**Tenant Context:** Include `businessId` as a form field for tenant-protected invoice import routes.
 
 **Form Data:**
 
