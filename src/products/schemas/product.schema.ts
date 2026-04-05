@@ -19,7 +19,10 @@ export class Product extends Document {
   @Prop({ required: true, type: Number })
   unitPrice!: number;
 
-  @Prop({ required: true, type: Number, default: 0 })
+  @Prop({ required: true, type: Number })
+  cost!: number;
+
+  @Prop({ required: true, type: Number })
   quantity!: number;
 
   @Prop({ required: true, default: 'TND' })

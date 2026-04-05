@@ -9,6 +9,7 @@ import {
   Min,
   IsBoolean,
 } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 import {
@@ -99,6 +100,14 @@ export class CreateInvoiceRecipientDto {
 }
 
 export class CreateInvoiceDto {
+  @ApiPropertyOptional({
+    description: 'Tenant businessId used to resolve current business context.',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @IsString()
   invoiceNumber!: string;
 
@@ -133,6 +142,14 @@ export class CreateInvoiceDto {
 }
 
 export class UpdateInvoiceDto {
+  @ApiPropertyOptional({
+    description: 'Tenant businessId used to resolve current business context.',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @IsOptional()
   @IsString()
   description?: string;
@@ -151,6 +168,14 @@ export class UpdateInvoiceDto {
  * Change invoice state (issue, void, mark paid, etc.)
  */
 export class TransitionInvoiceStateDto {
+  @ApiPropertyOptional({
+    description: 'Tenant businessId used to resolve current business context.',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @IsEnum(InvoiceStatus)
   newStatus!: InvoiceStatus;
 
