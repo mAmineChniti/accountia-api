@@ -1,8 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsMongoId, IsEnum } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsMongoId, IsEnum, IsOptional, IsString } from 'class-validator';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
 export class AssignBusinessUserDto {
+  @ApiPropertyOptional({
+    description: 'Tenant businessId used to resolve current business context.',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
   @IsMongoId()
   userId: string;
@@ -45,6 +53,14 @@ export class BusinessUserResponseDto {
 }
 
 export class ChangeClientRoleDto {
+  @ApiPropertyOptional({
+    description: 'Tenant businessId used to resolve current business context.',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  businessId?: string;
+
   @ApiProperty({
     enum: BusinessUserRole,
     enumName: 'BusinessUserRole',

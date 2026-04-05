@@ -7,11 +7,16 @@ import {
 } from '@nestjs/common';
 import { type AuthenticatedRequest } from '@/auth/types/auth.types';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';
+import { Role } from '@/auth/enums/role.enum';
 import { Types } from 'mongoose';
 
 @Injectable()
 export class TenantContextGuard implements CanActivate {
   constructor(private readonly tenantContextService: TenantContextService) {}
+
+  private static getStringValue(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -21,22 +26,38 @@ export class TenantContextGuard implements CanActivate {
       throw new UnauthorizedException('User context is missing');
     }
 
-    const businessIdFromParam =
-      typeof request.params?.id === 'string' ? request.params.id : undefined;
+    const businessIdFromBody = TenantContextGuard.getStringValue(
+      (request.body as Record<string, unknown>)?.businessId
+    );
+    const businessIdFromParams =
+      TenantContextGuard.getStringValue(
+        (request.params as Record<string, unknown>)?.businessId
+      ) ??
+      TenantContextGuard.getStringValue(
+        (request.params as Record<string, unknown>)?.id
+      );
+    const businessIdFromQuery = TenantContextGuard.getStringValue(
+      (request.query as Record<string, unknown>)?.businessId
+    );
 
-    const businessIdFromHeaderRaw = request.headers['x-business-id'];
-    let businessIdFromHeader: string | undefined;
-    if (typeof businessIdFromHeaderRaw === 'string') {
-      businessIdFromHeader = businessIdFromHeaderRaw;
-    } else if (Array.isArray(businessIdFromHeaderRaw)) {
-      businessIdFromHeader = businessIdFromHeaderRaw.at(0);
-    }
+    const businessId =
+      businessIdFromBody ?? businessIdFromParams ?? businessIdFromQuery;
 
-    const businessId = businessIdFromParam ?? businessIdFromHeader;
+    const isPlatformUser = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN].includes(
+      user.role
+    );
 
     if (!businessId) {
+      if (isPlatformUser) {
+        request.tenant = {
+          businessId: '',
+          databaseName: '',
+          membershipRole: 'platform-admin',
+        };
+        return true;
+      }
       throw new BadRequestException(
-        'Business context is required via route param or x-business-id header'
+        'Business context is required in request body as businessId'
       );
     }
 

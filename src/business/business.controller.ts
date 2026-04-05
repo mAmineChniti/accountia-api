@@ -17,6 +17,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { BusinessService } from '@/business/business.service';
 import {
@@ -253,7 +254,7 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get tenant metadata for business',
     description:
-      'Resolve tenant context from the business route and fetch tenant database metadata.',
+      'Resolve tenant context using businessId from the request body and fetch tenant database metadata.',
   })
   @ApiParam({
     name: 'id',
@@ -290,7 +291,7 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get business by ID',
     description:
-      'Retrieve detailed information about a specific business. User must have access to the business (owner, assigned member, or platform admin).',
+      'Retrieve detailed information about a specific business. User must have access to the business and businessId must be provided in the request body to resolve tenant context.',
   })
   @ApiParam({
     name: 'id',
@@ -328,7 +329,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Update business',
     description:
-      'Update business information. Only accessible by business owners or administrators.',
+      'Update business information. Only accessible by business owners or administrators. Include businessId in the request body to resolve tenant context.',
+  })
+  @ApiBody({
+    description:
+      'Update business payload with businessId to resolve tenant context.',
+    type: UpdateBusinessDto,
   })
   @ApiParam({
     name: 'id',
@@ -400,7 +406,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Assign user to business',
     description:
-      'Assign a user to a business with a specific role. Only accessible by business owners or administrators.',
+      'Assign a user to a business with a specific role. BusinessId must be provided in the request body to resolve tenant context. Only accessible by business owners or administrators.',
+  })
+  @ApiBody({
+    description:
+      'Assign business user payload with businessId to resolve tenant context.',
+    type: AssignBusinessUserDto,
   })
   @ApiParam({
     name: 'id',
@@ -537,7 +548,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Change a client role in the business',
     description:
-      'Change the role of a user within the business (e.g., promote from client to admin). Only accessible by business owners or administrators.',
+      'Change the role of a user within the business. Include businessId in the request body to resolve tenant context. Only accessible by business owners or administrators.',
+  })
+  @ApiBody({
+    description:
+      'Client role change payload with businessId to resolve tenant context.',
+    type: ChangeClientRoleDto,
   })
   @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'Client User ID' })

@@ -26,9 +26,11 @@ export class ProductsService {
     businessId: string,
     createProductDto: CreateProductDto
   ): Promise<ProductResponseDto> {
+    const { businessId: ignoredBusinessId, ...productData } = createProductDto;
+    void ignoredBusinessId;
     const product = new this.productModel({
       businessId,
-      ...createProductDto,
+      ...productData,
     });
     await product.save();
     return this.formatProductResponse(product);
@@ -43,7 +45,12 @@ export class ProductsService {
     limit = 10,
     search?: string
   ): Promise<ProductListResponseDto> {
-    let query = this.productModel.find({ businessId });
+    const conditions: { businessId?: string } = {};
+    if (businessId) {
+      conditions.businessId = businessId;
+    }
+
+    let query = this.productModel.find({ ...conditions });
 
     if (search) {
       query = query.or([
@@ -52,12 +59,12 @@ export class ProductsService {
       ]);
     }
 
-    const total = await this.productModel.countDocuments({ businessId });
-    const products = await query
+    const total = await this.productModel.countDocuments(conditions);
+    const products = (await query
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .lean();
+      .lean()) as Product[];
 
     return {
       products: products.map((p) => this.formatProductResponse(p)),
@@ -99,13 +106,18 @@ export class ProductsService {
 
     this.verifyBusinessAccess(product.businessId.toString(), businessId);
 
-    const updated = await this.productModel.findByIdAndUpdate(
-      id,
-      updateProductDto,
-      { new: true, runValidators: true }
-    );
+    const { businessId: ignoredBusinessId, ...updateData } = updateProductDto;
+    void ignoredBusinessId;
+    const updated = await this.productModel.findByIdAndUpdate(id, updateData, {
+      returnDocument: 'after',
+      runValidators: true,
+    });
 
-    return this.formatProductResponse(updated!);
+    if (!updated) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return this.formatProductResponse(updated);
   }
 
   /**
@@ -130,12 +142,12 @@ export class ProductsService {
     ids: string[],
     businessId: string
   ): Promise<ProductResponseDto[]> {
-    const products = await this.productModel
+    const products = (await this.productModel
       .find({
         _id: { $in: ids },
         businessId,
       })
-      .lean();
+      .lean()) as Product[];
 
     return products.map((p) => this.formatProductResponse(p));
   }
@@ -159,10 +171,14 @@ export class ProductsService {
     const updated = await this.productModel.findByIdAndUpdate(
       id,
       { $inc: { quantity: quantityDelta } },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
-    return this.formatProductResponse(updated!);
+    if (!updated) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return this.formatProductResponse(updated);
   }
 
   /**
@@ -190,25 +206,24 @@ export class ProductsService {
       const rowNum = i + 2; // +2 because header is row 1 and arrays are 0-indexed
 
       try {
-        // Validate required fields
-        const name = record.name as string;
-        const description = record.description as string;
-        const unitPrice = record.unitPrice as number;
-        const quantity = record.quantity as number;
+        const name = this.parseStringField(record.name);
+        const description = this.parseStringField(record.description);
+        const unitPriceRaw = record.unitPrice;
+        const quantityRaw = record.quantity;
 
-        if (!name?.trim()) {
+        if (!name) {
           throw new Error('Missing required field: name');
         }
-        if (!description?.trim()) {
+        if (!description) {
           throw new Error('Missing required field: description');
         }
 
-        const parsedUnitPrice = Number(unitPrice);
+        const parsedUnitPrice = this.parseNumberField(unitPriceRaw);
         if (Number.isNaN(parsedUnitPrice) || parsedUnitPrice < 0) {
           throw new Error('unitPrice must be a valid positive number');
         }
 
-        const parsedQuantity = Number(quantity);
+        const parsedQuantity = this.parseNumberField(quantityRaw);
         if (Number.isNaN(parsedQuantity) || parsedQuantity < 0) {
           throw new Error('quantity must be a valid positive number');
         }
@@ -247,16 +262,34 @@ export class ProductsService {
     }
   }
 
+  private parseStringField(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private parseNumberField(value: unknown): number {
+    if (typeof value === 'number') {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : Number.NaN;
+    }
+    return Number.NaN;
+  }
+
   /**
    * Format product response
    */
   private formatProductResponse(product: Product): ProductResponseDto {
     return {
       id: product._id.toString(),
+      businessId: product.businessId,
       name: product.name,
       description: product.description,
       unitPrice: product.unitPrice,
+      cost: product.cost ?? 0,
       quantity: product.quantity,
+      currency: product.currency ?? 'TND',
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };
