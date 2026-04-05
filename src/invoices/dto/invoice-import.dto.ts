@@ -8,9 +8,135 @@ import {
   IsEnum,
   Min,
   IsEmail,
+  IsIn,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  ValidationArguments,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
+
+/**
+ * ============================================
+ * CUSTOM VALIDATORS
+ * ============================================
+ */
+
+/**
+ * Validator to ensure at least one line-item source is provided
+ */
+@ValidatorConstraint({ name: 'HasLineItemSource', async: false })
+export class HasLineItemSourceValidator implements ValidatorConstraintInterface {
+  validate(value: unknown, _args: ValidationArguments): boolean {
+    const object = _args.object as Record<string, unknown>;
+    const { productIds, quantities, unitPrices, lineItemsJson } = object;
+
+    // At least one of these should be a non-empty string
+    const hasProductIds =
+      productIds &&
+      typeof productIds === 'string' &&
+      productIds.trim().length > 0;
+    const hasQuantities =
+      quantities &&
+      typeof quantities === 'string' &&
+      quantities.trim().length > 0;
+    const hasUnitPrices =
+      unitPrices &&
+      typeof unitPrices === 'string' &&
+      unitPrices.trim().length > 0;
+    const hasLineItemsJson =
+      lineItemsJson &&
+      typeof lineItemsJson === 'string' &&
+      lineItemsJson.trim().length > 0;
+
+    return !!(
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+      (hasLineItemsJson || (hasProductIds && hasQuantities && hasUnitPrices))
+    );
+  }
+
+  defaultMessage(_args: ValidationArguments) {
+    return 'Provide lineItemsJson or comma/pipe-separated product fields (productIds, quantities, unitPrices)';
+  }
+}
+
+/**
+ * Validator to ensure recipient fields match the recipient type
+ */
+@ValidatorConstraint({ name: 'ValidateRecipientType', async: false })
+export class ValidateRecipientTypeValidator implements ValidatorConstraintInterface {
+  validate(value: unknown, _args: ValidationArguments): boolean {
+    const object = _args.object as Record<string, unknown>;
+    const {
+      recipientType,
+      recipientPlatformId,
+      recipientEmail,
+      recipientDisplayName,
+    } = object;
+
+    if (!recipientType) return false;
+
+    const type = recipientType as InvoiceRecipientType;
+
+    if (type === InvoiceRecipientType.PLATFORM_BUSINESS) {
+      // Requires recipientPlatformId
+      return !!(
+        recipientPlatformId &&
+        typeof recipientPlatformId === 'string' &&
+        recipientPlatformId.trim().length > 0
+      );
+    }
+
+    if (type === InvoiceRecipientType.PLATFORM_INDIVIDUAL) {
+      // Requires recipientPlatformId and recipientEmail
+      const hasPlatformId =
+        recipientPlatformId &&
+        typeof recipientPlatformId === 'string' &&
+        recipientPlatformId.trim().length > 0;
+      const hasEmail =
+        recipientEmail &&
+        typeof recipientEmail === 'string' &&
+        recipientEmail.trim().length > 0;
+      return !!(hasPlatformId && hasEmail);
+    }
+
+    if (type === InvoiceRecipientType.EXTERNAL) {
+      // Requires recipientEmail and recipientDisplayName, recipientPlatformId should be absent/empty
+      const hasEmail =
+        recipientEmail &&
+        typeof recipientEmail === 'string' &&
+        recipientEmail.trim().length > 0;
+      const hasDisplayName =
+        recipientDisplayName &&
+        typeof recipientDisplayName === 'string' &&
+        recipientDisplayName.trim().length > 0;
+      const noPlatformId =
+        !recipientPlatformId ||
+        (typeof recipientPlatformId === 'string' &&
+          recipientPlatformId.trim().length === 0);
+      return !!(hasEmail && hasDisplayName && noPlatformId);
+    }
+
+    return false;
+  }
+
+  defaultMessage(args: ValidationArguments) {
+    const object = args.object as Record<string, unknown>;
+    const type = object.recipientType as InvoiceRecipientType;
+
+    if (type === InvoiceRecipientType.PLATFORM_BUSINESS) {
+      return 'PLATFORM_BUSINESS requires recipientPlatformId';
+    }
+    if (type === InvoiceRecipientType.PLATFORM_INDIVIDUAL) {
+      return 'PLATFORM_INDIVIDUAL requires recipientPlatformId and recipientEmail';
+    }
+    if (type === InvoiceRecipientType.EXTERNAL) {
+      return 'EXTERNAL requires recipientEmail and recipientDisplayName, and recipientPlatformId should be absent/empty';
+    }
+
+    return 'Invalid recipient type configuration';
+  }
+}
 
 /**
  * ============================================
@@ -160,6 +286,7 @@ export class ImportedInvoiceResultDto {
   invoiceId?: string;
 
   @IsString()
+  @IsIn(['success', 'error', 'warning'])
   status!: 'success' | 'error' | 'warning';
 
   @IsOptional()
@@ -235,8 +362,8 @@ export class ImportTemplateResponseDto {
   csvColumns!: string[];
 
   @IsArray()
-  @IsString({ each: true })
-  recipientTypes!: string[];
+  @IsEnum(InvoiceRecipientType, { each: true })
+  recipientTypes!: InvoiceRecipientType[];
 
   @IsString()
   notes!: string;

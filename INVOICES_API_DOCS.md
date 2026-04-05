@@ -738,14 +738,14 @@ POST /invoices/import
 | `recipientPlatformId` | string | `507f1f77bcf86cd799439011` | Business ID (required for PLATFORM_BUSINESS) or User ID |
 | `recipientEmail` | string | `john@example.com` | Email address (required for PLATFORM_INDIVIDUAL and EXTERNAL) |
 | `recipientDisplayName` | string | `John Doe` | Display name (required for EXTERNAL recipients) |
-| `productIds` | string | `PROD-001,PROD-002` | Comma-separated product IDs (pipe-delimited for multiples) |
-| `productNames` | string | `Service A,Service B` | Comma-separated product names |
-| `quantities` | string | `1,2` | Comma-separated quantities |
-| `unitPrices` | string | `5000.00,2500.00` | Comma-separated unit prices |
+| `productIds` | string | `PROD-001,PROD-002` or `PROD-001\|PROD-002` | Delimited product IDs (pipe or comma) |
+| `productNames` | string | `Service A,Service B` or `Service A\|Service B` | Delimited product names (pipe or comma) |
+| `quantities` | string | `1,2` or `1\|2` | Delimited quantities (pipe or comma) |
+| `unitPrices` | string | `5000.00,2500.00` or `5000.00\|2500.00` | Delimited unit prices (pipe or comma) |
 | `lineItemsJson` | string | `[{...}]` | Or provide JSON array of line items for complex cases |
 | `description` | string | `Monthly services` | Invoice description |
 | `paymentTerms` | string | `NET30` | Payment terms |
-| `currency` | string | `USD` | Currency code (default: USD) |
+| `currency` | string | `TND` | Currency code (default: TND) |
 
 **Recipient Type Rules:**
 
@@ -755,15 +755,21 @@ POST /invoices/import
 
 **Line Items Format:**
 
-**Option 1 - Simple (Comma-separated):**
+**Option 1 - Multi-item Line Items:**
 
 ```csv
 invoiceNumber,recipientType,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,issuedDate,dueDate
 INV-001,EXTERNAL,john@example.com,John Doe,PROD-001,Service,1,5000.00,2024-01-15,2024-02-15
 INV-002,EXTERNAL,jane@example.com,Jane Smith,PROD-001|PROD-002,Service A|Service B,1|2,5000.00|2500.00,2024-01-15,2024-02-15
+INV-003,EXTERNAL,bob@example.com,Bob Jones,PROD-001,PROD-002,Service A,Service B,1,2,5000.00,2500.00,2024-01-15,2024-02-15
 ```
 
-Use pipe `|` to separate multiple items in a single cell.
+For multiple line items in a single invoice row, you can use either:
+
+- **Pipe delimiter** (`|`): `PROD-001|PROD-002` or
+- **Comma delimiter** (`,`): `PROD-001,PROD-002`
+
+The system automatically detects which delimiter is used.
 
 **Option 2 - Complex (JSON array):**
 
