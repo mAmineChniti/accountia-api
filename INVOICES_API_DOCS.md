@@ -2,10 +2,19 @@
 
 ## Overview
 
-The Invoices API provides endpoints for managing invoices in a multi-tenant system. Invoices can be **issued** by businesses and **received** by businesses or individuals.
+The Invoices API provides endpoints for managing invoices in a multi-tenant system. Invoices can be **issued** by businesses and **received** by businesses or individuals. Supports both individual invoice creation and bulk import from CSV/Excel files.
 
 **Base URL:** `/invoices`  
 **Authentication:** Bearer Token (JWT)
+
+### Key Features
+
+- Create and manage invoices with flexible recipient types (platform businesses, individuals, external contacts)
+- Bulk import invoices from CSV or Excel files
+- Track invoice lifecycle through state transitions (DRAFT → ISSUED → PAID, etc.)
+- View invoices issued by your business or received by you
+- Email notifications and WebSocket real-time updates
+- Cross-tenant invoice discovery and receipt tracking
 
 ### Architecture
 
@@ -14,6 +23,7 @@ The invoices system uses a **three-service architecture**:
 - **InvoiceIssuanceService**: Creates, updates, and manages invoices issued by your business (stored in tenant database)
 - **InvoiceReceiptService**: Allows viewing and managing invoices received by your business or individual account (synced from issuer's database)
 - **RecipientResolutionService**: Background service for identity resolution of external recipients
+- **InvoiceImportService**: Bulk import invoices from CSV/Excel files
 
 **Database Storage:**
 
@@ -662,6 +672,205 @@ Same as endpoint 8 (full invoice details)
 
 ---
 
+## BULK IMPORT ENDPOINTS
+
+These endpoints allow importing multiple invoices from CSV or Excel files.
+
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`  
+**Required Roles:** `OWNER`, `ADMIN`
+
+---
+
+### 10. Get Import Template
+
+```http
+GET /invoices/import/template
+```
+
+**Description:** Retrieve a CSV/Excel template and example format for bulk importing invoices.
+
+**Success Response (200 OK):**
+
+```json
+{
+  "csvExample": "invoiceNumber,recipientType,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,issuedDate,dueDate\nINV-2024-001,EXTERNAL,john@example.com,John Doe,PROD-001,Website Service,1,5000.00,2024-01-15,2024-02-15",
+  "csvColumns": [
+    "invoiceNumber",
+    "recipientType",
+    "recipientPlatformId",
+    "recipientEmail",
+    "recipientDisplayName",
+    "productIds",
+    "productNames",
+    "quantities",
+    "unitPrices",
+    "issuedDate",
+    "dueDate",
+    "description",
+    "paymentTerms",
+    "currency"
+  ],
+  "recipientTypes": ["PLATFORM_BUSINESS", "PLATFORM_INDIVIDUAL", "EXTERNAL"],
+  "notes": "Format: Use comma-separated values. Dates must be in YYYY-MM-DD format..."
+}
+```
+
+---
+
+### 11. Bulk Import Invoices from File
+
+```http
+POST /invoices/import
+```
+
+**Content-Type:** `multipart/form-data`
+
+**Description:** Upload a CSV or XLSX file to create multiple invoices in bulk. Each row represents one invoice. Invoices are created in DRAFT status.
+
+**Form Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | file | Yes | CSV or XLSX file |
+
+**CSV Columns:**
+
+**Required:**
+| Column | Type | Example | Description |
+|--------|------|---------|-------------|
+| `invoiceNumber` | string | `INV-2024-001` | Unique invoice identifier |
+| `recipientType` | enum | `EXTERNAL` | Type of recipient: PLATFORM_BUSINESS, PLATFORM_INDIVIDUAL, or EXTERNAL |
+| `issuedDate` | date | `2024-01-15` | Invoice issue date (YYYY-MM-DD format) |
+| `dueDate` | date | `2024-02-15` | Payment due date (YYYY-MM-DD format) |
+
+**Optional:**
+| Column | Type | Example | Description |
+|--------|------|---------|-------------|
+| `recipientPlatformId` | string | `507f1f77bcf86cd799439011` | Business ID (required for PLATFORM_BUSINESS) or User ID |
+| `recipientEmail` | string | `john@example.com` | Email address (required for PLATFORM_INDIVIDUAL and EXTERNAL) |
+| `recipientDisplayName` | string | `John Doe` | Display name (required for EXTERNAL recipients) |
+| `productIds` | string | `PROD-001,PROD-002` or `PROD-001\|PROD-002` | Delimited product IDs (pipe or comma) |
+| `productNames` | string | `Service A,Service B` or `Service A\|Service B` | Delimited product names (pipe or comma) |
+| `quantities` | string | `1,2` or `1\|2` | Delimited quantities (pipe or comma) |
+| `unitPrices` | string | `5000.00,2500.00` or `5000.00\|2500.00` | Delimited unit prices (pipe or comma) |
+| `lineItemsJson` | string | `[{...}]` | Or provide JSON array of line items for complex cases |
+| `description` | string | `Monthly services` | Invoice description |
+| `paymentTerms` | string | `NET30` | Payment terms |
+| `currency` | string | `TND` | Currency code (default: TND) |
+
+**Recipient Type Rules:**
+
+- **PLATFORM_BUSINESS**: Requires `recipientPlatformId`
+- **PLATFORM_INDIVIDUAL**: Requires `recipientEmail`
+- **EXTERNAL**: Requires both `recipientEmail` AND `recipientDisplayName`
+
+**Line Items Format:**
+
+**Option 1 - Multi-item Line Items:**
+
+```csv
+invoiceNumber,recipientType,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,issuedDate,dueDate
+INV-001,EXTERNAL,john@example.com,John Doe,PROD-001,Service,1,5000.00,2024-01-15,2024-02-15
+INV-002,EXTERNAL,jane@example.com,Jane Smith,PROD-001|PROD-002,Service A|Service B,1|2,5000.00|2500.00,2024-01-15,2024-02-15
+INV-003,EXTERNAL,bob@example.com,Bob Jones,PROD-001,PROD-002,Service A,Service B,1,2,5000.00,2500.00,2024-01-15,2024-02-15
+```
+
+For multiple line items in a single invoice row, you can use either:
+
+- **Pipe delimiter** (`|`): `PROD-001|PROD-002` or
+- **Comma delimiter** (`,`): `PROD-001,PROD-002`
+
+The system automatically detects which delimiter is used.
+
+**Option 2 - Complex (JSON array):**
+
+```csv
+invoiceNumber,recipientType,recipientEmail,recipientDisplayName,lineItemsJson,issuedDate,dueDate
+INV-001,EXTERNAL,test@example.com,Test Inc,"[{\"productId\":\"PROD-001\",\"productName\":\"Service\",\"quantity\":1,\"unitPrice\":5000.00}]",2024-01-15,2024-02-15
+```
+
+**Success Response (200 OK):**
+
+```json
+{
+  "totalRecords": 2,
+  "successCount": 2,
+  "failedCount": 0,
+  "warningCount": 0,
+  "results": [
+    {
+      "invoiceNumber": "INV-2024-001",
+      "invoiceId": "507f1f77bcf86cd799439011",
+      "status": "success",
+      "message": "Invoice created successfully",
+      "lineItemsCount": 2,
+      "totalAmount": 7500.5
+    },
+    {
+      "invoiceNumber": "INV-2024-002",
+      "invoiceId": "507f1f77bcf86cd799439012",
+      "status": "success",
+      "message": "Invoice created successfully",
+      "lineItemsCount": 1,
+      "totalAmount": 2000.0
+    }
+  ],
+  "importStartedAt": "2024-01-15T10:00:00.000Z",
+  "importCompletedAt": "2024-01-15T10:00:05.000Z",
+  "processingTimeMs": 5234
+}
+```
+
+**Partial Failure Response (200 OK - with some failures):**
+
+```json
+{
+  "totalRecords": 3,
+  "successCount": 2,
+  "failedCount": 1,
+  "warningCount": 0,
+  "results": [
+    {
+      "invoiceNumber": "INV-2024-001",
+      "invoiceId": "507f1f77bcf86cd799439011",
+      "status": "success",
+      "message": "Invoice created successfully",
+      "lineItemsCount": 2,
+      "totalAmount": 7500.5
+    },
+    {
+      "invoiceNumber": "INV-2024-002",
+      "status": "error",
+      "message": "Row 3: dueDate must be after or equal to issuedDate"
+    }
+  ],
+  "importStartedAt": "2024-01-15T10:00:00.000Z",
+  "importCompletedAt": "2024-01-15T10:00:05.000Z",
+  "processingTimeMs": 5234
+}
+```
+
+**Error Responses:**
+
+- **400 Bad Request** - Invalid file format or structure
+  ```json
+  {
+    "statusCode": 400,
+    "message": "File import failed: Unsupported file format. Please upload a CSV or XLSX file.",
+    "error": "Bad Request"
+  }
+  ```
+
+**Validation Rules:**
+
+- Dates must be in YYYY-MM-DD format or valid ISO date
+- `dueDate` must be ≥ `issuedDate`
+- Excel serial numbers are automatically converted
+- Required fields vary by recipient type
+- Line items must have matching array lengths
+- All invoices created in DRAFT status
+
+---
+
 ## Service Architecture (Internal)
 
 ### InvoiceIssuanceService
@@ -717,31 +926,6 @@ Handles _background identity resolution for external recipients_:
 - Background async operations (non-blocking invoice creation)
 - Updates InvoiceRecipient.resolutionStatus and lastResolutionAttempt
 - Works across issuer and platform databases
-
----
-
-## Deprecated Components
-
-### InvoicesService
-
-**Status:** ⚠️ **DEPRECATED** - Do not use
-
-**Location:** `src/invoices/invoices.service.ts`
-
-This monolithic service has been replaced by the three-service architecture. All methods throw deprecation errors:
-
-- ~~createPersonalInvoice~~
-- ~~getPersonalInvoicesByBusiness~~
-- ~~getPersonalInvoicesForUser~~
-- ~~createCompanyInvoice~~
-- ~~getCompanyInvoicesByBusiness~~
-- etc.
-
-**Migration Path:**
-
-- Invoice creation/management: Use `InvoiceIssuanceService`
-- Viewing received invoices: Use `InvoiceReceiptService`
-- Background recipient resolution: Use `RecipientResolutionService`
 
 ---
 

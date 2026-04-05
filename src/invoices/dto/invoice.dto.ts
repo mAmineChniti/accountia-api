@@ -108,8 +108,9 @@ export class CreateInvoiceDto {
   @IsString()
   businessId?: string;
 
+  @IsOptional()
   @IsString()
-  invoiceNumber!: string;
+  invoiceNumber?: string;
 
   @ValidateNested()
   @Type(() => CreateInvoiceRecipientDto)
