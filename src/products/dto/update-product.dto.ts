@@ -1,15 +1,14 @@
 import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
       'Tenant businessId used to resolve the current business context.',
     type: String,
   })
-  @IsOptional()
   @IsString()
-  businessId?: string;
+  businessId!: string;
 
   @IsOptional()
   @IsString()

@@ -57,7 +57,7 @@ export class TenantContextGuard implements CanActivate {
         return true;
       }
       throw new BadRequestException(
-        'Business context is required in request body as businessId'
+        'Business context is required (provide businessId in body, params, or query)'
       );
     }
 
