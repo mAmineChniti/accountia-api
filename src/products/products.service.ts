@@ -51,15 +51,23 @@ export class ProductsService {
     }
 
     let query = this.productModel.find({ ...conditions });
+    let countFilter: Record<string, unknown> = { ...conditions };
 
     if (search) {
       query = query.or([
         { name: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
       ]);
+      countFilter = {
+        ...conditions,
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+        ],
+      };
     }
 
-    const total = await this.productModel.countDocuments(conditions);
+    const total = await this.productModel.countDocuments(countFilter);
     const products = (await query
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -228,12 +236,19 @@ export class ProductsService {
           throw new Error('quantity must be a valid positive number');
         }
 
+        const costRaw = record.cost;
+        const parsedCost = this.parseNumberField(costRaw);
+        if (Number.isNaN(parsedCost) || parsedCost < 0) {
+          // Default cost to 0 if not provided or invalid
+        }
+
         // Create product
         const product = new this.productModel({
           businessId,
           name: name.trim(),
           description: description.trim(),
           unitPrice: parsedUnitPrice,
+          cost: Number.isNaN(parsedCost) ? 0 : parsedCost,
           quantity: parsedQuantity || 0,
         });
 
