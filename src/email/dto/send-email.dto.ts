@@ -11,6 +11,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export enum EmailType {
   BUSINESS_APPROVAL = 'business_approval',
   BUSINESS_REJECTION = 'business_rejection',
+  BUSINESS_INVITE = 'business_invite',
   INVOICE_REMINDER = 'invoice_reminder',
   SYSTEM = 'system',
   ONBOARDING = 'onboarding',
@@ -23,7 +24,7 @@ export class SendEmailDto {
   })
   @IsEmail()
   @IsNotEmpty()
-  to: string;
+  to!: string;
 
   @ApiProperty({
     description: 'Email subject',
@@ -31,7 +32,7 @@ export class SendEmailDto {
   })
   @IsString()
   @IsNotEmpty()
-  subject: string;
+  subject!: string;
 
   @ApiProperty({
     description: 'HTML email content',
@@ -39,7 +40,7 @@ export class SendEmailDto {
   })
   @IsString()
   @IsNotEmpty()
-  html: string;
+  html!: string;
 
   @ApiProperty({
     description: 'Plain text email content',
@@ -47,7 +48,7 @@ export class SendEmailDto {
   })
   @IsString()
   @IsNotEmpty()
-  text: string;
+  text!: string;
 
   @ApiProperty({
     enum: EmailType,
@@ -57,7 +58,7 @@ export class SendEmailDto {
   })
   @IsEnum(EmailType)
   @IsNotEmpty()
-  type: EmailType;
+  type!: EmailType;
 
   @ApiPropertyOptional({
     description: 'Metadata for email tracking',
@@ -80,7 +81,7 @@ export class SendEmailResponseDto {
     description: 'Whether email was sent successfully',
     example: true,
   })
-  success: boolean;
+  success!: boolean;
 
   @ApiPropertyOptional({
     description: 'Email service message ID (optional)',

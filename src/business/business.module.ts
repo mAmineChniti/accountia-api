@@ -13,7 +13,12 @@ import {
   BusinessUser,
   BusinessUserSchema,
 } from '@/business/schemas/business-user.schema';
+import {
+  BusinessInvitation,
+  BusinessInvitationSchema,
+} from '@/business/schemas/business-invitation.schema';
 import { User, UserSchema } from '@/users/schemas/user.schema';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 import { TenantContextService } from '@/common/tenant/tenant-context.service';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -26,7 +31,9 @@ import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
       { name: Business.name, schema: BusinessSchema },
       { name: BusinessApplication.name, schema: BusinessApplicationSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
+      { name: BusinessInvitation.name, schema: BusinessInvitationSchema },
       { name: User.name, schema: UserSchema },
+      { name: Product.name, schema: ProductSchema },
     ]),
   ],
   controllers: [BusinessController],
