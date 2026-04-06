@@ -2,6 +2,10 @@
 import { IsEmail, IsIn, IsNotEmpty, IsOptional } from 'class-validator';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 
+enum InviteMemberAllowedRole {
+  ADMIN = BusinessUserRole.ADMIN,
+}
+
 export class InviteMemberDto {
   @ApiProperty({ description: 'Email address of the user to invite' })
   @IsEmail()
@@ -9,9 +13,9 @@ export class InviteMemberDto {
   email: string;
 
   @ApiProperty({
-    description: 'Role to assign to the invited user',
-    enum: BusinessUserRole,
-    enumName: 'BusinessUserRole',
+    description: 'Role to assign to the invited user (only ADMIN is allowed)',
+    enum: InviteMemberAllowedRole,
+    enumName: 'InviteMemberAllowedRole',
   })
   @IsIn([BusinessUserRole.ADMIN])
   @IsNotEmpty()

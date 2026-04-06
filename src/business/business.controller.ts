@@ -334,7 +334,7 @@ export class BusinessController {
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update business',
@@ -387,7 +387,7 @@ export class BusinessController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete business' })
@@ -411,7 +411,7 @@ export class BusinessController {
   // Business User Management Endpoints
   @Post(':id/users')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assign user to business',
@@ -466,7 +466,7 @@ export class BusinessController {
 
   @Delete(':id/users/:userId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -553,7 +553,7 @@ export class BusinessController {
 
   @Patch(':id/clients/:clientId/role')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Change a client role in the business',
@@ -604,7 +604,7 @@ export class BusinessController {
 
   @Delete(':id/clients/:clientId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

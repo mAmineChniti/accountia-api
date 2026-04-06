@@ -119,6 +119,19 @@ const isMissingCollectionError = (error: unknown): boolean => {
   );
 };
 
+const isDuplicateKeyError = (error: unknown): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 11_000
+  );
+};
+
+const normalizeUsernamePart = (value: string): string => {
+  return value.toLowerCase().replaceAll(/[^\da-z]/g, '');
+};
+
 @Injectable()
 export class BusinessService {
   constructor(
@@ -828,6 +841,29 @@ export class BusinessService {
     }
   }
 
+  private async generateUniqueUsername(
+    firstName: string,
+    lastName: string
+  ): Promise<string> {
+    const base =
+      `${normalizeUsernamePart(firstName)}${normalizeUsernamePart(lastName)}` ||
+      'user';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const suffix = randomBytes(4).toString('hex');
+      const candidate = `${base}_${suffix}`;
+      const exists = await this.userModel.exists({ username: candidate });
+
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictException(
+      'Unable to generate a unique username for invited user'
+    );
+  }
+
   async getBusinessClients(
     businessId: string,
     userId: string,
@@ -1257,6 +1293,12 @@ export class BusinessService {
   async acceptInvite(
     acceptDto: AcceptInviteDto
   ): Promise<{ message: string; email: string }> {
+    if (acceptDto.acceptTerms !== true) {
+      throw new BadRequestException(
+        'You must accept terms and conditions to continue'
+      );
+    }
+
     const invite = await this.businessInvitationModel.findOne({
       token: acceptDto.token,
     });
@@ -1298,6 +1340,11 @@ export class BusinessService {
       user.emailConfirmed = true;
       user.failedLoginAttempts = 0;
       user.lockUntil = undefined;
+      user.acceptTerms = acceptDto.acceptTerms;
+
+      if (!user.birthdate && acceptDto.birthdate) {
+        user.birthdate = new Date(acceptDto.birthdate);
+      }
 
       if (!user.firstName) {
         user.firstName = acceptDto.firstName;
@@ -1310,17 +1357,48 @@ export class BusinessService {
       await user.save();
     } else {
       // Create new user
+      const username = await this.generateUniqueUsername(
+        acceptDto.firstName,
+        acceptDto.lastName
+      );
+
       user = new this.userModel({
-        username: `${acceptDto.firstName.toLowerCase()}${acceptDto.lastName.toLowerCase()}${Math.floor(Math.random() * 10_000)}`,
+        username,
         email: invite.email,
         firstName: acceptDto.firstName,
         lastName: acceptDto.lastName,
         passwordHash,
         emailConfirmed: true, // Auto-verify since they received the invite to that email
-        acceptTerms: true,
-        birthdate: new Date('2000-01-01'), // Default since signup flow bypassed
+        acceptTerms: acceptDto.acceptTerms,
+        birthdate: acceptDto.birthdate
+          ? new Date(acceptDto.birthdate)
+          : invite.createdAt,
       });
-      await user.save();
+
+      try {
+        await user.save();
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+
+        user.username = await this.generateUniqueUsername(
+          acceptDto.firstName,
+          acceptDto.lastName
+        );
+
+        try {
+          await user.save();
+        } catch (retryError) {
+          if (isDuplicateKeyError(retryError)) {
+            throw new ConflictException(
+              'Unable to create invited user due to username collision. Please retry.'
+            );
+          }
+
+          throw retryError;
+        }
+      }
     }
 
     const existingAssignment = await this.businessUserModel.findOne({

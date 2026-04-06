@@ -10,7 +10,7 @@ export enum InvitationStatus {
 
 @Schema({ collection: 'business_invitations', timestamps: true })
 export class BusinessInvitation extends Document {
-  @Prop({ required: true, unique: true })
+  @Prop({ required: true })
   token: string;
 
   @Prop({ required: true })

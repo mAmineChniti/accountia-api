@@ -231,6 +231,19 @@ export class ChatService {
     };
   }
 
+  private async fetchBusinessName(businessId: string): Promise<string> {
+    const business = await this.businessModel
+      .findById(businessId)
+      .select('name')
+      .lean();
+
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    return business.name;
+  }
+
   /**
    * Generate system prompt based on user role
    */
@@ -399,50 +412,78 @@ RÈGLES :
     ];
   }
 
-  private getContextualChoices(
-    query: string,
-    context?: BusinessContext
-  ): string[] {
+  private detectIntent(
+    query: string
+  ): 'late' | 'cash' | 'revenue' | 'client' | undefined {
     const value = query.trim().toLowerCase();
-    const defaults = this.getDefaultChoices(context);
 
     if (
       /(retard|overdue|impaye|impayes|late|echeance|relance|recouvrement)/.test(
         value
       )
     ) {
-      return [
-        'Liste les factures en retard les plus urgentes',
-        'Propose un plan de relance client sur 7 jours',
-        'Estime le risque de retard global ce mois-ci',
-      ];
+      return 'late';
     }
 
     if (/(cash|tresorerie|cashflow|flux|liquidite)/.test(value)) {
-      return [
-        'Donne une projection de tresorerie a 30 jours',
-        'Identifie les encaissements critiques de la semaine',
-        'Suggere 3 actions pour ameliorer le cash-flow',
-      ];
+      return 'cash';
     }
 
-    if (/(revenu|ca|chiffre|vente|growth|croissance|marge)/.test(value)) {
-      return [
-        'Compare le revenu de ce mois vs mois precedent',
-        'Donne les principaux leviers de croissance court terme',
-        'Analyse les tendances de performance recentes',
-      ];
+    if (
+      /(revenu|ca|chiffre|vente|growth|croissance|marge|performance)/.test(
+        value
+      )
+    ) {
+      return 'revenue';
     }
 
     if (/(client|customer|portfolio|portefeuille|segment)/.test(value)) {
-      return [
-        'Montre les clients les plus actifs',
-        'Quels clients presentent le plus de retards ?',
-        'Donne des recommandations pour fideliser les meilleurs clients',
-      ];
+      return 'client';
     }
 
-    return defaults;
+    return undefined;
+  }
+
+  private getContextualChoices(
+    query: string,
+    context?: BusinessContext
+  ): string[] {
+    const defaults = this.getDefaultChoices(context);
+    const intent = this.detectIntent(query);
+
+    switch (intent) {
+      case 'late': {
+        return [
+          'Liste les factures en retard les plus urgentes',
+          'Propose un plan de relance client sur 7 jours',
+          'Estime le risque de retard global ce mois-ci',
+        ];
+      }
+      case 'cash': {
+        return [
+          'Donne une projection de tresorerie a 30 jours',
+          'Identifie les encaissements critiques de la semaine',
+          'Suggere 3 actions pour ameliorer le cash-flow',
+        ];
+      }
+      case 'revenue': {
+        return [
+          'Compare le revenu de ce mois vs mois precedent',
+          'Donne les principaux leviers de croissance court terme',
+          'Analyse les tendances de performance recentes',
+        ];
+      }
+      case 'client': {
+        return [
+          'Montre les clients les plus actifs',
+          'Quels clients presentent le plus de retards ?',
+          'Donne des recommandations pour fideliser les meilleurs clients',
+        ];
+      }
+      default: {
+        return defaults;
+      }
+    }
   }
 
   private isGreetingQuery(query: string): boolean {
@@ -467,35 +508,27 @@ RÈGLES :
     context?: BusinessContext
   ): string {
     const businessName = context?.businessName ?? 'votre business';
-    const value = query.trim().toLowerCase();
+    const intent = this.detectIntent(query);
 
     // Different fallback responses based on what the user is asking
-    if (
-      /(retard|overdue|impaye|impayes|late|echeance|relance|recouvrement)/.test(
-        value
-      )
-    ) {
-      return `Je n'ai pas encore de donnees suffisantes pour analyser les retards de paiement chez ${businessName}.\n\nPour commencer l'analyse des factures en retard, vous devez:\n1. **Creer une facture client** depuis la section "Factures"\n2. Ou **importer vos factures existantes** via l'outil import\n\nUne fois les donnees presentes, je pourrai vous proposer un plan de relance personnalise.`;
+    switch (intent) {
+      case 'late': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser les retards de paiement chez ${businessName}.\n\nPour commencer l'analyse des factures en retard, vous devez:\n1. **Creer une facture client** depuis la section "Factures"\n2. Ou **importer vos factures existantes** via l'outil import\n\nUne fois les donnees presentes, je pourrai vous proposer un plan de relance personnalise.`;
+      }
+      case 'cash': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser le cash-flow de ${businessName}.\n\nPour optimiser votre tresorerie:\n1. **Importez vos factures clients** pour voir quand l'argent arrive\n2. **Tracez vos paiements** pour comprendre vos flux entrant/sortant\n\nAvec ces donnees, je pourrai faire une projection de tresorerie a 30 jours et identifier les encaissements critiques.`;
+      }
+      case 'revenue': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser la performance de ${businessName}.\n\nPour evaluer votre chiffre d'affaires:\n1. **Enregistrez vos factures clients** de ce mois-ci\n2. **Marquez les paiements recus** pour mettre a jour vos revenus\n\nJe pourrai ensuite comparer avec le mois precedent et identifier vos leviers de croissance.`;
+      }
+      case 'client': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser votre portefeuille client chez ${businessName}.\n\nPour y voir plus clair:\n1. **Creez/importez les factures de vos clients** majeurs\n2. **Suivez leurs paiements** pour identifier les plus fiables\n\nJe pourrai alors vous recommander comment fideliser vos meilleurs clients et relancer les problematiques.`;
+      }
+      default: {
+        // Generic fallback for other queries
+        return `Je n'ai pas encore de donnees suffisantes pour ${businessName}.\n\nPour que je puisse vous aider au mieux:\n1. **Creez ou importez vos factures clients** depuis la section "Factures"\n2. **Enregistrez les paiements recus** pour mettre a jour votre tresorerie\n\nUne fois les premieres donnees presentes, je pourrai vous fournir une analyse detaillee et des recommandations personnalisees.`;
+      }
     }
-
-    if (/(cash|tresorerie|cashflow|flux|liquidite)/.test(value)) {
-      return `Je n'ai pas encore de donnees suffisantes pour analyser le cash-flow de ${businessName}.\n\nPour optimiser votre tresorerie:\n1. **Importez vos factures clients** pour voir quand l'argent arrive\n2. **Tracez vos paiements** pour comprendre vos flux entrant/sortant\n\nAvec ces donnees, je pourrai faire une projection de tresorerie a 30 jours et identifier les encaissements critiques.`;
-    }
-
-    if (
-      /(revenu|ca|chiffre|vente|growth|croissance|marge|performance)/.test(
-        value
-      )
-    ) {
-      return `Je n'ai pas encore de donnees suffisantes pour analyser la performance de ${businessName}.\n\nPour evaluer votre chiffre d'affaires:\n1. **Enregistrez vos factures clients** de ce mois-ci\n2. **Marquez les paiements recus** pour mettre a jour vos revenus\n\nJe pourrai ensuite comparer avec le mois precedent et identifier vos leviers de croissance.`;
-    }
-
-    if (/(client|customer|portfolio|portefeuille|segment)/.test(value)) {
-      return `Je n'ai pas encore de donnees suffisantes pour analyser votre portefeuille client chez ${businessName}.\n\nPour y voir plus clair:\n1. **Creez/importez les factures de vos clients** majeurs\n2. **Suivez leurs paiements** pour identifier les plus fiables\n\nJe pourrai alors vous recommander comment fideliser vos meilleurs clients et relancer les problematiques.`;
-    }
-
-    // Generic fallback for other queries
-    return `Je n'ai pas encore de donnees suffisantes pour ${businessName}.\n\nPour que je puisse vous aider au mieux:\n1. **Creez ou importez vos factures clients** depuis la section "Factures"\n2. **Enregistrez les paiements recus** pour mettre a jour votre tresorerie\n\nUne fois les premieres donnees presentes, je pourrai vous fournir une analyse detaillee et des recommandations personnalisees.`;
   }
 
   private buildFallbackResponse(
@@ -541,14 +574,32 @@ RÈGLES :
       );
     }
 
+    let fallbackChoices = this.getDefaultChoices(context);
+
+    if (!noBusinessDataYet && query) {
+      fallbackChoices = this.getContextualChoices(query, context);
+    }
+
     return {
       response: summaryLines.join('\n'),
-      choices: query
-        ? this.getContextualChoices(query, context)
-        : this.getDefaultChoices(context),
+      choices: fallbackChoices,
       link: undefined,
       type: 'analysis',
     };
+  }
+
+  private toCanonicalHistoryRole(role: string): 'user' | 'model' | undefined {
+    const value = role.trim().toLowerCase();
+
+    if (['user', 'human', 'client'].includes(value)) {
+      return 'user';
+    }
+
+    if (['assistant', 'ai', 'bot', 'model'].includes(value)) {
+      return 'model';
+    }
+
+    return undefined;
   }
 
   /**
@@ -567,13 +618,14 @@ RÈGLES :
       // Verify user has access to this business
       await this.verifyBusinessAccess(businessId, userId);
 
+      // Fast path for greetings without loading full analytics context.
+      if (this.isGreetingQuery(query)) {
+        const businessName = await this.fetchBusinessName(businessId);
+        return this.buildGreetingResponse({ businessName });
+      }
+
       // Fetch business context from database
       businessContext = await this.fetchBusinessContext(businessId);
-
-      // Fast path for greetings and very short openers.
-      if (this.isGreetingQuery(query)) {
-        return this.buildGreetingResponse(businessContext);
-      }
 
       const systemPrompt = this.getSystemPrompt(role);
       const businessContextStr = this.formatBusinessContext(businessContext);
@@ -585,10 +637,21 @@ RÈGLES :
         .filter(
           (h) => typeof h.content === 'string' && h.content.trim().length > 0
         )
-        .map((h) => ({
-          role: h.role === 'user' ? 'user' : 'model',
-          content: h.content,
-        }));
+        .map((h) => {
+          const role = this.toCanonicalHistoryRole(h.role);
+          if (!role) {
+            return;
+          }
+
+          return {
+            role,
+            content: h.content,
+          };
+        })
+        .filter(
+          (h): h is { role: 'user' | 'model'; content: string } =>
+            h !== undefined
+        );
 
       while (
         normalizedHistory.length > 0 &&
@@ -597,18 +660,24 @@ RÈGLES :
         normalizedHistory.shift();
       }
 
-      for (let i = normalizedHistory.length - 1; i > 0; i -= 1) {
-        if (normalizedHistory[i].role === normalizedHistory[i - 1].role) {
-          normalizedHistory.splice(i, 1);
+      const dedupedHistory: Array<{ role: 'user' | 'model'; content: string }> =
+        [];
+
+      for (const historyItem of normalizedHistory) {
+        const lastItem = dedupedHistory.at(-1);
+        if (lastItem?.role === historyItem.role) {
+          dedupedHistory[dedupedHistory.length - 1] = historyItem;
+        } else {
+          dedupedHistory.push(historyItem);
         }
       }
 
-      const lastHistoryItem = normalizedHistory.at(-1);
-      if (normalizedHistory.length > 0 && lastHistoryItem?.role === 'user') {
-        normalizedHistory.pop();
+      const lastHistoryItem = dedupedHistory.at(-1);
+      if (lastHistoryItem?.role === 'user') {
+        dedupedHistory.pop();
       }
 
-      const conversationHistory = normalizedHistory.map((h) => ({
+      const conversationHistory = dedupedHistory.map((h) => ({
         role: h.role,
         parts: [{ text: h.content }],
       }));
