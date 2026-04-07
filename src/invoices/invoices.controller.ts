@@ -181,64 +181,6 @@ export class InvoicesController {
     }
     return invoice;
   }
-  @Get('business/:businessId/issued/:id')
-  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @ApiOperation({
-    summary: 'Get a specific invoice issued by this business (businessId path)',
-    description:
-      'Retrieve invoice details by businessId and invoiceId. This is a direct route for front-end View buttons.',
-  })
-  @ApiOkResponse({
-    description: 'Invoice details',
-    type: InvoiceResponseDto,
-  })
-  @ApiNotFoundResponse({
-    description: 'Invoice not found',
-  })
-  @ApiParam({
-    name: 'businessId',
-    description: 'Business ID',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Invoice ID',
-  })
-  async getIssuedInvoiceByBusiness(
-    @Param('businessId') businessId: string,
-    @Param('id') invoiceId: string,
-    @CurrentTenant() tenant: TenantContext
-  ): Promise<InvoiceResponseDto> {
-    if (tenant.businessId !== businessId) {
-      throw new Error('Forbidden');
-    }
-    return this.getIssuedInvoice(invoiceId, tenant);
-  }
-  @Get('issued/:id/details')
-  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @ApiOperation({
-    summary: 'Get a specific invoice issued by this business (details alias)',
-    description:
-      'Retrieve a specific invoice details view. Alias for issued/:id for UI convenience.',
-  })
-  @ApiOkResponse({
-    description: 'Invoice details',
-    type: InvoiceResponseDto,
-  })
-  @ApiNotFoundResponse({
-    description: 'Invoice not found',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Invoice ID',
-  })
-  async getIssuedInvoiceDetailsAlias(
-    @Param('id') invoiceId: string,
-    @CurrentTenant() tenant: TenantContext
-  ): Promise<InvoiceResponseDto> {
-    return this.getIssuedInvoice(invoiceId, tenant);
-  }
 
   @Patch('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
@@ -432,64 +374,6 @@ export class InvoicesController {
       receiptId,
       tenant.businessId
     );
-  }
-
-  @Get('business/:businessId/received/:receiptId')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @ApiOperation({
-    summary: 'Get full invoice details (business recipient by businessId path)',
-    description:
-      'Fetch the invoice details using a businessId and receiptId in the URL. Useful for front-end View button calls.',
-  })
-  @ApiOkResponse({
-    description: 'Full invoice details',
-    type: InvoiceResponseDto,
-  })
-  @ApiForbiddenResponse({
-    description: 'You do not have access to this invoice',
-  })
-  @ApiParam({
-    name: 'businessId',
-    description: 'Business ID',
-  })
-  @ApiParam({
-    name: 'receiptId',
-    description: 'Receipt ID',
-  })
-  async getReceivedInvoiceDetailsByBusiness(
-    @Param('businessId') businessId: string,
-    @Param('receiptId') receiptId: string,
-    @CurrentTenant() tenant: TenantContext
-  ): Promise<InvoiceResponseDto> {
-    if (tenant.businessId !== businessId) {
-      throw new Error('Forbidden');
-    }
-    return this.getReceivedInvoiceDetails(receiptId, tenant);
-  }
-
-  @Get('received/:receiptId')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @ApiOperation({
-    summary: 'Get full invoice details (business recipient alias)',
-    description:
-      'Fetch the invoice details using a shorter URL. Useful for direct View button links.',
-  })
-  @ApiOkResponse({
-    description: 'Full invoice details',
-    type: InvoiceResponseDto,
-  })
-  @ApiForbiddenResponse({
-    description: 'You do not have access to this invoice',
-  })
-  @ApiParam({
-    name: 'receiptId',
-    description: 'Receipt ID',
-  })
-  async getReceivedInvoiceDetailsAlias(
-    @Param('receiptId') receiptId: string,
-    @CurrentTenant() tenant: TenantContext
-  ): Promise<InvoiceResponseDto> {
-    return this.getReceivedInvoiceDetails(receiptId, tenant);
   }
 
   @Get('received/individual/:receiptId/details')
