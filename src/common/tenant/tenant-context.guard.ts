@@ -26,22 +26,15 @@ export class TenantContextGuard implements CanActivate {
       throw new UnauthorizedException('User context is missing');
     }
 
-    const businessIdFromBody = TenantContextGuard.getStringValue(
-      (request.body as Record<string, unknown>)?.businessId
-    );
-    const businessIdFromParams =
-      TenantContextGuard.getStringValue(
-        (request.params as Record<string, unknown>)?.businessId
-      ) ??
-      TenantContextGuard.getStringValue(
-        (request.params as Record<string, unknown>)?.id
-      );
-    const businessIdFromQuery = TenantContextGuard.getStringValue(
-      (request.query as Record<string, unknown>)?.businessId
-    );
+    const isGetRequest = request.method === 'GET';
 
-    const businessId =
-      businessIdFromBody ?? businessIdFromParams ?? businessIdFromQuery;
+    // For GET requests: use query params only
+    // For other requests (POST, PATCH, etc.): use body only
+    const businessId = TenantContextGuard.getStringValue(
+      isGetRequest
+        ? (request.query as Record<string, unknown>)?.businessId
+        : (request.body as Record<string, unknown>)?.businessId
+    );
 
     const isPlatformUser = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN].includes(
       user.role
@@ -57,7 +50,7 @@ export class TenantContextGuard implements CanActivate {
         return true;
       }
       throw new BadRequestException(
-        'Business context is required (provide businessId in body, params, or query)'
+        `Business context is required (provide businessId in ${isGetRequest ? 'query params' : 'request body'})`
       );
     }
 

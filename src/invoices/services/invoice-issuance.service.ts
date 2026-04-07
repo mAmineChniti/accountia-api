@@ -25,6 +25,7 @@ import {
   RecipientResolutionStatus,
 } from '@/invoices/enums/invoice-recipient.enum';
 import { Business } from '@/business/schemas/business.schema';
+import { User } from '@/users/schemas/user.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 
 /**
@@ -48,6 +49,7 @@ export class InvoiceIssuanceService {
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectModel(Business.name) private businessModel: Model<Business>,
+    @InjectModel(User.name) private userModel: Model<User>,
     @InjectConnection() private connection: Connection,
     private tenantConnectionService: TenantConnectionService
   ) {}
@@ -59,6 +61,67 @@ export class InvoiceIssuanceService {
   private normalizeEmail(email?: string): string | undefined {
     if (!email) return undefined;
     return email.toLowerCase().trim();
+  }
+
+  /**
+   * Search for platform user or business by email
+   * Returns: { id, tenantDatabaseName? } or null if not found
+   * - PLATFORM_BUSINESS: Returns business with tenantDatabaseName
+   * - PLATFORM_INDIVIDUAL: Returns user (platform DB only, no tenantDatabaseName)
+   */
+  private async searchRecipientByEmail(
+    email: string,
+    recipientType: InvoiceRecipientType
+  ): Promise<{ id: string; tenantDatabaseName?: string } | undefined> {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return undefined;
+
+    try {
+      if (recipientType === InvoiceRecipientType.PLATFORM_BUSINESS) {
+        // Search for business by email
+        const business = await this.businessModel
+          .findOne({
+            $or: [
+              { 'contact.email': normalizedEmail },
+              { email: normalizedEmail },
+            ],
+          })
+          .exec();
+
+        if (business) {
+          this.logger.debug(
+            `Found business by email ${normalizedEmail}: ${business._id.toString()}`
+          );
+          return {
+            id: business._id.toString(),
+            tenantDatabaseName: business.databaseName,
+          };
+        }
+      } else if (recipientType === InvoiceRecipientType.PLATFORM_INDIVIDUAL) {
+        // Search for user by email in platform database
+        // Users only exist in the platform DB, not in tenant databases
+        const user = await this.userModel
+          .findOne({ email: normalizedEmail })
+          .exec();
+
+        if (user) {
+          this.logger.debug(
+            `Found platform individual by email ${normalizedEmail}: ${user._id.toString()}`
+          );
+          return {
+            id: user._id.toString(),
+            // No tenantDatabaseName for users (they're platform-level)
+          };
+        }
+      }
+
+      return undefined;
+    } catch (error) {
+      this.logger.error(
+        `Error searching recipient by email ${normalizedEmail}: ${error}`
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -101,6 +164,37 @@ export class InvoiceIssuanceService {
     // Normalize recipient email for consistent matching
     const normalizedEmail = this.normalizeEmail(dto.recipient.email);
 
+    // MAGIC SEARCH: Auto-resolve platformId if not provided for platform recipients
+    let platformId = dto.recipient.platformId;
+    let tenantDatabaseName: string | undefined = undefined;
+
+    if (
+      !platformId &&
+      normalizedEmail &&
+      (dto.recipient.type === InvoiceRecipientType.PLATFORM_BUSINESS ||
+        dto.recipient.type === InvoiceRecipientType.PLATFORM_INDIVIDUAL)
+    ) {
+      // Try to find the recipient by email
+      const searchResult = await this.searchRecipientByEmail(
+        normalizedEmail,
+        dto.recipient.type
+      );
+
+      if (searchResult) {
+        platformId = searchResult.id;
+        tenantDatabaseName = searchResult.tenantDatabaseName;
+        this.logger.debug(
+          `Auto-resolved ${dto.recipient.type} recipient by email: ${platformId}`
+        );
+      } else {
+        // If recipient type is not EXTERNAL but we can't find them, that's an error
+        throw new BadRequestException(
+          `Cannot find ${dto.recipient.type} recipient with email ${normalizedEmail}. ` +
+            `Please provide platformId or create the invoice as type EXTERNAL.`
+        );
+      }
+    }
+
     // Determine resolution status based on recipient type
     // EXTERNAL recipients are PENDING until they claim platform identity
     // PLATFORM_BUSINESS and PLATFORM_INDIVIDUAL are already RESOLVED
@@ -115,7 +209,8 @@ export class InvoiceIssuanceService {
       invoiceNumber,
       recipient: {
         type: dto.recipient.type,
-        platformId: dto.recipient.platformId,
+        platformId,
+        tenantDatabaseName,
         email: normalizedEmail,
         displayName: dto.recipient.displayName,
         resolutionStatus,

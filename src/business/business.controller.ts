@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { BusinessService } from '@/business/business.service';
 import {
@@ -255,7 +256,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get tenant metadata for business',
     description:
-      'Resolve tenant context using businessId from the request body and fetch tenant database metadata.',
+      'Resolve tenant context using businessId as a query parameter and fetch tenant database metadata.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',
@@ -292,7 +298,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get business by ID',
     description:
-      'Retrieve detailed information about a specific business. User must have access to the business and businessId must be provided in the request body to resolve tenant context.',
+      'Retrieve detailed information about a specific business. User must have access to the business and businessId must be provided as a query parameter to resolve tenant context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',
@@ -512,7 +523,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get all clients for a business',
     description:
-      'Retrieve all users linked to this business with the role client. Only accessible by business owners or administrators.',
+      'Retrieve all users linked to this business with the role client. Only accessible by business owners or administrators. Provide businessId as a query parameter to resolve tenant context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',
@@ -639,7 +655,12 @@ export class BusinessController {
   @ApiOperation({
     summary: 'Get business statistics',
     description:
-      'Retrieve business statistics showing product and invoice summary. Only accessible by authorized business members.',
+      'Retrieve business statistics showing product and invoice summary. Only accessible by authorized business members. Provide businessId as a query parameter to resolve tenant context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',

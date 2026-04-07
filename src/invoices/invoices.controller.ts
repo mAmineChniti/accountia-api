@@ -114,11 +114,16 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'List invoices issued by this business',
     description:
-      'Retrieve all invoices created and managed by this business. Provide businessId in the request body to resolve tenant context.',
+      'Retrieve all invoices created and managed by this business. Provide businessId as a query parameter to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'List of issued invoices',
     type: InvoiceListResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiQuery({
     name: 'status',
@@ -157,7 +162,7 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Get a specific invoice issued by this business',
     description:
-      'Retrieve a specific invoice. Include businessId in the request body to resolve tenant context.',
+      'Retrieve a specific invoice. Provide businessId as a query parameter to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'Invoice details',
@@ -165,6 +170,11 @@ export class InvoicesController {
   })
   @ApiNotFoundResponse({
     description: 'Invoice not found',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',
@@ -271,11 +281,16 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Get invoices received by this business',
     description:
-      'Retrieve all invoices issued to your business by any issuer. Provide businessId in the request body to resolve tenant context.',
+      'Retrieve all invoices issued to your business by any issuer. Provide businessId as a query parameter to resolve tenant context.',
   })
   @ApiOkResponse({
     description: 'List of received invoices',
     type: InvoiceReceiptListResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiQuery({
     name: 'status',
@@ -350,7 +365,7 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Get full invoice details (business recipient)',
     description:
-      "Fetch the authoritative invoice document from the issuer's database. Include businessId in the request body to resolve tenant context.",
+      "Fetch the authoritative invoice document from the issuer's database. Provide businessId as a query parameter to resolve tenant context.",
   })
   @ApiOkResponse({
     description: 'Full invoice details',
@@ -361,6 +376,11 @@ export class InvoicesController {
   })
   @ApiForbiddenResponse({
     description: 'You do not have access to this invoice',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'receiptId',
@@ -419,7 +439,12 @@ export class InvoicesController {
   @ApiOperation({
     summary: 'Get import template and example',
     description:
-      'Retrieve a CSV/Excel template and example format for bulk importing invoices',
+      'Retrieve a CSV/Excel template and example format for bulk importing invoices. Provide businessId as a query parameter to resolve tenant context.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiOkResponse({
     description: 'Import template with examples and column definitions',

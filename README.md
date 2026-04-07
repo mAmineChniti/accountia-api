@@ -34,15 +34,23 @@ Content-Type: application/json
 
 ## Multi-Tenancy & Business Context
 
-This API uses a **multi-tenant architecture** where resources are scoped to specific businesses. For routes protected by `TenantContextGuard`, the business context must be supplied as `businessId` in the request body.
+This API uses a **multi-tenant architecture** where resources are scoped to specific businesses. For routes protected by `TenantContextGuard`, the business context must be supplied via `businessId`:
 
 ### Providing Business Context
 
-- `businessId` in the request body is required for `TenantContextGuard`-protected routes.
-- The previous `X-Business-ID` header, route parameter, and query string options are not used by `TenantContextGuard` for tenant resolution.
-- If `businessId` is not provided in the body, the request will be rejected with a **400 Bad Request** error.
+**For GET requests:**
 
-> Note: explicit route IDs may still be present in some URLs, but tenant resolution for guarded operations is determined from `body.businessId`.
+- Send `businessId` as a **query parameter**: `GET /endpoint?businessId=xyz`
+- Query parameter is **required** for all GET endpoints using `TenantContextGuard`
+- Do NOT send in request body for GET requests
+
+**For POST/PATCH/DELETE requests:**
+
+- Send `businessId` in the **request body**: `{ "businessId": "xyz", ... }`
+- Request body is **required** for all write operations using `TenantContextGuard`
+- Do NOT send in query parameters for write requests
+
+> **Important:** This pattern eliminates ambiguity and prevents route parameter conflicts. Always follow: GET = query params, POST/PATCH/DELETE = body.
 
 ---
 
@@ -1213,6 +1221,10 @@ Get business by ID.
 Authorization: Bearer <access_token>
 ```
 
+**Query Parameters:**
+
+- `businessId` (required): Your business ID for tenant context
+
 **URL Parameters:**
 
 - `id` (string): Business ID
@@ -1451,6 +1463,10 @@ Get tenant metadata for business.
 Authorization: Bearer <access_token>
 ```
 
+**Query Parameters:**
+
+- `businessId` (required): Your business ID for tenant context
+
 **URL Parameters:**
 
 - `id` (string): Business ID
@@ -1549,15 +1565,14 @@ Get all products for the business.
 
 ```http
 Authorization: Bearer <access_token>
-Content-Type: application/json
 ```
-
-**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
 
 **Query Parameters:**
 
+- `businessId` (required): Your business ID for tenant context
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 10)
+- `search` (optional): Search by name or description
 
 **Responses:**
 
@@ -1596,10 +1611,11 @@ Get product by ID.
 
 ```http
 Authorization: Bearer <access_token>
-Content-Type: application/json
 ```
 
-**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
+**Query Parameters:**
+
+- `businessId` (required): Your business ID for tenant context
 
 **URL Parameters:**
 
@@ -1696,7 +1712,7 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 ```
 
-**Tenant Context:** Include `businessId` in the request body for tenant-protected product routes.
+**Tenant Context:** Include `businessId` in the request body for write operations.
 
 **URL Parameters:**
 

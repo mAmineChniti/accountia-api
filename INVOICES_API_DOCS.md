@@ -31,6 +31,73 @@ The invoices system uses a **three-service architecture**:
 - InvoiceReceipts are synced to the **platform database** for cross-tenant recipient discoverability
 - Recipient emails are normalized (lowercase) for consistent matching
 
+### Magic Search Feature
+
+The system provides **automatic recipient lookup** to reduce frontend complexity. When creating an invoice with `PLATFORM_BUSINESS` or `PLATFORM_INDIVIDUAL` recipient type:
+
+- **If `platformId` is provided**: Uses the provided ID (no search performed)
+- **If `platformId` is NOT provided**:
+  - System automatically searches for a matching business or user by email
+  - For `PLATFORM_BUSINESS`: Searches the Business collection for matching email
+  - For `PLATFORM_INDIVIDUAL`: Searches the User collection for matching email
+  - If found: Auto-populates `platformId` with the matched ID → `resolutionStatus` = RESOLVED
+  - If not found: Returns **400 Bad Request** asking to provide explicit `platformId` or use `EXTERNAL` type
+- **For `EXTERNAL` recipients**: No search performed, email-only recipient accepted as-is
+
+**Benefits:**
+
+- Reduce API calls by eliminating separate business/user lookup requests
+- Automatic identity resolution improves data consistency
+- Frontend can send just email for known platform recipients
+- Clear error messages guide users on missing recipient resolution
+
+**Examples:**
+
+```javascript
+// PLATFORM_BUSINESS: Without platformId (auto-search by email)
+{
+  "recipient": {
+    "type": "PLATFORM_BUSINESS",
+    "email": "billing@company.com"
+    // platformId auto-resolved if business exists with this email
+  }
+}
+
+// PLATFORM_BUSINESS: With explicit platformId (no search)
+{
+  "recipient": {
+    "type": "PLATFORM_BUSINESS",
+    "platformId": "biz-123",
+    "email": "billing@company.com"
+    // platformId used directly, no search performed
+  }
+}
+
+// EXTERNAL: Email-only (no search)
+{
+  "recipient": {
+    "type": "EXTERNAL",
+    "email": "external@unknown.com",
+    "displayName": "External Company"
+    // No search, accepted as external recipient
+  }
+}
+```
+
+---
+
+## Tenant Context & businessId Requirements
+
+**All endpoints under "ISSUER ENDPOINTS" and "IMPORT ENDPOINTS" require authentication in a tenant context.** They use `TenantContextGuard` to resolve which business's database to query. You must provide `businessId` to identify the tenant context:
+
+| Endpoint Group                                | Method      | Requires businessId | Where to Send                           |
+| --------------------------------------------- | ----------- | ------------------- | --------------------------------------- |
+| **Issuer** (Create, List, Update, Transition) | POST, PATCH | ✓ Yes               | **Request Body** (JSON)                 |
+| **Issuer** (Get/List)                         | GET         | ✓ Yes               | **Query Parameter** (`?businessId=...`) |
+| **Recipient - Business** (Get/List)           | GET         | ✓ Yes               | **Query Parameter** (`?businessId=...`) |
+| **Recipient - Individual** (Get/List)         | GET         | ✗ No                | N/A (uses current user context)         |
+| **Import**                                    | POST        | ✓ Yes               | **Form Data** (multipart)               |
+
 ---
 
 ## Enums
@@ -53,8 +120,11 @@ ARCHIVED    - Kept for historical record
 
 ```
 PLATFORM_BUSINESS      - Registered business on platform
+                         Magic search: Searches Business collection by email if platformId not provided
 PLATFORM_INDIVIDUAL    - Registered user on platform
+                         Magic search: Searches User collection by email if platformId not provided
 EXTERNAL               - External contact (not on platform)
+                         No magic search: Email-only recipient, no platformId required
 ```
 
 ### RecipientResolutionStatus
@@ -75,7 +145,7 @@ These endpoints allow the business that issued an invoice to manage it.
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`  
 **Required Roles:** `OWNER`, `ADMIN`
 
-**Tenant Context:** `TenantContextGuard` reads `businessId` from the request body. Include `businessId` for protected invoice routes.
+**Tenant Context:** `TenantContextGuard` reads `businessId` from the request. **Send `businessId` in the request body** for all POST/PATCH endpoints in this section.
 
 ---
 
@@ -87,7 +157,33 @@ POST /invoices
 
 **Description:** Create a new invoice in DRAFT state. Invoice is not visible to recipient until transitioned to ISSUED.
 
-**Request Body:**
+**Magic Search Behavior:**
+
+- If creating with `PLATFORM_BUSINESS` or `PLATFORM_INDIVIDUAL` type but **without** `platformId`, the system automatically searches for a matching business or user by email
+- Search succeeds → `platformId` auto-populated, `resolutionStatus` = `RESOLVED`
+- Search fails → Returns **400 Bad Request** with guidance
+- For `EXTERNAL` recipients, no search performed; email-only is accepted
+
+See **Magic Search Feature** section above for detailed examples.
+
+**Request Body (Example 1: With Magic Search):**
+
+```json
+{
+  "businessId": "biz-123",
+  "invoiceNumber": "INV-2025-001",
+  "issuedDate": "2025-04-04T00:00:00Z",
+  "dueDate": "2025-05-04T00:00:00Z",
+  "currency": "USD",
+  "description": "Services for March 2025",
+  "paymentTerms": "NET 30",
+  "recipient": {
+    "type": "PLATFORM_BUSINESS",
+    "email": "billing@company.com"
+  },
+```
+
+**Request Body (Example 2: With Explicit platformId):**
 
 ```json
 {
@@ -170,12 +266,22 @@ POST /invoices
 
 **Error Responses:**
 
-- **400 Bad Request** - Invalid input or duplicate invoice number
+- **400 Bad Request** - Invalid input, duplicate invoice number, or recipient not found
 
   ```json
   {
     "statusCode": 400,
     "message": "Invoice number already exists for this business",
+    "error": "Bad Request"
+  }
+  ```
+
+- **400 Bad Request** - Recipient not found (magic search failed)
+
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot find PLATFORM_BUSINESS recipient with email billing@unknown.com. Please provide platformId or create the invoice as type EXTERNAL.",
     "error": "Bad Request"
   }
   ```
@@ -188,14 +294,17 @@ POST /invoices
 ### 2. List Issued Invoices
 
 ```http
-GET /invoices/issued?status=ISSUED&page=1&limit=10
+GET /invoices/issued?businessId=biz-123&status=ISSUED&page=1&limit=10
 ```
 
 **Description:** Retrieve all invoices issued by the current business.
 
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
+
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (required for tenant context) |
 | `status` | string | No | Filter by status (DRAFT, ISSUED, PAID, etc.) |
 | `page` | number | No | Page number (default: 1) |
 | `limit` | number | No | Items per page (default: 10) |
@@ -238,15 +347,22 @@ GET /invoices/issued?status=ISSUED&page=1&limit=10
 ### 3. Get Single Issued Invoice
 
 ```http
-GET /invoices/issued/:id
+GET /invoices/issued/:id?businessId=biz-123
 ```
 
 **Description:** Retrieve details of a specific invoice issued by your business.
+
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
 
 **Path Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `id` | string | Invoice ID |
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (required for tenant context) |
 
 **Success Response (200 OK):**
 
@@ -312,6 +428,8 @@ PATCH /invoices/issued/:id
 ```
 
 **Description:** Update a DRAFT invoice. Once ISSUED, use state transitions instead. Only DRAFT invoices can be edited.
+
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
 
 **Path Parameters:**
 | Parameter | Type | Description |
@@ -380,6 +498,8 @@ POST /invoices/issued/:id/transition
 ```
 
 **Description:** Change invoice status to a new state (e.g., DRAFT → ISSUED, ISSUED → PAID). Only valid state transitions are allowed.
+
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
 
 **Path Parameters:**
 | Parameter | Type | Description |
@@ -461,18 +581,17 @@ These endpoints allow businesses and individuals to view invoices sent to them.
 ### 6. Get Invoices Received by Business
 
 ```http
-GET /invoices/received/business?status=ISSUED&page=1&limit=10
+GET /invoices/received/business?businessId=biz-123&status=ISSUED&page=1&limit=10
 ```
 
 **Description:** Retrieve all invoices received by the current business from any issuer.
 
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`
 
-**Tenant Context:** Include `businessId` in the request body for tenant-protected recipient invoice routes.
-
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (required for tenant context) |
 | `status` | string | No | Filter by status |
 | `page` | number | No | Page number (default: 1) |
 | `limit` | number | No | Items per page (default: 10) |
@@ -565,19 +684,22 @@ GET /invoices/received/individual?status=ISSUED&page=1&limit=10
 ### 8. Get Full Invoice Details (Business Recipient)
 
 ```http
-GET /invoices/received/:receiptId/details
+GET /invoices/received/:receiptId/details?businessId=biz-123
 ```
 
 **Description:** Fetch the full authoritative invoice document from the issuer's database (for business recipients).
 
 **Required Guards:** `JwtAuthGuard`, `TenantContextGuard`
 
-**Tenant Context:** Include `businessId` in the request body for tenant-protected recipient invoice routes.
-
 **Path Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `receiptId` | string | Receipt ID (from list endpoint) |
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (required for tenant context) |
 
 **Success Response (200 OK):**
 
@@ -684,10 +806,17 @@ These endpoints allow importing multiple invoices from CSV or Excel files.
 ### 10. Get Import Template
 
 ```http
-GET /invoices/import/template
+GET /invoices/import/template?businessId=biz-123
 ```
 
 **Description:** Retrieve a CSV/Excel template and example format for bulk importing invoices.
+
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
+
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (required for tenant context) |
 
 **Success Response (200 OK):**
 
@@ -727,9 +856,12 @@ POST /invoices/import
 
 **Description:** Upload a CSV or XLSX file to create multiple invoices in bulk. Each row represents one invoice. Invoices are created in DRAFT status.
 
+**Required Guards:** `JwtAuthGuard`, `TenantContextGuard`, `BusinessRolesGuard`
+
 **Form Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `businessId` | string | Yes | Your business ID (should be sent in form data for tenant context) |
 | `file` | file | Yes | CSV or XLSX file |
 
 **CSV Columns:**
@@ -933,12 +1065,19 @@ Handles _background identity resolution for external recipients_:
 
 ### CreateInvoiceRecipientDto
 
-| Field         | Type                 | Required | Description                              |
-| ------------- | -------------------- | -------- | ---------------------------------------- |
-| `type`        | InvoiceRecipientType | Yes      | Type of recipient                        |
-| `platformId`  | string               | No       | Business ID or User ID (depends on type) |
-| `email`       | string               | No       | Email address                            |
-| `displayName` | string               | No       | Display name (for external recipients)   |
+| Field         | Type                 | Required | Description                                                                                                                                 |
+| ------------- | -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`        | InvoiceRecipientType | Yes      | Type of recipient                                                                                                                           |
+| `platformId`  | string               | No       | Business ID or User ID. Optional for platform recipients - if omitted, system auto-searches by email. Required for EXTERNAL → `displayName` |
+| `email`       | string               | Yes      | Email address. Used for magic search when `platformId` not provided for platform recipients                                                 |
+| `displayName` | string               | No       | Display name (required for EXTERNAL recipients)                                                                                             |
+
+**Magic Search Behavior:**
+
+- **PLATFORM_BUSINESS + email only**: Searches Business collection for matching email, auto-populates `platformId`
+- **PLATFORM_INDIVIDUAL + email only**: Searches User collection for matching email, auto-populates `platformId`
+- **PLATFORM\_\* + platformId provided**: Uses provided ID, no search performed
+- **EXTERNAL + email + displayName**: No search, email-only recipient accepted
 
 ### CreateInvoiceLineItemDto
 
@@ -1008,21 +1147,156 @@ ARCHIVED → (terminal state, no transitions)
 
 ## Examples
 
-### Example 1: Create and Issue an Invoice
+### Example 1: Create Invoice with Magic Search (PLATFORM_BUSINESS)
+
+Create invoice using just email - system auto-finds the business:
 
 ```bash
-# 1. Create invoice in DRAFT
 curl -X POST http://localhost:3000/invoices \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "businessId": "biz-123",
     "invoiceNumber": "INV-2025-001",
     "issuedDate": "2025-04-04T00:00:00Z",
     "dueDate": "2025-05-04T00:00:00Z",
     "currency": "USD",
     "recipient": {
       "type": "PLATFORM_BUSINESS",
-      "platformId": "biz-456"
+      "email": "billing@targetcompany.com"
+    },
+    "lineItems": [
+      {
+        "productId": "prod-123",
+        "productName": "Consulting Services",
+        "quantity": 10,
+        "unitPrice": 150.00
+      }
+    ]
+  }'
+```
+
+**Response:** `platformId` is auto-populated from the business found by email search
+
+**Error if recipient not found:**
+
+```json
+{
+  "statusCode": 400,
+  "message": "Cannot find PLATFORM_BUSINESS recipient with email billing@targetcompany.com. Please provide platformId or create the invoice as type EXTERNAL.",
+  "error": "Bad Request"
+}
+```
+
+### Example 2: Create Invoice with PLATFORM_INDIVIDUAL (User Email)
+
+Create invoice for registered platform user by just email:
+
+```bash
+curl -X POST http://localhost:3000/invoices \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "businessId": "biz-123",
+    "invoiceNumber": "INV-2025-002",
+    "issuedDate": "2025-04-04T00:00:00Z",
+    "dueDate": "2025-05-04T00:00:00Z",
+    "currency": "USD",
+    "recipient": {
+      "type": "PLATFORM_INDIVIDUAL",
+      "email": "john.doe@example.com"
+    },
+    "lineItems": [
+      {
+        "productId": "prod-123",
+        "productName": "Consulting",
+        "quantity": 5,
+        "unitPrice": 200.00
+      }
+    ]
+  }'
+```
+
+**Response:** `platformId` is auto-populated with the user ID found by email search
+
+### Example 3: Create Invoice with Explicit platformId (No Search)
+
+Create invoice with explicit business ID - no magic search performed:
+
+```bash
+curl -X POST http://localhost:3000/invoices \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "businessId": "biz-123",
+    "invoiceNumber": "INV-2025-003",
+    "issuedDate": "2025-04-04T00:00:00Z",
+    "dueDate": "2025-05-04T00:00:00Z",
+    "currency": "USD",
+    "recipient": {
+      "type": "PLATFORM_BUSINESS",
+      "platformId": "biz-456",
+      "email": "billing@knowncustomer.com"
+    },
+    "lineItems": [
+      {
+        "productId": "prod-1",
+        "productName": "Service",
+        "quantity": 1,
+        "unitPrice": 1000
+      }
+    ]
+  }'
+```
+
+### Example 4: Create Invoice for EXTERNAL Recipient (No Search)
+
+Create invoice for external contact (no platform account):
+
+```bash
+curl -X POST http://localhost:3000/invoices \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "businessId": "biz-123",
+    "invoiceNumber": "INV-2025-004",
+    "issuedDate": "2025-04-04T00:00:00Z",
+    "dueDate": "2025-05-04T00:00:00Z",
+    "currency": "USD",
+    "recipient": {
+      "type": "EXTERNAL",
+      "email": "external@unknowncompany.com",
+      "displayName": "External Company Ltd"
+    },
+    "lineItems": [
+      {
+        "productId": "prod-1",
+        "productName": "Service",
+        "quantity": 1,
+        "unitPrice": 1000
+      }
+    ]
+  }'
+```
+
+**No magic search performed for EXTERNAL recipients - accepted as email-only**
+
+### Example 5: Create and Issue an Invoice
+
+```bash
+# 1. Create invoice in DRAFT using magic search
+curl -X POST http://localhost:3000/invoices \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "businessId": "biz-123",
+    "invoiceNumber": "INV-2025-005",
+    "issuedDate": "2025-04-04T00:00:00Z",
+    "dueDate": "2025-05-04T00:00:00Z",
+    "currency": "USD",
+    "recipient": {
+      "type": "PLATFORM_BUSINESS",
+      "email": "billing@customer.com"
     },
     "lineItems": [
       {
@@ -1039,27 +1313,106 @@ curl -X POST http://localhost:3000/invoices/INVOICE_ID/transition \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "businessId": "biz-123",
     "newStatus": "ISSUED",
     "reason": "Publishing to customer"
   }'
 ```
 
-### Example 2: Record Payment
+### Example 6: Record Payment
 
 ```bash
 curl -X POST http://localhost:3000/invoices/INVOICE_ID/transition \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
+    "businessId": "biz-123",
     "newStatus": "PAID",
     "amountPaid": 1000,
     "reason": "Payment received - Check #12345"
   }'
 ```
 
-### Example 3: Retrieve Received Invoices
+### Example 7: Retrieve Received Invoices
 
 ```bash
-curl -X GET "http://localhost:3000/invoices/received/business?status=ISSUED&page=1&limit=20" \
+# For business recipients
+curl -X GET "http://localhost:3000/invoices/received/business?businessId=biz-123&status=ISSUED&page=1&limit=20" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# For individual recipients
+curl -X GET "http://localhost:3000/invoices/received/individual?status=ISSUED&page=1&limit=20" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
+
+---
+
+## Migration Guide: Magic Search Feature
+
+### What Changed?
+
+The invoice creation endpoint now supports **automatic recipient lookup** via email. This reduces the need for frontend applications to perform separate business/user lookups before creating invoices.
+
+### For Frontend Developers
+
+**Before (Manual Lookup Required):**
+
+```javascript
+// Step 1: Search for business by email
+const business = await api.searchBusiness({ email: 'billing@company.com' });
+
+// Step 2: Create invoice with business ID
+const invoice = await api.createInvoice({
+  businessId: 'biz-123',
+  recipient: {
+    type: 'PLATFORM_BUSINESS',
+    platformId: business.id,
+    email: 'billing@company.com'
+  },
+  lineItems: [...]
+});
+```
+
+**After (Magic Search Handles It):**
+
+```javascript
+// Just send email - backend auto-resolves the ID
+const invoice = await api.createInvoice({
+  businessId: 'biz-123',
+  recipient: {
+    type: 'PLATFORM_BUSINESS',
+    email: 'billing@company.com'
+    // NO platformId needed - auto-resolved by backend!
+  },
+  lineItems: [...]
+});
+```
+
+### When Does Magic Search Apply?
+
+| Recipient Type      | Has platformId | Has email | Behavior                                      |
+| ------------------- | -------------- | --------- | --------------------------------------------- |
+| PLATFORM_BUSINESS   | ✓ Yes          | Yes/No    | Uses provided platformId, no search           |
+| PLATFORM_BUSINESS   | ✗ No           | ✓ Yes     | **Searches Business by email, auto-resolves** |
+| PLATFORM_INDIVIDUAL | ✓ Yes          | Yes/No    | Uses provided platformId, no search           |
+| PLATFORM_INDIVIDUAL | ✗ No           | ✓ Yes     | **Searches User by email, auto-resolves**     |
+| EXTERNAL            | Any            | ✓ Yes     | No search, email-only accepted                |
+
+### Error Handling
+
+If magic search fails (recipient not found), the API returns a helpful error:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Cannot find PLATFORM_BUSINESS recipient with email billing@unknown.com. Please provide platformId or create the invoice as type EXTERNAL.",
+  "error": "Bad Request"
+}
+```
+
+**Solutions:**
+
+1. Verify the email is correct
+2. Provide explicit `platformId` if known
+3. Use `EXTERNAL` type if recipient is not on platform
+4. Create the recipient on platform first, then retry

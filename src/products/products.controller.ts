@@ -86,7 +86,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Get all products for the business',
     description:
-      'Retrieve paginated list of products for the current business. Include businessId in the request body to set the current business context.',
+      'Retrieve paginated list of products for the current business. Provide businessId as a query parameter to set the current business context.',
   })
   @ApiOkResponse({
     description: 'Products retrieved successfully',
@@ -94,6 +94,11 @@ export class ProductsController {
   })
   @ApiForbiddenResponse({
     description: 'Insufficient permissions or unauthorized business',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiQuery({
     name: 'page',
@@ -131,7 +136,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Get a product by ID',
     description:
-      'Get a specific product by ID (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Get a specific product by ID (must belong to current business). Provide businessId as a query parameter to set the current business context.',
   })
   @ApiOkResponse({
     description: 'Product retrieved successfully',
@@ -140,6 +145,11 @@ export class ProductsController {
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiForbiddenResponse({
     description: 'Product does not belong to your business',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    description: 'Business ID for tenant context',
   })
   @ApiParam({
     name: 'id',
@@ -157,11 +167,11 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Update a product',
     description:
-      'Update a product (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Update a product (must belong to current business). Include businessId in the request body to resolve tenant context.',
   })
   @ApiBody({
     description:
-      'Product update payload with businessId to resolve current tenant context.',
+      'Product update payload with businessId to resolve tenant context.',
     type: UpdateProductDto,
   })
   @ApiOkResponse({
@@ -191,7 +201,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Delete a product',
     description:
-      'Delete a product (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Delete a product (must belong to current business). Include businessId in the request body to resolve tenant context.',
   })
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiForbiddenResponse({
