@@ -14,6 +14,7 @@ import {
 import {
   ApiTags,
   ApiOperation,
+  ApiOkResponse,
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
@@ -35,6 +36,11 @@ import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
+  AcceptInviteResponseDto,
+  BusinessTeamResponseDto,
+  CancelInviteResponseDto,
+  InvitationPreviewResponseDto,
+  InviteTeamMemberResponseDto,
 } from '@/business/dto/business-response.dto';
 import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
@@ -54,6 +60,9 @@ import {
   type TenantContext,
   type TenantMetadata,
 } from '@/common/tenant/tenant.types';
+
+import { InviteMemberDto } from '@/business/dto/invite-member.dto';
+import { AcceptInviteDto } from '@/business/dto/accept-invite.dto';
 
 @ApiTags('Business')
 @Controller('business')
@@ -325,7 +334,7 @@ export class BusinessController {
 
   @Put(':id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Update business',
@@ -378,7 +387,7 @@ export class BusinessController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete business' })
@@ -402,7 +411,7 @@ export class BusinessController {
   // Business User Management Endpoints
   @Post(':id/users')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Assign user to business',
@@ -457,7 +466,7 @@ export class BusinessController {
 
   @Delete(':id/users/:userId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -544,7 +553,7 @@ export class BusinessController {
 
   @Patch(':id/clients/:clientId/role')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Change a client role in the business',
@@ -595,7 +604,7 @@ export class BusinessController {
 
   @Delete(':id/clients/:clientId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(BusinessUserRole.OWNER)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -668,5 +677,98 @@ export class BusinessController {
     @CurrentUser() user: UserPayload
   ): Promise<BusinessStatisticsResponseDto> {
     return this.businessService.getBusinessStatistics(id, user.id, user.role);
+  }
+
+  // --- Team & Invitations ---
+
+  @Post(':id/invite')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Invite a team member',
+    description:
+      'Send an email invitation to join the business with a specific role.',
+  })
+  @ApiOkResponse({
+    description: 'Invitation created successfully',
+    type: InviteTeamMemberResponseDto,
+  })
+  async inviteTeamMember(
+    @Param('id') id: string,
+    @Body() inviteDto: InviteMemberDto,
+    @CurrentUser() user: UserPayload
+  ): Promise<InviteTeamMemberResponseDto> {
+    return this.businessService.inviteTeamMember(id, inviteDto, user.id);
+  }
+
+  @Post('invite/accept')
+  @ApiOperation({
+    summary: 'Accept an invitation',
+    description:
+      'Accept an invitation using the token provided in the email and set up the user account.',
+  })
+  @ApiOkResponse({
+    description: 'Invitation accepted successfully',
+    type: AcceptInviteResponseDto,
+  })
+  async acceptInvite(
+    @Body() acceptDto: AcceptInviteDto
+  ): Promise<AcceptInviteResponseDto> {
+    return this.businessService.acceptInvite(acceptDto);
+  }
+
+  @Get('invite/:token')
+  @ApiOperation({
+    summary: 'Get invitation preview',
+    description:
+      'Retrieve invitation details (email, business name, status) before account setup.',
+  })
+  @ApiOkResponse({
+    description: 'Invitation preview retrieved',
+    type: InvitationPreviewResponseDto,
+  })
+  async getInvitationPreview(
+    @Param('token') token: string
+  ): Promise<InvitationPreviewResponseDto> {
+    return this.businessService.getInvitationPreview(token);
+  }
+
+  @Get(':id/team')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all team members and pending invites',
+    description: 'Retrieve all users and pending invitations for the business.',
+  })
+  @ApiOkResponse({
+    description: 'Team members and pending invites retrieved successfully',
+    type: BusinessTeamResponseDto,
+  })
+  async getBusinessTeam(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<BusinessTeamResponseDto> {
+    return this.businessService.getBusinessTeam(id, user.id, user.role);
+  }
+
+  @Delete(':id/invite/:inviteId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Cancel an invitation',
+    description: 'Cancel a pending invitation for a user to join the business.',
+  })
+  @ApiOkResponse({
+    description: 'Invitation cancelled successfully',
+    type: CancelInviteResponseDto,
+  })
+  async cancelInvite(
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string
+  ): Promise<CancelInviteResponseDto> {
+    return this.businessService.cancelInvite(id, inviteId);
   }
 }

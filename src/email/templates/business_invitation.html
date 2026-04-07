@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business Invitation - Accountia</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        line-height: 1.6;
+        color: #1a1a2e;
+        background-color: #f0f2f5;
+        padding: 40px 20px;
+      }
+      .wrapper {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .brand {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .brand-name {
+        font-size: 26px;
+        font-weight: 700;
+        color: #8b0000;
+        letter-spacing: -0.5px;
+      }
+      .container {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .header-bar {
+        background-color: #8b0000;
+        padding: 32px 40px;
+        text-align: center;
+      }
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 16px;
+      }
+      .info-box {
+        background-color: #f8fafc;
+        border-left: 4px solid #8b0000;
+        padding: 14px 16px;
+        border-radius: 0 8px 8px 0;
+        font-size: 14px;
+        color: #374151;
+        margin: 24px 0;
+      }
+      .cta-wrapper {
+        text-align: center;
+        margin: 28px 0;
+      }
+      .button {
+        display: inline-block;
+        background-color: #8b0000;
+        color: #ffffff !important;
+        padding: 14px 36px;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.2px;
+      }
+      .footer {
+        text-align: center;
+        padding: 24px 40px;
+        border-top: 1px solid #f1f5f9;
+        font-size: 12px;
+        color: #94a3b8;
+        line-height: 1.8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
+      </div>
+
+      <div class="container">
+        <div class="header-bar">
+          <h1>You're Invited to Join a Business</h1>
+        </div>
+
+        <div class="body">
+          <p>
+            You have been invited to join
+            <strong>{{.BusinessName}}</strong> as a
+            <strong>Business Admin</strong>
+            on Accountia.
+          </p>
+
+          <div class="info-box">
+            <p><strong>Sign-in email:</strong> {{.InviteEmail}}</p>
+            <p>Use this same email to log in after accepting the invitation.</p>
+          </div>
+
+          <div class="cta-wrapper">
+            <a href="{{.InviteLink}}" class="button">Accept Invitation</a>
+          </div>
+
+          <p>
+            For your security, Accountia never sends passwords by email. You
+            will set your own password securely on the invitation page.
+          </p>
+        </div>
+
+        <div class="footer">
+          <p>Best regards - The Accountia Team</p>
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>This is an automated message - please do not reply.</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

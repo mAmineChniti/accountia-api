@@ -12,7 +12,7 @@ import {
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: nodemailer.Transporter;
+  private transporter?: nodemailer.Transporter;
   private readonly frontendUrl: string;
   private readonly apiUrl: string;
 
@@ -237,6 +237,42 @@ export class EmailService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Rejection email failed: ${msg}`);
+    }
+  }
+
+  async sendBusinessInvitationEmail(
+    to: string,
+    businessName: string,
+    inviteLink: string
+  ): Promise<void> {
+    try {
+      const templatePath = path.join(
+        process.cwd(),
+        'src/email/templates/business_invitation.html'
+      );
+      let html = await readFile(templatePath, 'utf8');
+
+      const replacements = {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+        '{{.InviteEmail}}': EmailService.escapeHtml(to),
+        '{{.InviteLink}}': inviteLink,
+        '{{.Year}}': new Date().getFullYear().toString(),
+      };
+
+      for (const [placeholder, value] of Object.entries(replacements)) {
+        html = html.replaceAll(placeholder, value);
+      }
+
+      await this.sendEmail({
+        to,
+        subject: `You're invited to join ${businessName} on Accountia`,
+        html,
+        text: `You have been invited to join ${businessName} on Accountia. Use this email to sign in: ${to}. Accept invitation: ${inviteLink}`,
+        type: EmailType.BUSINESS_INVITE,
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Business invitation email failed: ${msg}`);
     }
   }
 

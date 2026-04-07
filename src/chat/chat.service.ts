@@ -231,6 +231,19 @@ export class ChatService {
     };
   }
 
+  private async fetchBusinessName(businessId: string): Promise<string> {
+    const business = await this.businessModel
+      .findById(businessId)
+      .select('name')
+      .lean();
+
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    return business.name;
+  }
+
   /**
    * Generate system prompt based on user role
    */
@@ -390,6 +403,205 @@ RÈGLES :
     return parts.join('\n');
   }
 
+  private getDefaultChoices(context?: BusinessContext): string[] {
+    const businessName = context?.businessName ?? 'mon business';
+    return [
+      `Resume la performance de ${businessName}`,
+      'Montre-moi les factures en retard',
+      'Donne-moi un insight sur le cash-flow',
+    ];
+  }
+
+  private detectIntent(
+    query: string
+  ): 'late' | 'cash' | 'revenue' | 'client' | undefined {
+    const value = query.trim().toLowerCase();
+
+    if (
+      /(retard|overdue|impaye|impayes|late|echeance|relance|recouvrement)/.test(
+        value
+      )
+    ) {
+      return 'late';
+    }
+
+    if (/(cash|tresorerie|cashflow|flux|liquidite)/.test(value)) {
+      return 'cash';
+    }
+
+    if (
+      /(revenu|ca|chiffre|vente|growth|croissance|marge|performance)/.test(
+        value
+      )
+    ) {
+      return 'revenue';
+    }
+
+    if (/(client|customer|portfolio|portefeuille|segment)/.test(value)) {
+      return 'client';
+    }
+
+    return undefined;
+  }
+
+  private getContextualChoices(
+    query: string,
+    context?: BusinessContext
+  ): string[] {
+    const defaults = this.getDefaultChoices(context);
+    const intent = this.detectIntent(query);
+
+    switch (intent) {
+      case 'late': {
+        return [
+          'Liste les factures en retard les plus urgentes',
+          'Propose un plan de relance client sur 7 jours',
+          'Estime le risque de retard global ce mois-ci',
+        ];
+      }
+      case 'cash': {
+        return [
+          'Donne une projection de tresorerie a 30 jours',
+          'Identifie les encaissements critiques de la semaine',
+          'Suggere 3 actions pour ameliorer le cash-flow',
+        ];
+      }
+      case 'revenue': {
+        return [
+          'Compare le revenu de ce mois vs mois precedent',
+          'Donne les principaux leviers de croissance court terme',
+          'Analyse les tendances de performance recentes',
+        ];
+      }
+      case 'client': {
+        return [
+          'Montre les clients les plus actifs',
+          'Quels clients presentent le plus de retards ?',
+          'Donne des recommandations pour fideliser les meilleurs clients',
+        ];
+      }
+      default: {
+        return defaults;
+      }
+    }
+  }
+
+  private isGreetingQuery(query: string): boolean {
+    const value = query.trim().toLowerCase();
+    return /^(bonjour|bonsoir|salut|hello|hi|bnj|slm|salam|coucou)$/.test(
+      value
+    );
+  }
+
+  private buildGreetingResponse(context?: BusinessContext): AiResponse {
+    const businessName = context?.businessName ?? 'votre business';
+    return {
+      response: `Bonjour. Je suis votre assistant pour ${businessName}. Je peux vous aider sur les factures, les retards, le revenu et le cash-flow.`,
+      choices: this.getDefaultChoices(context),
+      link: undefined,
+      type: 'choices',
+    };
+  }
+
+  private buildContextualFallbackResponse(
+    query: string,
+    context?: BusinessContext
+  ): string {
+    const businessName = context?.businessName ?? 'votre business';
+    const intent = this.detectIntent(query);
+
+    // Different fallback responses based on what the user is asking
+    switch (intent) {
+      case 'late': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser les retards de paiement chez ${businessName}.\n\nPour commencer l'analyse des factures en retard, vous devez:\n1. **Creer une facture client** depuis la section "Factures"\n2. Ou **importer vos factures existantes** via l'outil import\n\nUne fois les donnees presentes, je pourrai vous proposer un plan de relance personnalise.`;
+      }
+      case 'cash': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser le cash-flow de ${businessName}.\n\nPour optimiser votre tresorerie:\n1. **Importez vos factures clients** pour voir quand l'argent arrive\n2. **Tracez vos paiements** pour comprendre vos flux entrant/sortant\n\nAvec ces donnees, je pourrai faire une projection de tresorerie a 30 jours et identifier les encaissements critiques.`;
+      }
+      case 'revenue': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser la performance de ${businessName}.\n\nPour evaluer votre chiffre d'affaires:\n1. **Enregistrez vos factures clients** de ce mois-ci\n2. **Marquez les paiements recus** pour mettre a jour vos revenus\n\nJe pourrai ensuite comparer avec le mois precedent et identifier vos leviers de croissance.`;
+      }
+      case 'client': {
+        return `Je n'ai pas encore de donnees suffisantes pour analyser votre portefeuille client chez ${businessName}.\n\nPour y voir plus clair:\n1. **Creez/importez les factures de vos clients** majeurs\n2. **Suivez leurs paiements** pour identifier les plus fiables\n\nJe pourrai alors vous recommander comment fideliser vos meilleurs clients et relancer les problematiques.`;
+      }
+      default: {
+        // Generic fallback for other queries
+        return `Je n'ai pas encore de donnees suffisantes pour ${businessName}.\n\nPour que je puisse vous aider au mieux:\n1. **Creez ou importez vos factures clients** depuis la section "Factures"\n2. **Enregistrez les paiements recus** pour mettre a jour votre tresorerie\n\nUne fois les premieres donnees presentes, je pourrai vous fournir une analyse detaillee et des recommandations personnalisees.`;
+      }
+    }
+  }
+
+  private buildFallbackResponse(
+    context?: BusinessContext,
+    query?: string
+  ): AiResponse {
+    if (!context) {
+      return {
+        response:
+          "Je ne peux pas joindre l'IA pour le moment, mais je reste disponible. Reessayez dans quelques instants.",
+        choices: [],
+        link: undefined,
+        type: 'text',
+      };
+    }
+
+    const noBusinessDataYet =
+      (context.totalInvoices ?? 0) === 0 &&
+      (context.totalRevenue ?? 0) === 0 &&
+      (context.monthlyRevenue ?? 0) === 0 &&
+      (context.overdueInvoices ?? 0) === 0;
+
+    const summaryLines: string[] = [];
+
+    if (noBusinessDataYet) {
+      // Use contextual response when there's no data
+      const contextualResponse = query
+        ? this.buildContextualFallbackResponse(query, context)
+        : `Je n'ai pas encore de donnees suffisantes pour ${context.businessName ?? 'votre business'}. Commencez par creer ou importer des factures pour obtenir une analyse detaillee.`;
+
+      summaryLines.push(contextualResponse);
+    } else {
+      // Use business summary when there's some data
+      summaryLines.push(
+        `Resume rapide pour ${context.businessName ?? 'votre business'}:`,
+        `- Factures totales: ${context.totalInvoices ?? 0}`,
+        `- Factures en retard: ${context.overdueInvoices ?? 0}`,
+        `- Montant en retard: ${context.overdueAmount ?? 0} TND`,
+        `- Chiffre d'affaires total: ${context.totalRevenue ?? 0} TND`,
+        `- Revenu mensuel: ${context.monthlyRevenue ?? 0} TND`,
+        '',
+        "L'assistant IA est temporairement indisponible. Vous pouvez deja agir sur les factures en retard et relancer les clients prioritaires."
+      );
+    }
+
+    let fallbackChoices = this.getDefaultChoices(context);
+
+    if (!noBusinessDataYet && query) {
+      fallbackChoices = this.getContextualChoices(query, context);
+    }
+
+    return {
+      response: summaryLines.join('\n'),
+      choices: fallbackChoices,
+      link: undefined,
+      type: 'analysis',
+    };
+  }
+
+  private toCanonicalHistoryRole(role: string): 'user' | 'model' | undefined {
+    const value = role.trim().toLowerCase();
+
+    if (['user', 'human', 'client'].includes(value)) {
+      return 'user';
+    }
+
+    if (['assistant', 'ai', 'bot', 'model'].includes(value)) {
+      return 'model';
+    }
+
+    return undefined;
+  }
+
   /**
    * Get AI response from Gemini with business context
    */
@@ -400,19 +612,73 @@ RÈGLES :
     businessId: string,
     history: Array<{ role: string; content: string }> = []
   ): Promise<AiResponse> {
+    let businessContext: BusinessContext | undefined;
+
     try {
       // Verify user has access to this business
       await this.verifyBusinessAccess(businessId, userId);
 
+      // Fast path for greetings without loading full analytics context.
+      if (this.isGreetingQuery(query)) {
+        const businessName = await this.fetchBusinessName(businessId);
+        return this.buildGreetingResponse({ businessName });
+      }
+
       // Fetch business context from database
-      const businessContext = await this.fetchBusinessContext(businessId);
+      businessContext = await this.fetchBusinessContext(businessId);
 
       const systemPrompt = this.getSystemPrompt(role);
       const businessContextStr = this.formatBusinessContext(businessContext);
 
-      // Build conversation with system context
-      const conversationHistory = history.map((h) => ({
-        role: h.role === 'user' ? 'user' : 'model',
+      // Normalize history to keep Gemini chat format valid:
+      // - roles must alternate user/model
+      // - chat history should start with user and end with model
+      const normalizedHistory = history
+        .filter(
+          (h) => typeof h.content === 'string' && h.content.trim().length > 0
+        )
+        .map((h) => {
+          const role = this.toCanonicalHistoryRole(h.role);
+          if (!role) {
+            return;
+          }
+
+          return {
+            role,
+            content: h.content,
+          };
+        })
+        .filter(
+          (h): h is { role: 'user' | 'model'; content: string } =>
+            h !== undefined
+        );
+
+      while (
+        normalizedHistory.length > 0 &&
+        normalizedHistory[0].role !== 'user'
+      ) {
+        normalizedHistory.shift();
+      }
+
+      const dedupedHistory: Array<{ role: 'user' | 'model'; content: string }> =
+        [];
+
+      for (const historyItem of normalizedHistory) {
+        const lastItem = dedupedHistory.at(-1);
+        if (lastItem?.role === historyItem.role) {
+          dedupedHistory[dedupedHistory.length - 1] = historyItem;
+        } else {
+          dedupedHistory.push(historyItem);
+        }
+      }
+
+      const lastHistoryItem = dedupedHistory.at(-1);
+      if (lastHistoryItem?.role === 'user') {
+        dedupedHistory.pop();
+      }
+
+      const conversationHistory = dedupedHistory.map((h) => ({
+        role: h.role,
         parts: [{ text: h.content }],
       }));
 
@@ -458,6 +724,17 @@ RÈGLES :
         };
       }
 
+      if (!parsedResponse.choices || parsedResponse.choices.length === 0) {
+        parsedResponse.choices = this.getContextualChoices(
+          query,
+          businessContext
+        );
+      }
+
+      if (!parsedResponse.type) {
+        parsedResponse.type = 'text';
+      }
+
       return parsedResponse;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -472,13 +749,7 @@ RÈGLES :
         throw err;
       }
 
-      return {
-        response:
-          'Désolé, je rencontre une petite difficulté technique. Réessayez dans un instant.',
-        choices: [],
-        link: undefined,
-        type: 'text',
-      };
+      return this.buildFallbackResponse(businessContext, query);
     }
   }
 }

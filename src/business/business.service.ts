@@ -4,18 +4,26 @@ import {
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '@/audit/audit.service';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessApplication } from '@/business/schemas/business-application.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
+import {
+  BusinessInvitation,
+  InvitationStatus,
+} from '@/business/schemas/business-invitation.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { User } from '@/users/schemas/user.schema';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
+import { InviteMemberDto } from '@/business/dto/invite-member.dto';
+import { AcceptInviteDto } from '@/business/dto/accept-invite.dto';
+import { hash } from 'bcrypt';
 import {
   CreateBusinessApplicationDto,
   ReviewBusinessApplicationDto,
@@ -25,6 +33,8 @@ import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
+  BusinessTeamResponseDto,
+  TeamMemberItemResponseDto,
 } from '@/business/dto/business-response.dto';
 import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
@@ -41,6 +51,7 @@ import {
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Product } from '@/products/schemas/product.schema';
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -108,6 +119,19 @@ const isMissingCollectionError = (error: unknown): boolean => {
   );
 };
 
+const isDuplicateKeyError = (error: unknown): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 11_000
+  );
+};
+
+const normalizeUsernamePart = (value: string): string => {
+  return value.toLowerCase().replaceAll(/[^\da-z]/g, '');
+};
+
 @Injectable()
 export class BusinessService {
   constructor(
@@ -117,7 +141,10 @@ export class BusinessService {
     private businessApplicationModel: Model<BusinessApplication>,
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUser>,
+    @InjectModel(BusinessInvitation.name)
+    private businessInvitationModel: Model<BusinessInvitation>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Product.name) private productModel: Model<Product>,
     private emailService: EmailService,
     private tenantConnectionService: TenantConnectionService,
     private auditService: AuditService,
@@ -275,15 +302,15 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessApprovalEmail(
+        void this.emailService
+          .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             approvedBusinessName
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((_error) => {
+            // Email service handles errors internally
+          });
       }
 
       await this.auditService.logAction({
@@ -302,16 +329,16 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessRejectionEmail(
+        void this.emailService
+          .sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             application.businessName,
             reviewDto.reviewNotes ?? 'No specific reason provided'
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((_error) => {
+            // Email service handles errors internally
+          });
       }
 
       await this.auditService.logAction({
@@ -494,8 +521,8 @@ export class BusinessService {
         userId,
         role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN] },
       })
-      .select('businessId')
-      .lean()) as Array<{ businessId: string }>;
+      .select('businessId role')
+      .lean()) as Array<{ businessId: string; role: BusinessUserRole }>;
 
     // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
@@ -522,10 +549,19 @@ export class BusinessService {
             { upsert: true }
           );
 
-          businessUsers = [{ businessId: approvedApplication.businessId }];
+          businessUsers = [
+            {
+              businessId: approvedApplication.businessId,
+              role: BusinessUserRole.OWNER,
+            },
+          ];
         }
       }
     }
+
+    const roleByBusinessId = new Map(
+      businessUsers.map((bu) => [bu.businessId, bu.role])
+    );
 
     const businessIds = businessUsers.map((bu) => bu.businessId);
 
@@ -550,6 +586,7 @@ export class BusinessService {
         phone: business.phone,
         status: business.status,
         createdAt: business.createdAt,
+        membershipRole: roleByBusinessId.get(business._id.toString()),
       })),
     };
   }
@@ -796,17 +833,35 @@ export class BusinessService {
       throw new ForbiddenException('You do not have access to this business');
     }
 
-    // If ownership is required (for update/delete), owners and admins can proceed
-    if (
-      requireOwnership &&
-      ![BusinessUserRole.OWNER, BusinessUserRole.ADMIN].includes(
-        businessUser.role
-      )
-    ) {
+    // If ownership is required, only business owners can proceed.
+    if (requireOwnership && businessUser.role !== BusinessUserRole.OWNER) {
       throw new ForbiddenException(
-        'Only business owners and administrators can modify business settings'
+        'Only business owners can modify business settings'
       );
     }
+  }
+
+  private async generateUniqueUsername(
+    firstName: string,
+    lastName: string
+  ): Promise<string> {
+    const base =
+      `${normalizeUsernamePart(firstName)}${normalizeUsernamePart(lastName)}` ||
+      'user';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const suffix = randomBytes(4).toString('hex');
+      const candidate = `${base}_${suffix}`;
+      const exists = await this.userModel.exists({ username: candidate });
+
+      if (!exists) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictException(
+      'Unable to generate a unique username for invited user'
+    );
   }
 
   async getBusinessClients(
@@ -955,8 +1010,7 @@ export class BusinessService {
       useCache: true,
     });
 
-    // Get products statistics
-    const productsCollection = tenantDb.collection('products');
+    // Product data is stored in the main database (products module), not tenant DB.
     const invoicesCollection = tenantDb.collection('invoices');
 
     let productsStats = {
@@ -991,12 +1045,19 @@ export class BusinessService {
     ];
 
     try {
-      const [productsAggregation] = await productsCollection
+      const businessObjectId = new Types.ObjectId(businessId);
+
+      const [productsAggregation] = await this.productModel
         .aggregate<{
           totalProducts: number;
           totalValue: number;
           lowStockProducts: number;
         }>([
+          {
+            $match: {
+              $or: [{ businessId: businessObjectId }, { businessId }],
+            },
+          },
           {
             $group: {
               _id: '_all',
@@ -1017,7 +1078,7 @@ export class BusinessService {
             },
           },
         ])
-        .toArray();
+        .exec();
 
       if (productsAggregation) {
         productsStats = {
@@ -1228,5 +1289,338 @@ export class BusinessService {
       clientPodium: { podium: clientPodium },
       lastUpdated: new Date(),
     };
+  }
+
+  // --- Team & Invitations ---
+
+  async inviteTeamMember(
+    businessId: string,
+    inviteDto: InviteMemberDto,
+    userId: string
+  ): Promise<{ message: string; inviteId: string; expiresAt: Date }> {
+    if (inviteDto.role !== BusinessUserRole.ADMIN) {
+      throw new BadRequestException(
+        'Only BUSINESS_ADMIN invitations are allowed in Team Management'
+      );
+    }
+
+    const userRoleEnum = inviteDto.role;
+
+    // Check if the user is already assigned to the business
+    const existingUser = await this.userModel.findOne({
+      email: inviteDto.email,
+    });
+    if (existingUser) {
+      const existingAssignment = await this.businessUserModel.findOne({
+        businessId,
+        userId: existingUser._id.toString(),
+      });
+      if (existingAssignment) {
+        throw new ConflictException(
+          'User is already assigned to this business'
+        );
+      }
+    }
+
+    // Check if there is already a pending invitation
+    const existingInvite = await this.businessInvitationModel.findOne({
+      businessId,
+      email: inviteDto.email,
+      status: InvitationStatus.PENDING,
+    });
+    if (existingInvite) {
+      throw new ConflictException(
+        'An invitation is already pending for this email'
+      );
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiration
+
+    const invitation = new this.businessInvitationModel({
+      businessId,
+      email: inviteDto.email,
+      role: userRoleEnum,
+      invitedBy: userId,
+      token,
+      expiresAt,
+      status: InvitationStatus.PENDING,
+    });
+
+    await invitation.save();
+
+    const business = await this.businessModel.findById(businessId);
+
+    // Send email in background so SMTP latency does not block the API response.
+    const inviteLang =
+      inviteDto.lang === 'fr' ||
+      inviteDto.lang === 'ar' ||
+      inviteDto.lang === 'en'
+        ? inviteDto.lang
+        : 'en';
+    const inviteLink = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/${inviteLang}/invite/accept?token=${token}`;
+
+    void this.emailService
+      .sendBusinessInvitationEmail(
+        inviteDto.email,
+        business?.name ?? 'your business',
+        inviteLink
+      )
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : 'Unknown email send error';
+        console.error('Failed to send invitation email', message);
+      });
+
+    return {
+      message: 'Invitation sent successfully',
+      inviteId: invitation._id.toString(),
+      expiresAt: invitation.expiresAt,
+    };
+  }
+
+  async acceptInvite(
+    acceptDto: AcceptInviteDto
+  ): Promise<{ message: string; email: string }> {
+    if (acceptDto.acceptTerms !== true) {
+      throw new BadRequestException(
+        'You must accept terms and conditions to continue'
+      );
+    }
+
+    const invite = await this.businessInvitationModel.findOne({
+      token: acceptDto.token,
+    });
+
+    if (!invite) {
+      throw new BadRequestException('Invalid invitation token');
+    }
+
+    if (invite.status === InvitationStatus.ACCEPTED) {
+      throw new ConflictException({
+        message:
+          'Invitation already accepted. Please log in with the invited email.',
+        type: 'INVITE_ALREADY_ACCEPTED',
+        email: invite.email,
+      });
+    }
+
+    if (invite.status === InvitationStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Invitation is no longer active. Please request a new invitation.'
+      );
+    }
+
+    if (new Date() > invite.expiresAt) {
+      invite.status = InvitationStatus.CANCELLED;
+      await invite.save();
+      throw new BadRequestException(
+        'Invitation has expired. Please request a new invitation.'
+      );
+    }
+
+    // Check if user already exists
+    let user = await this.userModel.findOne({ email: invite.email });
+
+    const passwordHash = await hash(acceptDto.password, 10);
+
+    if (user) {
+      user.passwordHash = passwordHash;
+      user.emailConfirmed = true;
+      user.failedLoginAttempts = 0;
+      user.lockUntil = undefined;
+      user.acceptTerms = acceptDto.acceptTerms;
+
+      if (!user.birthdate && acceptDto.birthdate) {
+        user.birthdate = new Date(acceptDto.birthdate);
+      }
+
+      if (!user.firstName) {
+        user.firstName = acceptDto.firstName;
+      }
+
+      if (!user.lastName) {
+        user.lastName = acceptDto.lastName;
+      }
+
+      await user.save();
+    } else {
+      // Create new user
+      const username = await this.generateUniqueUsername(
+        acceptDto.firstName,
+        acceptDto.lastName
+      );
+
+      user = new this.userModel({
+        username,
+        email: invite.email,
+        firstName: acceptDto.firstName,
+        lastName: acceptDto.lastName,
+        passwordHash,
+        emailConfirmed: true, // Auto-verify since they received the invite to that email
+        acceptTerms: acceptDto.acceptTerms,
+        birthdate: acceptDto.birthdate
+          ? new Date(acceptDto.birthdate)
+          : invite.createdAt,
+      });
+
+      try {
+        await user.save();
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+
+        user.username = await this.generateUniqueUsername(
+          acceptDto.firstName,
+          acceptDto.lastName
+        );
+
+        try {
+          await user.save();
+        } catch (retryError) {
+          if (isDuplicateKeyError(retryError)) {
+            throw new ConflictException(
+              'Unable to create invited user due to username collision. Please retry.'
+            );
+          }
+
+          throw retryError;
+        }
+      }
+    }
+
+    const existingAssignment = await this.businessUserModel.findOne({
+      businessId: invite.businessId,
+      userId: user._id.toString(),
+    });
+
+    if (!existingAssignment) {
+      const businessUser = new this.businessUserModel({
+        businessId: invite.businessId,
+        userId: user._id.toString(),
+        role: invite.role,
+        assignedBy: invite.invitedBy,
+      });
+      await businessUser.save();
+    }
+
+    // Mark invite as accepted
+    invite.status = InvitationStatus.ACCEPTED;
+    await invite.save();
+
+    return {
+      message: 'Invitation accepted successfully',
+      email: invite.email,
+    };
+  }
+
+  async getInvitationPreview(token: string): Promise<{
+    email: string;
+    businessName: string;
+    status: 'PENDING' | 'ACCEPTED' | 'CANCELLED' | 'EXPIRED';
+    expiresAt: Date;
+  }> {
+    const invite = await this.businessInvitationModel.findOne({ token });
+
+    if (!invite) {
+      throw new BadRequestException('Invalid invitation token');
+    }
+
+    const business = await this.businessModel.findById(
+      invite.businessId,
+      'name'
+    );
+    const isExpired =
+      invite.status === InvitationStatus.PENDING &&
+      new Date() > invite.expiresAt;
+
+    return {
+      email: invite.email,
+      businessName: business?.name ?? 'Business',
+      status: isExpired ? 'EXPIRED' : invite.status,
+      expiresAt: invite.expiresAt,
+    };
+  }
+
+  async getBusinessTeam(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<BusinessTeamResponseDto> {
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const teamRoles = [BusinessUserRole.OWNER, BusinessUserRole.ADMIN];
+
+    // Return only owner/admin members for Team Management
+    const businessUsers = await this.businessUserModel.find({
+      businessId,
+      role: { $in: teamRoles },
+    });
+    const userIds = businessUsers.map((bu) => bu.userId);
+    const users = await this.userModel.find(
+      { _id: { $in: userIds } },
+      'firstName lastName email'
+    );
+
+    const teamMembers: TeamMemberItemResponseDto[] = businessUsers.map((bu) => {
+      const u = users.find((user) => user._id.toString() === bu.userId);
+      return {
+        id: bu._id.toString(),
+        userId: bu.userId,
+        firstName: u?.firstName ?? '',
+        lastName: u?.lastName ?? '',
+        email: u?.email ?? '',
+        role: bu.role,
+        status: 'ACCEPTED',
+        createdAt: bu.createdAt,
+      };
+    });
+
+    // Return pending invites
+    const pendingInvites = await this.businessInvitationModel.find({
+      businessId,
+      status: InvitationStatus.PENDING,
+      role: BusinessUserRole.ADMIN,
+    });
+
+    const inviteMembers: TeamMemberItemResponseDto[] = pendingInvites.map(
+      (inv) => {
+        return {
+          id: inv._id.toString(),
+          email: inv.email,
+          role: inv.role,
+          status: 'PENDING',
+          createdAt: inv.createdAt,
+          expiresAt: inv.expiresAt,
+        };
+      }
+    );
+
+    return {
+      message: 'Team members retrieved successfully',
+      members: [...teamMembers, ...inviteMembers],
+    };
+  }
+
+  async cancelInvite(
+    businessId: string,
+    inviteId: string
+  ): Promise<{ message: string }> {
+    const invite = await this.businessInvitationModel.findOne({
+      _id: inviteId,
+      businessId,
+      status: InvitationStatus.PENDING,
+    });
+
+    if (!invite) {
+      throw new NotFoundException('Pending invitation not found');
+    }
+
+    invite.status = InvitationStatus.CANCELLED;
+    await invite.save();
+
+    return { message: 'Invitation cancelled successfully' };
   }
 }
