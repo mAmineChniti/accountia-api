@@ -1,5 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class ClientPodiumEntryDto {
+  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
+  clientId!: string;
+
+  @ApiProperty({ example: 'John Doe' })
+  clientName!: string;
+
+  @ApiProperty({ example: 'john@example.com' })
+  clientEmail!: string;
+
+  @ApiProperty({ example: 15_000.5 })
+  totalPaidAmount!: number;
+
+  @ApiProperty({ example: 12 })
+  totalPaidInvoices!: number;
+
+  @ApiProperty({ example: '🥇' })
+  medal!: string;
+}
+
+export class ClientPodiumDto {
+  @ApiProperty({ type: [ClientPodiumEntryDto], isArray: true })
+  podium!: ClientPodiumEntryDto[];
+}
+
 export class ProductStatisticsDto {
   @ApiProperty({ example: 12 })
   totalProducts!: number;
@@ -46,6 +71,9 @@ export class BusinessStatisticsResponseDto {
 
   @ApiProperty({ type: () => InvoiceStatisticsDto })
   invoices!: InvoiceStatisticsDto;
+
+  @ApiProperty({ type: () => ClientPodiumDto })
+  clientPodium!: ClientPodiumDto;
 
   @ApiProperty({ type: String, format: 'date-time' })
   lastUpdated!: Date;

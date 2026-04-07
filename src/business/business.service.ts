@@ -1131,11 +1131,101 @@ export class BusinessService {
       // Missing collections are treated as empty statistics.
     }
 
+    // Calculate client podium - clients who have paid all their invoices
+    let clientPodium: Array<{
+      clientId: string;
+      clientName: string;
+      clientEmail: string;
+      totalPaidAmount: number;
+      totalPaidInvoices: number;
+      medal: string;
+    }> = [];
+
+    try {
+      // Get all clients for this business
+      const businessUsers = await this.businessUserModel
+        .find({ businessId, role: BusinessUserRole.CLIENT })
+        .select('userId')
+        .lean();
+
+      const clientIds = businessUsers.map((bu) => bu.userId);
+
+      if (clientIds.length > 0) {
+        // Get client details
+        const clients = await this.userModel
+          .find({ _id: { $in: clientIds } })
+          .select('firstName lastName email')
+          .lean();
+
+        // For each client, check if all their invoices are paid and calculate total
+        const clientStatsPromises = clients.map(async (client) => {
+          const clientInvoices = await invoicesCollection
+            .find({
+              'recipient.platformId': client._id.toString(),
+              'recipient.type': 'PLATFORM_INDIVIDUAL',
+            })
+            .toArray();
+
+          if (clientInvoices.length === 0) {
+            return; // No invoices, skip
+          }
+
+          // Check if all invoices are paid
+          const allPaid = clientInvoices.every(
+            (invoice) => toInvoiceStatus(invoice.status) === 'paid'
+          );
+
+          if (!allPaid) {
+            return; // Not all invoices paid
+          }
+
+          // Calculate total paid amount
+          const totalPaidAmount = clientInvoices.reduce(
+            (sum, invoice) => sum + toNumberOrZero(invoice.totalAmount),
+            0
+          );
+
+          const clientData = client;
+          const clientId = clientData._id.toString();
+          const totalInvoices = clientInvoices.length;
+          return {
+            clientId,
+            clientName: `${clientData.firstName} ${clientData.lastName}`,
+            clientEmail: clientData.email,
+            totalPaidAmount,
+            totalPaidInvoices: totalInvoices,
+          };
+        });
+
+        const clientStatsRaw = await Promise.all(clientStatsPromises);
+        const clientStats = clientStatsRaw.filter(
+          (stat): stat is NonNullable<typeof stat> => stat !== undefined
+        );
+
+        // Sort by total paid amount descending and take top 3
+        clientStats.sort((a, b) => b.totalPaidAmount - a.totalPaidAmount);
+        const topClients = clientStats.slice(0, 3);
+
+        // Assign medals
+        const medals = ['🥇', '🥈', '🥉'];
+        clientPodium = topClients.map((client, index) => ({
+          ...client,
+          medal: medals[index] || '🏅',
+        }));
+      }
+    } catch (error) {
+      if (!isMissingCollectionError(error)) {
+        console.error('Client podium calculation failed', error);
+        // Don't throw - podium is optional enhancement
+      }
+    }
+
     return {
       businessId: business._id.toString(),
       businessName: business.name,
       products: productsStats,
       invoices: invoicesStats,
+      clientPodium: { podium: clientPodium },
       lastUpdated: new Date(),
     };
   }
