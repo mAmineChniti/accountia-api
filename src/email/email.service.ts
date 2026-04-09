@@ -493,6 +493,51 @@ export class EmailService {
       .replaceAll("'", '&#039;');
   }
 
+  async sendBusinessInviteEmail(
+    to: string,
+    businessName: string,
+    inviterName: string,
+    businessRole: string
+  ): Promise<void> {
+    try {
+      const templatePath = path.join(
+        process.cwd(),
+        'src/email/templates/business_invite.html'
+      );
+      let html = await readFile(templatePath, 'utf8');
+
+      const roleDisplayMap: Record<string, string> = {
+        ADMIN: 'Admin/Member',
+        CLIENT: 'Client',
+      };
+      const roleDisplay = roleDisplayMap[businessRole] || businessRole;
+
+      const replacements = {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+        '{{.InviterName}}': EmailService.escapeHtml(inviterName),
+        '{{.BusinessRole}}': EmailService.escapeHtml(roleDisplay),
+        '{{.InvitedEmail}}': EmailService.escapeHtml(to),
+        '{{.Year}}': new Date().getFullYear().toString(),
+      };
+
+      for (const [placeholder, value] of Object.entries(replacements)) {
+        html = html.replaceAll(placeholder, value);
+      }
+
+      await this.sendEmail({
+        to,
+        subject: `You've been invited to join ${businessName}`,
+        html,
+        text: `You've been invited to join ${businessName} as a ${roleDisplay}.`,
+        type: EmailType.SYSTEM,
+        metadata: { businessName },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Business invite email failed: ${msg}`);
+    }
+  }
+
   /**
    * Test method
    */

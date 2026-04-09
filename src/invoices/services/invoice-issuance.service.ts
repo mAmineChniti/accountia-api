@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Model, Connection } from 'mongoose';
+import { ObjectId } from 'mongodb';
 import {
   CreateInvoiceDto,
   UpdateInvoiceDto,
@@ -14,7 +15,7 @@ import {
   InvoiceResponseDto,
   InvoiceListResponseDto,
 } from '@/invoices/dto/invoice.dto';
-import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import {
   InvoiceStatus,
@@ -43,8 +44,19 @@ import { TenantConnectionService } from '@/common/tenant/tenant-connection.servi
 export class InvoiceIssuanceService {
   private readonly logger = new Logger(InvoiceIssuanceService.name);
 
+  private readonly statusAliasMap: Record<string, InvoiceStatus> = {
+    DRAFT: InvoiceStatus.DRAFT,
+    ISSUED: InvoiceStatus.ISSUED,
+    VIEWED: InvoiceStatus.VIEWED,
+    PAID: InvoiceStatus.PAID,
+    PARTIAL: InvoiceStatus.PARTIAL,
+    OVERDUE: InvoiceStatus.OVERDUE,
+    DISPUTED: InvoiceStatus.DISPUTED,
+    VOIDED: InvoiceStatus.VOIDED,
+    ARCHIVED: InvoiceStatus.ARCHIVED,
+  };
+
   constructor(
-    @InjectModel(Invoice.name) private invoiceModel: Model<Invoice>,
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectModel(Business.name) private businessModel: Model<Business>,
@@ -61,6 +73,38 @@ export class InvoiceIssuanceService {
     return email.toLowerCase().trim();
   }
 
+  private normalizeInvoiceStatus(value: unknown): InvoiceStatus {
+    const raw = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    const normalized = this.statusAliasMap[raw];
+    if (!normalized) {
+      throw new BadRequestException(
+        `Unsupported invoice status: ${String(value)}`
+      );
+    }
+    return normalized;
+  }
+
+  /**
+   * Convert empty string values to undefined to avoid ObjectId cast failures.
+   */
+  private normalizeOptionalString(value?: string): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private getTenantInvoiceModel(databaseName: string): Model<Invoice> {
+    return this.tenantConnectionService.getTenantModel<Invoice>({
+      databaseName,
+      modelName: Invoice.name,
+      schema: InvoiceSchema,
+      collectionName: 'invoices',
+    });
+  }
+
   /**
    * Create a new draft invoice in the issuer's tenant database
    * Invoice is private until transitioned to ISSUED state
@@ -71,6 +115,8 @@ export class InvoiceIssuanceService {
     dto: CreateInvoiceDto,
     userId: string
   ): Promise<InvoiceResponseDto> {
+    const invoiceModel = this.getTenantInvoiceModel(databaseName);
+
     // Calculate total amount from line items
     const totalAmount = dto.lineItems.reduce(
       (sum, item) => sum + item.quantity * item.unitPrice,
@@ -100,6 +146,9 @@ export class InvoiceIssuanceService {
 
     // Normalize recipient email for consistent matching
     const normalizedEmail = this.normalizeEmail(dto.recipient.email);
+    const normalizedPlatformId = this.normalizeOptionalString(
+      dto.recipient.platformId
+    );
 
     // Determine resolution status based on recipient type
     // EXTERNAL recipients are PENDING until they claim platform identity
@@ -109,43 +158,180 @@ export class InvoiceIssuanceService {
       resolutionStatus = RecipientResolutionStatus.PENDING;
     }
 
-    // Create invoice in draft state
-    const invoice = await this.invoiceModel.create({
-      issuerBusinessId: businessId,
-      invoiceNumber,
-      recipient: {
-        type: dto.recipient.type,
-        platformId: dto.recipient.platformId,
-        email: normalizedEmail,
-        displayName: dto.recipient.displayName,
-        resolutionStatus,
-      },
-      status: InvoiceStatus.DRAFT,
-      totalAmount,
-      currency: dto.currency ?? 'TND',
-      amountPaid: 0,
-      issuedDate: dto.issuedDate,
-      dueDate: dto.dueDate,
-      lineItems,
-      description: dto.description,
-      paymentTerms: dto.paymentTerms,
-      createdBy: userId,
-      lastModifiedBy: userId,
-      lastStatusChangeAt: new Date(),
-    } as Partial<Invoice>);
+    const reservedProducts: Array<{ productId: ObjectId; quantity: number }> =
+      [];
 
-    this.logger.debug(
-      `Created draft invoice ${invoice._id.toString()} for business ${businessId}`
-    );
+    try {
+      // Reserve product quantities before creating invoice so imports and direct creates behave consistently.
+      await this.reserveProductQuantities(
+        businessId,
+        databaseName,
+        dto.lineItems,
+        reservedProducts
+      );
 
-    return this.mapInvoiceToResponse(invoice);
+      // Create invoice in draft state in tenant database
+      // Note: Mongoose will auto-convert businessId string to ObjectId in MongoDB
+      const invoice = await invoiceModel.create({
+        issuerBusinessId: businessId,
+        invoiceNumber,
+        recipient: {
+          type: dto.recipient.type,
+          platformId: normalizedPlatformId,
+          email: normalizedEmail,
+          displayName: dto.recipient.displayName,
+          resolutionStatus,
+        },
+        status: InvoiceStatus.DRAFT,
+        totalAmount,
+        currency: dto.currency ?? 'TND',
+        amountPaid: 0,
+        issuedDate: dto.issuedDate,
+        dueDate: dto.dueDate,
+        lineItems,
+        description: dto.description,
+        paymentTerms: dto.paymentTerms,
+        createdBy: userId,
+        lastModifiedBy: userId,
+        lastStatusChangeAt: new Date(),
+      } as Partial<Invoice>);
+
+      this.logger.debug(
+        `Created draft invoice ${invoice._id.toString()} for business ${businessId} in tenant database: ${databaseName}`
+      );
+
+      // Also save to platform database for cross-tenant visibility and archival
+      try {
+        await this.saveToPlatformDatabase(invoice, databaseName);
+        this.logger.debug(
+          `Synchronized invoice ${invoice._id.toString()} to platform database`
+        );
+      } catch (error) {
+        // Non-blocking: Log but don't fail the invoice creation
+        this.logger.warn(
+          `Failed to sync invoice ${invoice._id.toString()} to platform database: ${error}`,
+          error
+        );
+      }
+
+      return this.mapInvoiceToResponse(invoice);
+    } catch (error) {
+      await this.rollbackReservedQuantities(databaseName, reservedProducts);
+      throw error;
+    }
+  }
+
+  private async reserveProductQuantities(
+    businessId: string,
+    databaseName: string,
+    lineItems: CreateInvoiceDto['lineItems'],
+    reservedProducts: Array<{ productId: ObjectId; quantity: number }>
+  ): Promise<void> {
+    if (lineItems.length === 0) {
+      return;
+    }
+
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    const productsCollection = tenantDb.collection('products');
+    const businessObjectId = new ObjectId(businessId);
+
+    const quantitiesByProduct = new Map<string, number>();
+    for (const item of lineItems) {
+      const productId = this.normalizeOptionalString(item.productId);
+      if (!productId || !ObjectId.isValid(productId)) {
+        throw new BadRequestException(
+          `Invalid productId in line items: ${String(item.productId)}`
+        );
+      }
+
+      quantitiesByProduct.set(
+        productId,
+        (quantitiesByProduct.get(productId) ?? 0) + item.quantity
+      );
+    }
+
+    for (const [
+      productId,
+      quantityToReserve,
+    ] of quantitiesByProduct.entries()) {
+      const productObjectId = new ObjectId(productId);
+      const updateResult = await productsCollection.updateOne(
+        {
+          _id: productObjectId,
+          $or: [{ businessId: businessObjectId }, { businessId }],
+          quantity: { $gte: quantityToReserve },
+        },
+        { $inc: { quantity: -quantityToReserve } }
+      );
+
+      if (updateResult.modifiedCount !== 1) {
+        const product = await productsCollection.findOne({
+          _id: productObjectId,
+          $or: [{ businessId: businessObjectId }, { businessId }],
+        });
+
+        if (!product) {
+          throw new NotFoundException(
+            `Product ${productId} not found for this business`
+          );
+        }
+
+        const currentQuantity =
+          typeof product.quantity === 'number' ? product.quantity : 0;
+        throw new BadRequestException(
+          `Insufficient quantity for product ${productId}. Available: ${currentQuantity}, required: ${quantityToReserve}`
+        );
+      }
+
+      reservedProducts.push({
+        productId: productObjectId,
+        quantity: quantityToReserve,
+      });
+    }
+  }
+
+  private async rollbackReservedQuantities(
+    databaseName: string,
+    reservedProducts: Array<{ productId: ObjectId; quantity: number }>
+  ): Promise<void> {
+    if (reservedProducts.length === 0) {
+      return;
+    }
+
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    const productsCollection = tenantDb.collection('products');
+
+    for (const reserved of reservedProducts) {
+      try {
+        await productsCollection.updateOne(
+          { _id: reserved.productId },
+          { $inc: { quantity: reserved.quantity } }
+        );
+      } catch (rollbackError) {
+        this.logger.error(
+          `Failed to rollback quantity for product ${reserved.productId.toString()}`,
+          rollbackError as Error
+        );
+      }
+    }
   }
 
   /**
    * Get all invoices issued by a business, with optional filtering
+   *
+   * TENANT DB ISOLATION:
+   * - Uses tenant-scoped invoice model via tenantConnectionService
+   * - Ensures data is retrieved from issuer's tenant database only
+   * - Never crosses tenant boundaries
+   *
+   * PAGINATION:
+   * - `total`: Actual count of all invoices for this business (unfiltered)
+   * - `filteredTotal`: Count of invoices matching applied filters
+   * - This allows clients to show: "Showing X of Y total invoices"
    */
   async getIssuerInvoices(
     businessId: string,
+    databaseName: string,
     page: number,
     limit: number,
     filters?: Record<string, unknown>
@@ -156,32 +342,47 @@ export class InvoiceIssuanceService {
         ? { status: filters.status }
         : {};
 
-    const [invoices, total] = await Promise.all([
-      this.invoiceModel
+    // Get tenant-scoped invoice model for proper multi-tenancy isolation
+    const invoiceModel = this.getTenantInvoiceModel(databaseName);
+
+    // Fetch in parallel: actual total, filtered invoices, and filtered count
+    const [total, invoices, filteredTotal] = await Promise.all([
+      // Get ACTUAL TOTAL of all invoices for this business (unfiltered)
+      invoiceModel.countDocuments({
+        issuerBusinessId: businessId,
+      }),
+      // Get filtered and paginated invoices from tenant database
+      invoiceModel
         .find(Object.assign({ issuerBusinessId: businessId }, statusFilter))
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
         .exec(),
-      this.invoiceModel.countDocuments(
+      // Get count of filtered results (for display purposes)
+      invoiceModel.countDocuments(
         Object.assign({ issuerBusinessId: businessId }, statusFilter)
       ),
     ]);
 
     return {
       invoices: invoices.map((inv) => this.mapInvoiceToResponse(inv)),
-      total,
+      total, // Actual total of all invoices for this business
+      filteredTotal, // Count of invoices matching the applied filter
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(filteredTotal / limit), // Pagination based on filtered results
     };
   }
 
   /**
    * Get a specific invoice by ID
    */
-  async getInvoiceById(invoiceId: string): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(invoiceId).exec();
+  async getInvoiceById(
+    invoiceId: string,
+    databaseName: string
+  ): Promise<InvoiceResponseDto> {
+    const invoiceModel = this.getTenantInvoiceModel(databaseName);
+    const invoice = await invoiceModel.findById(invoiceId).exec();
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
     }
@@ -194,10 +395,12 @@ export class InvoiceIssuanceService {
   async updateDraftInvoice(
     invoiceId: string,
     businessId: string,
+    databaseName: string,
     dto: UpdateInvoiceDto,
     userId: string
   ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(invoiceId).exec();
+    const invoiceModel = this.getTenantInvoiceModel(databaseName);
+    const invoice = await invoiceModel.findById(invoiceId).exec();
 
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -224,6 +427,17 @@ export class InvoiceIssuanceService {
       `Updated draft invoice ${invoiceId} for business ${businessId}`
     );
 
+    // Sync updated invoice to platform database
+    try {
+      await this.saveToPlatformDatabase(invoice, databaseName);
+    } catch (error) {
+      // Non-blocking: log but don't fail the update
+      this.logger.warn(
+        `Failed to sync updated invoice to platform database: ${error}`,
+        error
+      );
+    }
+
     return this.mapInvoiceToResponse(invoice);
   }
 
@@ -237,7 +451,8 @@ export class InvoiceIssuanceService {
     dto: TransitionInvoiceStateDto,
     userId: string
   ): Promise<InvoiceResponseDto> {
-    const invoice = await this.invoiceModel.findById(invoiceId).exec();
+    const invoiceModel = this.getTenantInvoiceModel(databaseName);
+    const invoice = await invoiceModel.findById(invoiceId).exec();
 
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -247,18 +462,22 @@ export class InvoiceIssuanceService {
       throw new ForbiddenException('You do not own this invoice');
     }
 
+    // Normalize statuses so legacy lowercase/mixed-case values still follow state machine rules.
+    const currentStatus = this.normalizeInvoiceStatus(invoice.status);
+    const targetStatus = this.normalizeInvoiceStatus(dto.newStatus);
+
     // Validate state transition using state machine
-    const validTransitions = INVOICE_STATUS_TRANSITIONS[invoice.status];
-    if (!validTransitions.includes(dto.newStatus)) {
+    const validTransitions = INVOICE_STATUS_TRANSITIONS[currentStatus];
+    if (!validTransitions.includes(targetStatus)) {
       throw new BadRequestException(
-        `Cannot transition from ${invoice.status} to ${dto.newStatus}`
+        `Cannot transition from ${currentStatus} to ${targetStatus}`
       );
     }
 
     // Update payment if transitioning to PAID/PARTIAL
     if (
-      dto.newStatus === InvoiceStatus.PAID ||
-      dto.newStatus === InvoiceStatus.PARTIAL
+      targetStatus === InvoiceStatus.PAID ||
+      targetStatus === InvoiceStatus.PARTIAL
     ) {
       if (dto.amountPaid === undefined) {
         throw new BadRequestException(
@@ -271,37 +490,48 @@ export class InvoiceIssuanceService {
     }
 
     // Update status and audit fields
-    const previousStatus = invoice.status;
-    invoice.status = dto.newStatus;
+    const previousStatus = currentStatus;
+    invoice.status = targetStatus;
     invoice.lastStatusChangeAt = new Date();
     invoice.lastModifiedBy = userId;
 
     // Handle voiding
-    if (dto.newStatus === InvoiceStatus.VOIDED) {
+    if (targetStatus === InvoiceStatus.VOIDED) {
       invoice.voidReason = dto.reason;
       invoice.voidedAt = new Date();
+
+      // Best effort: restore reserved inventory when an invoice is voided.
+      try {
+        await this.restoreReservedInventoryForInvoice(invoice, databaseName);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to restore reserved inventory for voided invoice ${invoiceId}`,
+          error
+        );
+      }
     }
 
     await invoice.save();
 
     this.logger.log(
-      `Invoice ${invoiceId} transitioned from ${previousStatus} to ${dto.newStatus}`
+      `Invoice ${invoiceId} transitioned from ${previousStatus} to ${targetStatus}`
     );
 
-    // Sync receipt to platform DB if invoice is now ISSUED
-    // This makes it visible to recipients
-    if (dto.newStatus === InvoiceStatus.ISSUED) {
+    // Sync invoice state change to platform database
+    try {
+      await this.saveToPlatformDatabase(invoice, databaseName);
+    } catch (error) {
+      // Non-blocking: log but don't fail the transition
+      this.logger.warn(
+        `Failed to sync invoice state change to platform database: ${error}`,
+        error
+      );
+    }
+
+    // Keep recipient-facing receipt in sync for every non-draft state.
+    // ISSUED creates visibility, later transitions (VIEWED/PAID/etc.) update status for recipients.
+    if (targetStatus !== InvoiceStatus.DRAFT) {
       await this.syncInvoiceToReceipt(invoice, databaseName);
-    } else if (
-      invoice.status !== InvoiceStatus.DRAFT &&
-      [
-        InvoiceStatus.PAID,
-        InvoiceStatus.VOIDED,
-        InvoiceStatus.ARCHIVED,
-      ].includes(invoice.status)
-    ) {
-      // Update receipt for financial state changes
-      await this.updateReceiptFromInvoice(invoice);
     }
 
     return this.mapInvoiceToResponse(invoice);
@@ -347,7 +577,6 @@ export class InvoiceIssuanceService {
         issuedDate: invoice.issuedDate,
         dueDate: invoice.dueDate,
         invoiceStatus: invoice.status,
-        recipientViewed: false,
         lastSyncedAt: new Date(),
       };
 
@@ -366,6 +595,7 @@ export class InvoiceIssuanceService {
       }
 
       if (existingReceipt) {
+        receiptData.recipientViewed = existingReceipt.recipientViewed;
         await this.invoiceReceiptModel.updateOne(
           { _id: existingReceipt._id },
           receiptData
@@ -374,6 +604,7 @@ export class InvoiceIssuanceService {
           `Updated InvoiceReceipt ${existingReceipt._id.toString()}`
         );
       } else {
+        receiptData.recipientViewed = false;
         const created = await this.invoiceReceiptModel.create(receiptData);
         this.logger.log(
           `Created InvoiceReceipt ${created._id.toString()} for invoice ${invoice._id.toString()}`
@@ -390,25 +621,97 @@ export class InvoiceIssuanceService {
   }
 
   /**
-   * Update an existing InvoiceReceipt when invoice state changes
-   * Used for PAID, VOIDED, ARCHIVED transitions
+   * Save invoice to platform database for cross-tenant visibility and archival
+   * This creates or updates an invoice record in the shared Accountia database
+   * Non-blocking operation - failures don't affect tenant database state
    */
-  private async updateReceiptFromInvoice(invoice: Invoice): Promise<void> {
+  private async saveToPlatformDatabase(
+    invoice: Invoice,
+    tenantDatabaseName: string
+  ): Promise<void> {
     try {
-      await this.invoiceReceiptModel.updateOne(
-        { invoiceId: invoice._id.toString() },
-        {
-          invoiceStatus: invoice.status,
-          lastSyncedAt: new Date(),
-        }
-      );
-      this.logger.debug(
-        `Updated InvoiceReceipt status for ${invoice._id.toString()}`
+      // Get platform database connection
+      const platformDb = this.connection.db;
+      if (!platformDb) {
+        this.logger.warn('Platform database not available');
+        return;
+      }
+
+      // Get the invoice collection from platform database
+      const platformInvoicesCollection = platformDb.collection('invoices');
+
+      // Draft and other pre-issuance states should remain private in shared storage.
+      const invoiceDataForPlatform = {
+        _id: invoice._id, // Use same ID for referential integrity
+        issuerBusinessId: invoice.issuerBusinessId,
+        tenantDatabaseName, // Store which tenant database owns this
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        createdAt: invoice.createdAt,
+        updatedAt: invoice.updatedAt,
+        syncedAt: new Date(), // Track when synced
+      };
+
+      if (invoice.status !== InvoiceStatus.DRAFT) {
+        Object.assign(invoiceDataForPlatform, {
+          recipient: invoice.recipient,
+          totalAmount: invoice.totalAmount,
+          currency: invoice.currency,
+          amountPaid: invoice.amountPaid,
+          issuedDate: invoice.issuedDate,
+          dueDate: invoice.dueDate,
+          lineItems: invoice.lineItems,
+          description: invoice.description,
+          paymentTerms: invoice.paymentTerms,
+          voidReason: invoice.voidReason,
+          voidedAt: invoice.voidedAt,
+          createdBy: invoice.createdBy,
+          lastModifiedBy: invoice.lastModifiedBy,
+          lastStatusChangeAt: invoice.lastStatusChangeAt,
+        });
+      }
+
+      // Upsert to handle concurrent creates/updates
+      await platformInvoicesCollection.updateOne(
+        { _id: invoice._id },
+        { $set: invoiceDataForPlatform },
+        { upsert: true }
       );
     } catch (error) {
-      // Non-blocking
+      // Non-blocking: don't throw, just log
+      // Eventual consistency: will retry on next state change or scheduled sync
       this.logger.warn(
-        `Failed to update InvoiceReceipt status for ${invoice._id.toString()}: ${error}`
+        `Failed to save invoice ${invoice._id.toString()} to platform database`,
+        error
+      );
+    }
+  }
+
+  private async restoreReservedInventoryForInvoice(
+    invoice: Invoice,
+    databaseName: string
+  ): Promise<void> {
+    if (!Array.isArray(invoice.lineItems) || invoice.lineItems.length === 0) {
+      return;
+    }
+
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    const productsCollection = tenantDb.collection('products');
+
+    for (const item of invoice.lineItems) {
+      const rawProductId = this.normalizeOptionalString(String(item.productId));
+      if (!rawProductId || !ObjectId.isValid(rawProductId)) {
+        continue;
+      }
+
+      const quantityToRestore = Math.max(0, Number(item.quantity) || 0);
+      if (quantityToRestore === 0) {
+        continue;
+      }
+
+      await productsCollection.updateOne(
+        { _id: new ObjectId(rawProductId) },
+        { $inc: { quantity: quantityToRestore } }
       );
     }
   }

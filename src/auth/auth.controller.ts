@@ -1,4 +1,5 @@
 import {
+  Logger,
   Controller,
   Post,
   Body,
@@ -14,6 +15,7 @@ import {
   Res,
   HttpException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -61,12 +63,18 @@ import { BanUserDto, BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
 import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
 import { type GoogleAuthUser } from '@/auth/strategies/google.strategy';
+import { BusinessService } from '@/business/business.service';
 
 @ApiTags('Authentication')
 @ApiExtraModels(AuthResponseDto)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  private readonly logger = new Logger(AuthController.name);
+
+  constructor(
+    private readonly authService: AuthService,
+    @Optional() private readonly businessService?: BusinessService
+  ) {}
 
   @Get('google')
   @UseGuards(GoogleAuthGuard)
@@ -277,9 +285,11 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async logout(
     @CurrentUser() user: UserPayload,
-    @Body() body: RefreshTokenDto
+    @Body() body: RefreshTokenDto,
+    @Req() req: Request
   ): Promise<void> {
-    await this.authService.logout(user.id, body.refreshToken);
+    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    await this.authService.logout(user.id, body.refreshToken, ip);
   }
 
   @Post('refresh')
@@ -360,12 +370,32 @@ export class AuthController {
   ): Promise<{ success: boolean; message?: string } | void> {
     const result = await this.authService.confirmEmail(token);
 
+    // Process business invites if email confirmation was successful
+    if (result.success && result.user && this.businessService) {
+      this.businessService
+        .processInvitesForNewUser(result.user._id.toString(), result.user.email)
+        .catch((error) => {
+          // Log the error but don't fail the email confirmation
+          this.logger.error(
+            'Failed to process business invites after email confirmation',
+            error instanceof Error ? error.stack : String(error)
+          );
+        });
+    }
+
     try {
       const templatePath = `${process.cwd()}/src/auth/templates/email_confirmed.html`;
       const template = await readFile(templatePath, 'utf8');
 
       const year = new Date().getFullYear();
       let html = template.replaceAll('{{.Year}}', year.toString());
+
+      // Inject frontend URL for action links in the template
+      const frontendBase = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      html = html.replaceAll(
+        '{{.FrontendURL}}',
+        frontendBase.replaceAll(/\/+$/g, '')
+      );
 
       if (result.success) {
         // Remove entire else block and remaining markers

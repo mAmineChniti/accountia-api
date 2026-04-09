@@ -59,6 +59,35 @@ export class InvoiceStatisticsDto {
   overdueInvoices!: number;
 }
 
+export class ProductProfitabilityDto {
+  @ApiProperty({ example: '507f1f77bcf86cd799439099' })
+  productId!: string;
+
+  @ApiProperty({ example: 'HP pcs' })
+  productName!: string;
+
+  @ApiProperty({ example: 1500 })
+  unitPrice!: number;
+
+  @ApiProperty({ example: 900 })
+  unitCost!: number;
+
+  @ApiProperty({ example: 8 })
+  soldQuantity!: number;
+
+  @ApiProperty({ example: 12_000 })
+  revenue!: number;
+
+  @ApiProperty({ example: 7200 })
+  totalCost!: number;
+
+  @ApiProperty({ example: 4800 })
+  grossProfit!: number;
+
+  @ApiProperty({ example: 40 })
+  profitMarginPercent!: number;
+}
+
 export class BusinessStatisticsResponseDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439011' })
   businessId!: string;
@@ -72,8 +101,8 @@ export class BusinessStatisticsResponseDto {
   @ApiProperty({ type: () => InvoiceStatisticsDto })
   invoices!: InvoiceStatisticsDto;
 
-  @ApiProperty({ type: () => ClientPodiumDto })
-  clientPodium!: ClientPodiumDto;
+  @ApiProperty({ type: [ProductProfitabilityDto], isArray: true })
+  productProfitability!: ProductProfitabilityDto[];
 
   @ApiProperty({ type: String, format: 'date-time' })
   lastUpdated!: Date;
