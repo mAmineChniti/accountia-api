@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Model, Connection } from 'mongoose';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
@@ -38,8 +37,14 @@ export interface BusinessContext {
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private genAI: GoogleGenerativeAI;
-  private model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>;
+  private readonly openRouterApiKey?: string;
+  private readonly chatEnabled: boolean;
+  private readonly openRouterModel: string;
+  private readonly openRouterMaxCompletionTokens: number;
+  private readonly openRouterTimeoutMs: number;
+  private static readonly MAX_HISTORY_MESSAGES = 20;
+  private static readonly MAX_MESSAGE_CHARS = 2000;
+  private openRouterClientPromise?: Promise<unknown>;
 
   constructor(
     @InjectModel(Business.name) private businessModel: Model<Business>,
@@ -49,20 +54,213 @@ export class ChatService {
     private invoiceModel: Model<Invoice>,
     @InjectConnection() private connection: Connection
   ) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      this.logger.error(
-        'GEMINI_API_KEY environment variable is not set. Chat service will not work properly.'
+    this.openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    this.openRouterModel =
+      process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+    this.openRouterMaxCompletionTokens = this.resolveMaxCompletionTokens(
+      process.env.OPENROUTER_MAX_COMPLETION_TOKENS
+    );
+    this.openRouterTimeoutMs = this.resolveOpenRouterTimeoutMs(
+      process.env.OPENROUTER_TIMEOUT_MS
+    );
+    this.chatEnabled = Boolean(this.openRouterApiKey);
+
+    if (!this.chatEnabled) {
+      this.logger.warn(
+        'OPENROUTER_API_KEY environment variable is not set. Chat service is disabled.'
       );
-      throw new Error('GEMINI_API_KEY is required');
+      return;
     }
 
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+    this.logger.log(
+      `ChatService initialized with OpenRouter model: ${this.openRouterModel} (maxCompletionTokens=${this.openRouterMaxCompletionTokens})`
+    );
+  }
+
+  private resolveMaxCompletionTokens(rawValue?: string): number {
+    const fallback = 1200;
+    if (!rawValue) {
+      return fallback;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+
+    return Math.max(64, Math.min(Math.floor(parsed), 16_000));
+  }
+
+  private resolveOpenRouterTimeoutMs(rawValue?: string): number {
+    const fallback = 30_000;
+    if (!rawValue) {
+      return fallback;
+    }
+
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+
+    return Math.max(1000, Math.min(Math.floor(parsed), 120_000));
+  }
+
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    operationName: string
+  ): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
     });
 
-    this.logger.log('ChatService initialized with Gemini API');
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  private async getOpenRouterClient(): Promise<{
+    chat: {
+      send(request: {
+        chatRequest: {
+          model: string;
+          messages: Array<{
+            role: 'system' | 'user' | 'assistant';
+            content: string;
+          }>;
+          maxCompletionTokens: number;
+          temperature: number;
+          stream: false;
+        };
+      }): Promise<{
+        choices?: Array<{ message?: { content?: unknown } }>;
+      }>;
+    };
+  }> {
+    this.openRouterClientPromise ??= import('@openrouter/sdk').then(
+      ({ OpenRouter }) =>
+        new OpenRouter({
+          apiKey: this.openRouterApiKey,
+          httpReferer: process.env.APP_URL,
+          appTitle: process.env.APP_NAME ?? 'accountia-api',
+        })
+    );
+
+    return this.openRouterClientPromise as Promise<{
+      chat: {
+        send(request: {
+          chatRequest: {
+            model: string;
+            messages: Array<{
+              role: 'system' | 'user' | 'assistant';
+              content: string;
+            }>;
+            maxCompletionTokens: number;
+            temperature: number;
+            stream: false;
+          };
+        }): Promise<{
+          choices?: Array<{ message?: { content?: unknown } }>;
+        }>;
+      };
+    }>;
+  }
+
+  private async generateWithOpenRouter(params: {
+    systemPrompt: string;
+    businessContext?: string;
+    query: string;
+    history: Array<{ role: string; content: string }>;
+  }): Promise<string> {
+    if (!this.chatEnabled || !this.openRouterApiKey) {
+      throw new Error('OPENROUTER_API_KEY is not configured');
+    }
+
+    const systemContent = params.businessContext
+      ? `${params.systemPrompt}\n\n${params.businessContext}`
+      : params.systemPrompt;
+
+    const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
+    const safeHistory = params.history
+      .slice(-ChatService.MAX_HISTORY_MESSAGES)
+      .map((entry) => ({
+        role: entry.role,
+        content: entry.content.slice(0, ChatService.MAX_MESSAGE_CHARS),
+      }));
+
+    const messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+    }> = [
+      { role: 'system', content: systemContent },
+      ...safeHistory.map((entry) => ({
+        role:
+          entry.role === 'assistant' || entry.role === 'model'
+            ? ('assistant' as const)
+            : ('user' as const),
+        content: entry.content,
+      })),
+      { role: 'user', content: safeQuery },
+    ];
+
+    const openRouterClient = await this.getOpenRouterClient();
+    let response: Awaited<ReturnType<(typeof openRouterClient.chat)['send']>>;
+    try {
+      response = await this.withTimeout(
+        openRouterClient.chat.send({
+          chatRequest: {
+            model: this.openRouterModel,
+            messages,
+            maxCompletionTokens: this.openRouterMaxCompletionTokens,
+            temperature: 0.4,
+            stream: false,
+          },
+        }),
+        this.openRouterTimeoutMs,
+        'OpenRouter chat request'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`OpenRouter request failed: ${message}`);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(message);
+    }
+
+    const content = (
+      response as {
+        choices?: Array<{
+          message?: {
+            content?: string | Array<{ type?: string; text?: string }>;
+          };
+        }>;
+      }
+    )?.choices?.[0]?.message?.content;
+
+    if (typeof content === 'string' && content.trim().length > 0) {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => (typeof part.text === 'string' ? part.text : ''))
+        .join('')
+        .trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+
+    throw new Error('OpenRouter response did not include message content');
   }
 
   /**
@@ -410,29 +608,12 @@ RÈGLES :
       const systemPrompt = this.getSystemPrompt(role);
       const businessContextStr = this.formatBusinessContext(businessContext);
 
-      // Build conversation with system context
-      const conversationHistory = history.map((h) => ({
-        role: h.role === 'user' ? 'user' : 'model',
-        parts: [{ text: h.content }],
-      }));
-
-      // Prepare the full message with system prompt and business context
-      let fullMessage = `${systemPrompt}`;
-
-      if (businessContextStr) {
-        fullMessage += `\n\n${businessContextStr}`;
-      }
-
-      fullMessage += `\n\nUtilisateur: ${query}`;
-
-      // Start a chat session
-      const chat = this.model.startChat({
-        history:
-          conversationHistory.length > 0 ? conversationHistory : undefined,
+      const response = await this.generateWithOpenRouter({
+        systemPrompt,
+        businessContext: businessContextStr,
+        query,
+        history,
       });
-
-      const result = await chat.sendMessage(fullMessage);
-      const response = result.response.text();
 
       // Parse response - attempt to extract JSON if present
       let parsedResponse: AiResponse;
@@ -464,12 +645,75 @@ RÈGLES :
       const message = err.message || 'Unknown AI service error';
       this.logger.error(`Chat error: ${message}`, err);
 
+      const sdkError = err as {
+        errorDetails?: Array<{ reason?: string; message?: string }>;
+        status?: number;
+        apiMessage?: string;
+        statusCode?: number;
+        body?: string;
+      };
+      const parsedErrorBody = (() => {
+        if (!sdkError.body || typeof sdkError.body !== 'string') {
+          return;
+        }
+        try {
+          return JSON.parse(sdkError.body) as {
+            error?: { message?: string };
+          };
+        } catch {
+          return;
+        }
+      })();
+      const details = sdkError.errorDetails ?? [];
+      const hasInvalidApiKeyReason = details.some(
+        (detail) => detail.reason === 'API_KEY_INVALID'
+      );
+      const httpStatus = sdkError.statusCode ?? sdkError.status;
+      const hasOpenRouterAuthError = httpStatus === 401;
+      const hasOpenRouterCreditError = httpStatus === 402;
+      const hasExpiredKeyMessage =
+        message.toLowerCase().includes('api key expired') ||
+        details.some((detail) =>
+          (detail.message ?? '').toLowerCase().includes('api key expired')
+        );
+      const isApiKeyError =
+        hasInvalidApiKeyReason ||
+        hasExpiredKeyMessage ||
+        hasOpenRouterAuthError ||
+        message.toLowerCase().includes('api_key_invalid');
+
       // Re-throw authorization and not found errors
       if (
         err instanceof ForbiddenException ||
         err instanceof NotFoundException
       ) {
         throw err;
+      }
+
+      if (isApiKeyError) {
+        this.logger.error(
+          'OpenRouter API key is invalid or expired. Renew OPENROUTER_API_KEY in .env and restart the backend.'
+        );
+        return {
+          response:
+            'Le service IA est indisponible: la clé API OpenRouter est invalide ou expirée. Mettez à jour OPENROUTER_API_KEY puis redémarrez le serveur.',
+          choices: [],
+          link: undefined,
+          type: 'text',
+        };
+      }
+
+      if (hasOpenRouterCreditError) {
+        this.logger.error(
+          `OpenRouter credits or billing issue: ${parsedErrorBody?.error?.message ?? sdkError.apiMessage ?? message}`
+        );
+        return {
+          response:
+            'Le service IA est indisponible: crédits OpenRouter insuffisants. Réduisez OPENROUTER_MAX_COMPLETION_TOKENS ou ajoutez des crédits OpenRouter.',
+          choices: [],
+          link: undefined,
+          type: 'text',
+        };
       }
 
       return {

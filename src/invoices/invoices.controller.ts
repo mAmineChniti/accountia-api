@@ -12,6 +12,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -69,9 +70,12 @@ export class InvoicesController {
 
   /**
    * ============================================
-   * ISSUER ENDPOINTS (Invoice Management)
+   * ISSUER ENDPOINTS (Tenant DB - Invoice Management)
    * ============================================
-   * Only businesses that issued the invoice can manage them
+   * Routes used by businesses to create and manage invoices in their tenant database
+   * Authentication: JWT + TenantContextGuard + BusinessRolesGuard
+   * Only OWNER or ADMIN roles can access these routes
+   * Data Storage: Tenant-specific MongoDB database (e.g., evenix_mn9fsurc_d1c76f)
    */
 
   @Post()
@@ -79,9 +83,11 @@ export class InvoicesController {
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create a new invoice (draft)',
+    summary: '[TENANT DB] Create a new invoice (draft)',
     description:
-      'Create a new invoice in DRAFT state. Invoice becomes visible to recipient when transitioned to ISSUED. Include businessId in the request body to resolve tenant context.',
+      'Create a new invoice in DRAFT state within the business tenant database. Invoice becomes visible to recipient when transitioned to ISSUED. ' +
+      'Include businessId in the request body to resolve tenant context. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiBody({
     description:
@@ -89,7 +95,7 @@ export class InvoicesController {
     type: CreateInvoiceDto,
   })
   @ApiCreatedResponse({
-    description: 'Invoice created successfully',
+    description: 'Invoice created successfully in tenant database',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
@@ -112,18 +118,27 @@ export class InvoicesController {
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: 'List invoices issued by this business',
+    summary: '[TENANT DB] List invoices issued by this business',
     description:
-      'Retrieve all invoices created and managed by this business. Provide businessId in the request body to resolve tenant context.',
+      'Retrieve all invoices created and managed by this business from the tenant database. ' +
+      'businessId is REQUIRED as a query parameter. Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: 'List of issued invoices',
+    description: 'List of issued invoices from tenant database',
     type: InvoiceListResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiQuery({
     name: 'status',
     required: false,
-    description: 'Filter by invoice status (DRAFT, ISSUED, PAID, etc.)',
+    description:
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
     name: 'page',
@@ -145,6 +160,7 @@ export class InvoicesController {
   ): Promise<InvoiceListResponseDto> {
     return await this.issuanceService.getIssuerInvoices(
       tenant.businessId,
+      tenant.databaseName,
       page,
       limit,
       { status: status }
@@ -155,13 +171,21 @@ export class InvoicesController {
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: 'Get a specific invoice issued by this business',
+    summary: '[TENANT DB] Get a specific invoice issued by this business',
     description:
-      'Retrieve a specific invoice. Include businessId in the request body to resolve tenant context.',
+      'Retrieve a specific invoice from the tenant database. businessId is REQUIRED as a query parameter. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: 'Invoice details',
+    description: 'Invoice details from tenant database',
     type: InvoiceResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiNotFoundResponse({
     description: 'Invoice not found',
@@ -174,10 +198,13 @@ export class InvoicesController {
     @Param('id') invoiceId: string,
     @CurrentTenant() tenant: TenantContext
   ): Promise<InvoiceResponseDto> {
-    const invoice = await this.issuanceService.getInvoiceById(invoiceId);
+    const invoice = await this.issuanceService.getInvoiceById(
+      invoiceId,
+      tenant.databaseName
+    );
     // Verify issuer
     if (invoice.issuerBusinessId !== tenant.businessId) {
-      throw new Error('Forbidden');
+      throw new ForbiddenException('Forbidden');
     }
     return invoice;
   }
@@ -186,12 +213,13 @@ export class InvoicesController {
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: 'Update a draft invoice',
+    summary: '[TENANT DB] Update a draft invoice',
     description:
-      'Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead. Include businessId in the request body to resolve tenant context.',
+      'Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead. Include businessId in the request body to resolve tenant context. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: 'Invoice updated',
+    description: 'Invoice updated in tenant database',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
@@ -215,6 +243,7 @@ export class InvoicesController {
     return await this.issuanceService.updateDraftInvoice(
       invoiceId,
       tenant.businessId,
+      tenant.databaseName,
       dto,
       user.id
     );
@@ -224,12 +253,13 @@ export class InvoicesController {
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: 'Transition invoice to a new state',
+    summary: '[TENANT DB] Transition invoice to a new state',
     description:
-      'Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed. Include businessId in the request body to resolve tenant context.',
+      'Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed. Include businessId in the request body to resolve tenant context. ' +
+      'Data is updated in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
   })
   @ApiOkResponse({
-    description: 'Invoice state transitioned',
+    description: 'Invoice state transitioned successfully',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
@@ -261,26 +291,38 @@ export class InvoicesController {
 
   /**
    * ============================================
-   * RECIPIENT ENDPOINTS (Invoice Inbox)
+   * RECIPIENT ENDPOINTS (Platform DB - Invoice Inbox)
    * ============================================
-   * Any authenticated user/business can view invoices addressed to them
+   * Routes used by businesses and individuals to receive and view invoices sent to them
+   * Authentication: JWT + TenantContextGuard (for businesses) or JWT only (for individuals)
+   * Data Storage: Platform-wide MongoDB database (accountia) - via InvoiceReceipts
+   * These routes query invoice receipts to discover and access invoices from any issuer
    */
 
   @Get('received/business')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiOperation({
-    summary: 'Get invoices received by this business',
+    summary: '[PLATFORM DB] Get invoices received by this business',
     description:
-      'Retrieve all invoices issued to your business by any issuer. Provide businessId in the request body to resolve tenant context.',
+      'Retrieve all invoices issued to your business from any issuer. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts. ' +
+      'businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
-    description: 'List of received invoices',
+    description: 'List of received invoices from platform database',
     type: InvoiceReceiptListResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiQuery({
     name: 'status',
     required: false,
-    description: 'Filter by invoice status',
+    description:
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
     name: 'page',
@@ -309,16 +351,19 @@ export class InvoicesController {
   @Get('received/individual')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: 'Get invoices received by you',
-    description: 'Retrieve all invoices issued to you by any business',
+    summary: '[PLATFORM DB] Get invoices received by you (individual)',
+    description:
+      'Retrieve all invoices issued to you personally from any business. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts.',
   })
   @ApiOkResponse({
-    description: 'List of received invoices',
+    description: 'List of received invoices from platform database',
     type: InvoiceReceiptListResponseDto,
   })
   @ApiQuery({
     name: 'status',
     required: false,
+    description:
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
     name: 'page',
@@ -348,13 +393,23 @@ export class InvoicesController {
   @Get('received/:receiptId/details')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiOperation({
-    summary: 'Get full invoice details (business recipient)',
+    summary:
+      '[PLATFORM DB → TENANT DB] Get full invoice details (business recipient)',
     description:
-      "Fetch the authoritative invoice document from the issuer's database. Include businessId in the request body to resolve tenant context.",
+      "Fetch the authoritative invoice document from the issuer's tenant database. " +
+      "Receipt lookup via: Platform database (accountia) | Full invoice data from: Issuer's tenant database. " +
+      'businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
-    description: 'Full invoice details',
+    description: 'Full invoice details from issuer tenant database',
     type: InvoiceResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiNotFoundResponse({
     description: 'Invoice not found',
@@ -364,7 +419,7 @@ export class InvoicesController {
   })
   @ApiParam({
     name: 'receiptId',
-    description: 'Receipt ID',
+    description: 'Receipt ID from platform database',
   })
   async getReceivedInvoiceDetails(
     @Param('receiptId') receiptId: string,
@@ -379,12 +434,14 @@ export class InvoicesController {
   @Get('received/individual/:receiptId/details')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: 'Get full invoice details (individual recipient)',
+    summary:
+      '[PLATFORM DB → TENANT DB] Get full invoice details (individual recipient)',
     description:
-      'Fetch the authoritative invoice document (for individual recipients)',
+      "Fetch the authoritative invoice document from the issuer's tenant database for individual recipients. " +
+      "Receipt lookup via: Platform database (accountia) | Full invoice data from: Issuer's tenant database.",
   })
   @ApiOkResponse({
-    description: 'Full invoice details',
+    description: 'Full invoice details from issuer tenant database',
     type: InvoiceResponseDto,
   })
   @ApiForbiddenResponse({
@@ -392,7 +449,7 @@ export class InvoicesController {
   })
   @ApiParam({
     name: 'receiptId',
-    description: 'Receipt ID',
+    description: 'Receipt ID from platform database',
   })
   async getReceivedInvoiceDetailsIndividual(
     @Param('receiptId') receiptId: string,
@@ -408,18 +465,29 @@ export class InvoicesController {
 
   /**
    * ============================================
-   * IMPORT ENDPOINTS (Bulk Operations)
+   * IMPORT ENDPOINTS (Tenant DB - Bulk Operations)
    * ============================================
-   * Import invoices in bulk from CSV or Excel files
+   * Routes used by businesses to bulk import invoices from CSV/Excel files
+   * Authentication: JWT + TenantContextGuard + BusinessRolesGuard
+   * Only OWNER or ADMIN roles can access these routes
+   * Data Storage: Tenant-specific MongoDB database (e.g., evenix_mn9fsurc_d1c76f)
    */
 
   @Get('import/template')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: 'Get import template and example',
+    summary: '[TENANT DB] Get import template and example',
     description:
-      'Retrieve a CSV/Excel template and example format for bulk importing invoices',
+      'Retrieve a CSV/Excel template and example format for bulk importing invoices. businessId is REQUIRED as a query parameter. ' +
+      'Data invoices will be created in: Tenant-specific MongoDB database.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiOkResponse({
     description: 'Import template with examples and column definitions',
@@ -456,11 +524,12 @@ export class InvoicesController {
   @HttpCode(HttpStatus.OK)
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: 'Bulk import invoices from CSV or Excel file',
+    summary: '[TENANT DB] Bulk import invoices from CSV or Excel file',
     description:
       'Import multiple invoices at once from a CSV or XLSX file. ' +
       'Each row represents one invoice. Supports multiple recipient types and line item formats. ' +
-      'Use GET /invoices/import/template to get the required format.',
+      'Use GET /invoices/import/template to get the required format. ' +
+      'Data is created in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
   })
   @ApiOkResponse({
     description: 'Import completed with detailed results',

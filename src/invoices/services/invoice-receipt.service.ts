@@ -54,6 +54,10 @@ export class InvoiceReceiptService {
    * Get all invoices received by a business (as recipient)
    * Queries platform-level InvoiceReceipt index
    * Only returns invoices explicitly addressed to this business
+   *
+   * PAGINATION:
+   * - `total`: Actual count of all invoices received (unfiltered)
+   * - `filteredTotal`: Count of invoices matching applied filters
    */
   async getReceivedInvoicesByBusiness(
     recipientBusinessId: string,
@@ -67,7 +71,7 @@ export class InvoiceReceiptService {
         ? { invoiceStatus: filters.status }
         : {};
 
-    const [receipts, total] = await Promise.all([
+    const [receipts, total, filteredTotal] = await Promise.all([
       this.invoiceReceiptModel
         .find(Object.assign({ recipientBusinessId }, statusFilter))
         .skip(skip)
@@ -75,6 +79,9 @@ export class InvoiceReceiptService {
         .sort({ issuedDate: -1 })
         .lean({ virtuals: false })
         .exec(),
+      this.invoiceReceiptModel.countDocuments({
+        recipientBusinessId,
+      }),
       this.invoiceReceiptModel.countDocuments(
         Object.assign({ recipientBusinessId }, statusFilter)
       ),
@@ -87,9 +94,10 @@ export class InvoiceReceiptService {
         )
       ),
       total,
+      filteredTotal,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(filteredTotal / limit),
     };
   }
 
@@ -99,6 +107,10 @@ export class InvoiceReceiptService {
    *
    * Email matching is used for invoices created before the user signed up.
    * Once user has a userId, they can access via userId directly.
+   *
+   * PAGINATION:
+   * - `total`: Actual count of all invoices received (unfiltered)
+   * - `filteredTotal`: Count of invoices matching applied filters
    */
   async getReceivedInvoicesByIndividual(
     userId: string,
@@ -114,34 +126,21 @@ export class InvoiceReceiptService {
         ? { invoiceStatus: filters.status }
         : {};
 
-    const [receipts, total] = await Promise.all([
+    const userOrEmailFilter = {
+      $or: [{ recipientUserId: userId }, { recipientEmail: normalizedEmail }],
+    };
+
+    const [receipts, total, filteredTotal] = await Promise.all([
       this.invoiceReceiptModel
-        .find(
-          Object.assign(
-            {
-              $or: [
-                { recipientUserId: userId },
-                { recipientEmail: normalizedEmail },
-              ],
-            },
-            statusFilter
-          )
-        )
+        .find(Object.assign({}, userOrEmailFilter, statusFilter))
         .skip(skip)
         .limit(limit)
         .sort({ issuedDate: -1 })
         .lean({ virtuals: false })
         .exec(),
+      this.invoiceReceiptModel.countDocuments(userOrEmailFilter),
       this.invoiceReceiptModel.countDocuments(
-        Object.assign(
-          {
-            $or: [
-              { recipientUserId: userId },
-              { recipientEmail: normalizedEmail },
-            ],
-          },
-          statusFilter
-        )
+        Object.assign({}, userOrEmailFilter, statusFilter)
       ),
     ]);
 
@@ -152,9 +151,10 @@ export class InvoiceReceiptService {
         )
       ),
       total,
+      filteredTotal,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(filteredTotal / limit),
     };
   }
 

@@ -6,6 +6,7 @@ import {
   IsIn,
   MinLength,
   MaxLength,
+  IsEmail,
 } from 'class-validator';
 
 export class CreateBusinessApplicationDto {
@@ -32,6 +33,10 @@ export class CreateBusinessApplicationDto {
   @IsDefined()
   @IsString()
   phone: string;
+
+  @ApiProperty({ example: 'contact@techsolutions.com' })
+  @IsEmail()
+  businessEmail: string;
 }
 
 export class ReviewBusinessApplicationDto {
@@ -67,6 +72,7 @@ export class BusinessApplicationResponseDto {
       description: 'A technology company specializing in software development',
       website: 'https://techsolutions.com',
       phone: '+1-555-0123',
+      businessEmail: 'contact@techsolutions.com',
       applicantId: '615f2e0a6c6d5c0e1a1e4a01',
       applicantEmail: 'john@example.com',
       applicantName: 'John Doe',
@@ -80,10 +86,12 @@ export class BusinessApplicationResponseDto {
     description: string;
     website?: string;
     phone: string;
+    businessEmail: string;
     applicantId: string;
     applicantEmail?: string;
     applicantName?: string;
     status: string;
     createdAt: Date;
+    reviewedAt?: Date;
   };
 }
