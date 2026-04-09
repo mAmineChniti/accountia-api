@@ -9,7 +9,7 @@ import {
   Min,
   IsBoolean,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 import {
@@ -378,18 +378,40 @@ export class InvoiceReceiptResponseDto {
 
 /**
  * List response with pagination
+ *
+ * - total: Actual count of ALL invoices for the business (unfiltered)
+ * - filteredTotal: Count of invoices matching the applied filters
+ * - totalPages: Pagination based on filtered results
+ *
+ * This allows clients to show: "Showing X of Y total invoices (with Z matching your filter)"
  */
 export class InvoiceListResponseDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => InvoiceResponseDto)
   invoices!: InvoiceResponseDto[];
+
   @IsNumber()
+  @ApiProperty({
+    description:
+      'Actual total count of ALL invoices for this business (unfiltered)',
+    example: 15,
+  })
   total!: number;
+
+  @IsNumber()
+  @ApiProperty({
+    description: 'Count of invoices matching the applied filters',
+    example: 5,
+  })
+  filteredTotal!: number;
+
   @IsNumber()
   page!: number;
+
   @IsNumber()
   limit!: number;
+
   @IsNumber()
   totalPages!: number;
 }
@@ -399,12 +421,27 @@ export class InvoiceReceiptListResponseDto {
   @ValidateNested({ each: true })
   @Type(() => InvoiceReceiptResponseDto)
   receipts!: InvoiceReceiptResponseDto[];
+
   @IsNumber()
+  @ApiProperty({
+    description: 'Actual total count of ALL invoices received (unfiltered)',
+    example: 12,
+  })
   total!: number;
+
+  @IsNumber()
+  @ApiProperty({
+    description: 'Count of invoices matching the applied filters',
+    example: 4,
+  })
+  filteredTotal!: number;
+
   @IsNumber()
   page!: number;
+
   @IsNumber()
   limit!: number;
+
   @IsNumber()
   totalPages!: number;
 }

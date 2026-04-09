@@ -26,6 +26,18 @@ import { InvoicesModule } from '@/invoices/invoices.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
+        OPENROUTER_API_KEY: Joi.string().required(),
+        OPENROUTER_MODEL: Joi.string().default('google/gemini-2.5-flash'),
+        OPENROUTER_MAX_COMPLETION_TOKENS: Joi.number()
+          .integer()
+          .min(64)
+          .max(16_000)
+          .default(1200),
+        OPENROUTER_TIMEOUT_MS: Joi.number()
+          .integer()
+          .min(1000)
+          .max(120_000)
+          .default(30_000),
       }),
     }),
 

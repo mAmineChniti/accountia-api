@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   ConflictException,
   UnauthorizedException,
   BadRequestException,
@@ -8,6 +9,7 @@ import {
   HttpException,
   HttpStatus,
   InternalServerErrorException,
+  Optional,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -18,7 +20,7 @@ import multiavatar from '@multiavatar/multiavatar';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { User } from '@/users/schemas/user.schema';
 import { RegisterDto } from '@/auth/dto/register.dto';
-import { AuditService } from '@/audit/audit.service';
+import { AuditEmitter } from '@/audit/audit.emitter';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { LoginDto } from '@/auth/dto/login.dto';
 import { RefreshTokenDto } from '@/auth/dto/refresh.dto';
@@ -39,6 +41,8 @@ import { Role } from '@/auth/enums/role.enum';
 import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
+import { BusinessInvite } from '@/business/schemas/business-invite.schema';
+import type { BusinessService } from '@/business/business.service';
 
 interface TokenPayload {
   sub?: string;
@@ -93,6 +97,8 @@ const getQrcode = async () => {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   static readonly TOKEN_EXPIRY_DURATIONS = {
     accessMs: 15 * 60 * 1000, // 15 minutes
     refreshMs: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -111,10 +117,13 @@ export class AuthService {
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(BusinessInvite.name)
+    private businessInviteModel: Model<BusinessInvite>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService,
-    private auditService: AuditService
+    private auditEmitter: AuditEmitter,
+    @Optional() private businessService?: BusinessService
   ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -421,6 +430,7 @@ export class AuthService {
       acceptTerms,
       profilePicture,
     } = registerDto;
+    const normalizedEmail = email.toLowerCase().trim();
 
     if (!acceptTerms) {
       throw new BadRequestException('You must accept the terms and conditions');
@@ -431,7 +441,9 @@ export class AuthService {
       throw new ConflictException('This username is already taken');
     }
 
-    const existingEmail = await this.userModel.findOne({ email });
+    const existingEmail = await this.userModel.findOne({
+      email: normalizedEmail,
+    });
     if (existingEmail) {
       const error = existingEmail.emailConfirmed
         ? new ConflictException('This email is already registered')
@@ -441,10 +453,18 @@ export class AuthService {
       throw error;
     }
 
+    // Check if user is invited to any business
+    const pendingInvites = await this.businessInviteModel.find({
+      invitedEmail: normalizedEmail,
+      status: 'pending',
+    });
+
     const passwordHash = await hash(password, 10);
-    const emailToken = this.generateEmailToken();
-    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const emailTokenGeneratedAt = new Date();
+    const isInvited = pendingInvites.length > 0;
+    let invitesProcessed = false;
+
     try {
       const birthdateDate = new Date(birthdate);
       if (Number.isNaN(birthdateDate.getTime())) {
@@ -460,7 +480,7 @@ export class AuthService {
 
       const user = new this.userModel({
         username,
-        email,
+        email: normalizedEmail,
         passwordHash,
         firstName,
         lastName,
@@ -468,27 +488,94 @@ export class AuthService {
         phoneNumber,
         acceptTerms,
         profilePicture: finalProfilePicture,
-        emailToken,
-        emailTokenExpiresAt,
-        emailTokenGeneratedAt,
-        emailConfirmed: false,
+        emailConfirmed: isInvited, // Auto-confirm if invited
+        ...(isInvited
+          ? {}
+          : {
+              // Only set token fields if email needs confirmation
+              emailToken: this.generateEmailToken(),
+              emailTokenExpiresAt,
+              emailTokenGeneratedAt,
+            }),
       });
 
       await user.save();
 
-      await this.emailService.sendConfirmationEmail(email, emailToken);
+      // If invited, auto-process invites; otherwise send confirmation email
+      if (isInvited) {
+        // Process invites immediately
+        if (this.businessService) {
+          try {
+            await this.businessService.processInvitesForNewUser(
+              user._id.toString(),
+              normalizedEmail
+            );
+            invitesProcessed = true;
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              'Failed to process business invites during registration',
+              error instanceof Error ? error.stack : errorMessage
+            );
+            await this.auditEmitter.emitAction({
+              action: AuditAction.OTHER,
+              userId: user._id.toString(),
+              userEmail: user.email,
+              userRole: user.role || 'CLIENT',
+              details: {
+                reason: 'invite_processing_failed_during_registration',
+                invitedToBusinesses: pendingInvites.length,
+                error: errorMessage,
+              },
+            });
+            // Continue even if invite processing fails
+          }
+        } else {
+          this.logger.warn(
+            'Business service unavailable; invite processing deferred during registration'
+          );
+          await this.auditEmitter.emitAction({
+            action: AuditAction.OTHER,
+            userId: user._id.toString(),
+            userEmail: user.email,
+            userRole: user.role || 'CLIENT',
+            details: {
+              reason: 'invite_processing_service_unavailable',
+              invitedToBusinesses: pendingInvites.length,
+            },
+          });
+        }
+      } else {
+        // Send confirmation email
+        await this.emailService.sendConfirmationEmail(
+          normalizedEmail,
+          user.emailToken!
+        );
+      }
 
-      await this.auditService.logAction({
+      await this.auditEmitter.emitAction({
         action: AuditAction.REGISTER,
         userId: user._id.toString(),
         userEmail: user.email,
         userRole: user.role || 'CLIENT',
-        details: { method: 'standard' },
+        details: {
+          method: 'standard',
+          autoConfirmed: isInvited,
+          invitedToBusinesses: pendingInvites.length,
+        },
       });
 
+      let registrationMessage =
+        'Registration successful! Please check your email to confirm your account.';
+      if (isInvited) {
+        registrationMessage = invitesProcessed
+          ? 'Registration successful! You have been automatically added to your invited businesses.'
+          : 'Registration successful! Your business invites are pending and will be processed shortly.';
+      }
+
       return {
-        message:
-          'Registration successful! Please check your email to confirm your account.',
+        message: registrationMessage,
         email: user.email,
       };
     } catch (error: unknown) {
@@ -507,8 +594,9 @@ export class AuthService {
     ip: string
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     const { email, password } = loginDto;
+    const normalizedEmail = email.toLowerCase().trim();
     const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
-      email,
+      normalizedEmail,
       ip
     );
     if (!rateLimitResult.allowed) {
@@ -517,9 +605,17 @@ export class AuthService {
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
-    const user = await this.userModel.findOne({ email });
+    const user = await this.userModel.findOne({ email: normalizedEmail });
     if (!user) {
-      this.rateLimitingService.recordFailedLogin(email, ip);
+      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.auditEmitter.emitAction({
+        action: AuditAction.FAILED_LOGIN,
+        userId: undefined,
+        userEmail: normalizedEmail,
+        userRole: 'unknown',
+        ipAddress: ip,
+        details: { reason: 'user_not_found' },
+      });
       throw new UnauthorizedException('Invalid email or password');
     }
     if (user.lockUntil && user.lockUntil > new Date()) {
@@ -540,7 +636,15 @@ export class AuthService {
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
-      this.rateLimitingService.recordFailedLogin(email, ip);
+      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.auditEmitter.emitAction({
+        action: AuditAction.FAILED_LOGIN,
+        userId: user._id.toString(),
+        userEmail: normalizedEmail,
+        userRole: user.role || 'Unknown',
+        ipAddress: ip,
+        details: { reason: 'invalid_password' },
+      });
       throw new UnauthorizedException('Invalid email or password');
     }
     if (user.twoFactorEnabled) {
@@ -548,7 +652,7 @@ export class AuthService {
       return { tempToken, twoFactorRequired: true };
     }
     await this.resetFailedAttempts(user);
-    this.rateLimitingService.clearLoginAttempts(email, ip);
+    this.rateLimitingService.clearLoginAttempts(normalizedEmail, ip);
     const tokens = this.generateTokens(user);
     await this.userModel.updateOne(
       { _id: user._id },
@@ -567,7 +671,7 @@ export class AuthService {
       }
     );
 
-    await this.auditService.logAction({
+    await this.auditEmitter.emitAction({
       action: AuditAction.LOGIN,
       userId: user._id.toString(),
       userEmail: user.email,
@@ -579,11 +683,28 @@ export class AuthService {
     return this.buildAuthResponse(tokens, user);
   }
 
-  async logout(userId: string, refreshToken: string): Promise<void> {
+  async logout(
+    userId: string,
+    refreshToken: string,
+    ipAddress?: string
+  ): Promise<void> {
+    const user = await this.userModel.findById(userId);
+
     await this.userModel.updateOne(
       { _id: userId },
       { $pull: { refreshTokens: { token: refreshToken } } }
     );
+
+    if (user) {
+      await this.auditEmitter.emitAction({
+        action: AuditAction.LOGOUT,
+        userId: user._id.toString(),
+        userEmail: user.email,
+        userRole: user.role || 'Unknown',
+        ipAddress,
+        details: { reason: 'user_initiated' },
+      });
+    }
   }
 
   async refreshTokens(
@@ -657,6 +778,13 @@ export class AuthService {
     await user.save();
 
     await this.emailService.sendPasswordResetEmail(email, resetToken);
+    await this.auditEmitter.emitAction({
+      action: AuditAction.PASSWORD_RESET_REQUEST,
+      userId: user._id.toString(),
+      userEmail: user.email,
+      userRole: user.role || 'Unknown',
+      details: { method: 'forgot_password' },
+    });
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {
@@ -677,11 +805,18 @@ export class AuthService {
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
     await user.save();
+    await this.auditEmitter.emitAction({
+      action: AuditAction.PASSWORD_RESET,
+      userId: user._id.toString(),
+      userEmail: user.email,
+      userRole: user.role || 'Unknown',
+      details: { method: 'reset_token' },
+    });
   }
 
   async confirmEmail(
     token: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; user?: User }> {
     try {
       // Use atomic update to prevent race conditions
       const now = new Date();
@@ -723,7 +858,20 @@ export class AuthService {
         return { success: false, message: 'Invalid confirmation token' };
       }
 
-      return { success: true, message: 'Email confirmed successfully' };
+      // Record audit event for successful email confirmation
+      await this.auditEmitter.emitAction({
+        action: AuditAction.EMAIL_CONFIRMED,
+        userId: result._id.toString(),
+        userEmail: result.email,
+        userRole: result.role || 'Unknown',
+        details: { method: 'email_link' },
+      });
+
+      return {
+        success: true,
+        message: 'Email confirmed successfully',
+        user: result,
+      };
     } catch {
       return { success: false, message: 'Failed to confirm email' };
     }
@@ -1028,6 +1176,13 @@ export class AuthService {
 
     try {
       await this.userModel.findByIdAndDelete(userId);
+      await this.auditEmitter.emitAction({
+        action: AuditAction.USER_DELETED,
+        userId: user._id.toString(),
+        userEmail: user.email,
+        userRole: user.role || 'USER',
+        details: { method: 'self_delete' },
+      });
       return { message: 'Account deleted successfully' };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -1068,6 +1223,14 @@ export class AuthService {
     }
 
     await this.userModel.deleteOne({ _id: userId });
+    await this.auditEmitter.emitAction({
+      action: AuditAction.USER_DELETED,
+      userId: adminId,
+      userEmail: admin.email ?? 'Unknown',
+      userRole: admin.role || 'ADMIN',
+      target: userId,
+      details: { method: 'admin_deleted_user' },
+    });
     return { message: 'User deleted successfully' };
   }
 
@@ -1521,12 +1684,23 @@ export class AuthService {
     if (!admin) throw new NotFoundException('Admin not found');
     if (!user) throw new NotFoundException('User not found');
 
+    // Platform Admins cannot ban Platform Owners or other Platform Admins
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
     ) {
       throw new ForbiddenException(
         'Platform Admin cannot ban Platform Owner or Platform Admin'
+      );
+    }
+
+    // Platform Owners cannot ban other Platform Owners
+    if (
+      admin.role === Role.PLATFORM_OWNER &&
+      user.role === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Platform Owner cannot ban another Platform Owner'
       );
     }
 
@@ -1541,7 +1715,7 @@ export class AuthService {
     user.refreshTokens = [];
     await user.save();
 
-    await this.auditService.logAction({
+    await this.auditEmitter.emitAction({
       action: AuditAction.BAN_USER,
       userId: adminId,
       userEmail: admin.email,
@@ -1571,12 +1745,23 @@ export class AuthService {
     if (!admin) throw new NotFoundException('Admin not found');
     if (!user) throw new NotFoundException('User not found');
 
+    // Platform Admins cannot unban Platform Owners or other Platform Admins
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
     ) {
       throw new ForbiddenException(
         'Platform Admin cannot unban Platform Owner or Platform Admin'
+      );
+    }
+
+    // Platform Owners cannot unban other Platform Owners
+    if (
+      admin.role === Role.PLATFORM_OWNER &&
+      user.role === Role.PLATFORM_OWNER
+    ) {
+      throw new ForbiddenException(
+        'Platform Owner cannot unban another Platform Owner'
       );
     }
 
@@ -1589,6 +1774,15 @@ export class AuthService {
     user.bannedBy = undefined;
     user.bannedReason = undefined;
     await user.save();
+
+    await this.auditEmitter.emitAction({
+      action: AuditAction.UNBAN_USER,
+      userId: adminId,
+      userEmail: admin.email ?? 'Unknown',
+      userRole: admin.role || 'ADMIN',
+      target: userId,
+      details: { method: 'admin_unban' },
+    });
 
     return {
       message: 'User unbanned successfully',
@@ -1636,6 +1830,15 @@ export class AuthService {
 
     user.role = newRole;
     await user.save();
+
+    await this.auditEmitter.emitAction({
+      action: AuditAction.ROLE_CHANGE,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? 'Unknown',
+      userRole: currentUser.role ?? 'ADMIN',
+      target: user._id.toString(),
+      details: { previousRole, newRole },
+    });
 
     return {
       message: 'User role updated successfully',

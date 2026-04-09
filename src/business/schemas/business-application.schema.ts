@@ -15,6 +15,9 @@ export class BusinessApplication extends Document {
   @Prop({ required: true })
   phone: string;
 
+  @Prop({ required: false })
+  businessEmail?: string;
+
   @Prop({ required: true })
   applicantId: string; // User who submitted the application
 
@@ -36,6 +39,9 @@ export class BusinessApplication extends Document {
 
   @Prop({ required: false })
   reviewNotes?: string;
+
+  @Prop({ required: false })
+  reviewedAt?: Date;
 
   @Prop({ required: false })
   businessId?: string; // Reference to created business if approved

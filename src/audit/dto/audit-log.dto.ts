@@ -5,8 +5,8 @@ export class CreateAuditLogDto {
   @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
   action: AuditAction;
 
-  @ApiProperty()
-  userId: string;
+  @ApiPropertyOptional({ nullable: true })
+  userId?: string | null;
 
   @ApiProperty()
   userEmail: string;
@@ -31,8 +31,8 @@ export class AuditLogResponseDto {
   @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
   action: AuditAction;
 
-  @ApiProperty()
-  userId: string;
+  @ApiPropertyOptional({ nullable: true })
+  userId?: string | null;
 
   @ApiProperty()
   userEmail: string;
