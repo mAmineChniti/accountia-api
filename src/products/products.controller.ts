@@ -60,7 +60,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Create a new product',
     description:
-      'Create a new product for the current business. Set the active business using businessId in the request body.',
+      'Create a new product for the current business. Include businessId in the request body to resolve tenant context.',
   })
   @ApiBody({
     description:
@@ -79,21 +79,29 @@ export class ProductsController {
     @Body() createProductDto: CreateProductDto,
     @CurrentTenant() tenant: TenantContext
   ): Promise<ProductResponseDto> {
-    return this.productsService.create(tenant.businessId, createProductDto);
+    return this.productsService.create(
+      tenant.businessId,
+      tenant.databaseName,
+      createProductDto
+    );
   }
 
   @Get()
   @ApiOperation({
     summary: 'Get all products for the business',
     description:
-      'Retrieve paginated list of products for the current business. Include businessId in the request body to set the current business context.',
+      'Retrieve paginated list of products for the current business. businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
     description: 'Products retrieved successfully',
     type: ProductListResponseDto,
   })
-  @ApiForbiddenResponse({
-    description: 'Insufficient permissions or unauthorized business',
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiQuery({
     name: 'page',
@@ -121,6 +129,7 @@ export class ProductsController {
   ): Promise<ProductListResponseDto> {
     return this.productsService.findByBusiness(
       tenant.businessId,
+      tenant.databaseName,
       page,
       limit,
       search
@@ -131,11 +140,18 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Get a product by ID',
     description:
-      'Get a specific product by ID (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Get a specific product by ID (must belong to current business). businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
     description: 'Product retrieved successfully',
     type: ProductResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiForbiddenResponse({
@@ -150,14 +166,18 @@ export class ProductsController {
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
   ): Promise<ProductResponseDto> {
-    return this.productsService.findById(id, tenant.businessId);
+    return this.productsService.findById(
+      id,
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Patch(':id')
   @ApiOperation({
     summary: 'Update a product',
     description:
-      'Update a product (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Update a product (must belong to current business). Include businessId in the request body to resolve tenant context.',
   })
   @ApiBody({
     description:
@@ -183,7 +203,12 @@ export class ProductsController {
     @Body() updateProductDto: UpdateProductDto,
     @CurrentTenant() tenant: TenantContext
   ): Promise<ProductResponseDto> {
-    return this.productsService.update(id, tenant.businessId, updateProductDto);
+    return this.productsService.update(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      updateProductDto
+    );
   }
 
   @Delete(':id')
@@ -191,7 +216,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Delete a product',
     description:
-      'Delete a product (must belong to current business). Include businessId in the request body to set the current business context.',
+      'Delete a product (must belong to current business). businessId is REQUIRED as a query parameter.',
   })
   @ApiNotFoundResponse({ description: 'Product not found' })
   @ApiForbiddenResponse({
@@ -202,11 +227,22 @@ export class ProductsController {
     description: 'Product ID',
     type: String,
   })
+  @ApiQuery({
+    name: 'businessId',
+    type: String,
+    required: true,
+    description: 'Business identifier required for tenant resolution',
+  })
   async delete(
     @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
   ): Promise<void> {
-    return this.productsService.delete(id, tenant.businessId);
+    return this.productsService.delete(
+      id,
+      businessId || tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Post('import')
@@ -216,7 +252,7 @@ export class ProductsController {
   @ApiOperation({
     summary: 'Import products from CSV or Excel',
     description:
-      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. Include businessId in the request body to set the current business context.',
+      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. businessId is REQUIRED as a query parameter.',
   })
   @ApiCreatedResponse({
     description: 'Products imported successfully',
@@ -233,14 +269,25 @@ export class ProductsController {
   @ApiForbiddenResponse({
     description: 'Insufficient permissions',
   })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business identifier for tenant resolution',
+  })
   async importProducts(
     @UploadedFile() file: Multer.File,
-    @CurrentTenant() tenant: TenantContext
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
   ): Promise<{ imported: number; failed: number; errors: string[] }> {
     const records = await parseFile(
       (file as unknown as { buffer: Buffer; originalname: string }).buffer,
       (file as unknown as { buffer: Buffer; originalname: string }).originalname
     );
-    return this.productsService.importProducts(tenant.businessId, records);
+    return this.productsService.importProducts(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      records
+    );
   }
 }

@@ -2,10 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Product } from './schemas/product.schema';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
+import { Product, ProductSchema } from './schemas/product.schema';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import {
@@ -15,20 +16,39 @@ import {
 
 @Injectable()
 export class ProductsService {
-  constructor(
-    @InjectModel(Product.name) private productModel: Model<Product>
-  ) {}
+  constructor(@InjectConnection() private connection: Connection) {}
 
   /**
-   * Create a new product for a business
+   * Get the product model for a specific tenant database
+   * Registers the schema on the connection if not already registered
+   *
+   * MULTI-TENANCY: Each tenant has its own isolated product collection
+   * The schema is registered once per tenant connection and cached
+   */
+  private getProductModel(databaseName: string): Model<Product> {
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+
+    try {
+      // Try to get existing model
+      return tenantDb.model<Product>(Product.name);
+    } catch {
+      // Schema not registered on this connection, register it now
+      return tenantDb.model<Product>(Product.name, ProductSchema);
+    }
+  }
+
+  /**
+   * Create a new product for a business (in tenant database)
    */
   async create(
     businessId: string,
+    databaseName: string,
     createProductDto: CreateProductDto
   ): Promise<ProductResponseDto> {
+    const productModel = this.getProductModel(databaseName);
     const { businessId: ignoredBusinessId, ...productData } = createProductDto;
     void ignoredBusinessId;
-    const product = new this.productModel({
+    const product = new productModel({
       businessId,
       ...productData,
     });
@@ -37,20 +57,19 @@ export class ProductsService {
   }
 
   /**
-   * Get all products for a business with pagination
+   * Get all products for a business with pagination (from tenant database)
    */
   async findByBusiness(
     businessId: string,
+    databaseName: string,
     page = 1,
     limit = 10,
     search?: string
   ): Promise<ProductListResponseDto> {
-    const conditions: { businessId?: string } = {};
-    if (businessId) {
-      conditions.businessId = businessId;
-    }
+    const productModel = this.getProductModel(databaseName);
+    const conditions: { businessId?: string } = { businessId };
 
-    let query = this.productModel.find({ ...conditions });
+    let query = productModel.find({ ...conditions });
     let countFilter: Record<string, unknown> = { ...conditions };
 
     if (search) {
@@ -67,7 +86,7 @@ export class ProductsService {
       };
     }
 
-    const total = await this.productModel.countDocuments(countFilter);
+    const total = await productModel.countDocuments(countFilter);
     const products = (await query
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -84,39 +103,46 @@ export class ProductsService {
   }
 
   /**
-   * Get a single product by ID (with business access verification)
+   * Get a single product by ID (from tenant database)
    */
-  async findById(id: string, businessId: string): Promise<ProductResponseDto> {
-    const product = await this.productModel.findById(id);
+  async findById(
+    id: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<ProductResponseDto> {
+    const productModel = this.getProductModel(databaseName);
+    const product = await productModel.findById(id);
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    this.verifyBusinessAccess(product.businessId.toString(), businessId);
+    this.verifyBusinessAccess(product.businessId, businessId);
 
     return this.formatProductResponse(product);
   }
 
   /**
-   * Update a product (with business access verification)
+   * Update a product (in tenant database)
    */
   async update(
     id: string,
     businessId: string,
+    databaseName: string,
     updateProductDto: UpdateProductDto
   ): Promise<ProductResponseDto> {
-    const product = await this.productModel.findById(id);
+    const productModel = this.getProductModel(databaseName);
+    const product = await productModel.findById(id);
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    this.verifyBusinessAccess(product.businessId.toString(), businessId);
+    this.verifyBusinessAccess(product.businessId, businessId);
 
     const { businessId: ignoredBusinessId, ...updateData } = updateProductDto;
     void ignoredBusinessId;
-    const updated = await this.productModel.findByIdAndUpdate(id, updateData, {
+    const updated = await productModel.findByIdAndUpdate(id, updateData, {
       returnDocument: 'after',
       runValidators: true,
     });
@@ -129,28 +155,35 @@ export class ProductsService {
   }
 
   /**
-   * Delete a product (with business access verification)
+   * Delete a product (from tenant database)
    */
-  async delete(id: string, businessId: string): Promise<void> {
-    const product = await this.productModel.findById(id);
+  async delete(
+    id: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<void> {
+    const productModel = this.getProductModel(databaseName);
+    const product = await productModel.findById(id);
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    this.verifyBusinessAccess(product.businessId.toString(), businessId);
+    this.verifyBusinessAccess(product.businessId, businessId);
 
-    await this.productModel.findByIdAndDelete(id);
+    await productModel.findByIdAndDelete(id);
   }
 
   /**
-   * Get products by IDs for a business (bulk fetch with business scope)
+   * Get products by IDs for a business (bulk fetch from tenant database)
    */
   async findByIdsForBusiness(
     ids: string[],
-    businessId: string
+    businessId: string,
+    databaseName: string
   ): Promise<ProductResponseDto[]> {
-    const products = (await this.productModel
+    const productModel = this.getProductModel(databaseName);
+    const products = (await productModel
       .find({
         _id: { $in: ids },
         businessId,
@@ -161,39 +194,58 @@ export class ProductsService {
   }
 
   /**
-   * Update product quantity (with business access verification)
+   * Update product quantity (in tenant database)
    */
   async updateQuantity(
     id: string,
     businessId: string,
+    databaseName: string,
     quantityDelta: number
   ): Promise<ProductResponseDto> {
-    const product = await this.productModel.findById(id);
+    const productModel = this.getProductModel(databaseName);
+    const product = await productModel.findById(id);
 
     if (!product) {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    this.verifyBusinessAccess(product.businessId.toString(), businessId);
+    this.verifyBusinessAccess(product.businessId, businessId);
 
-    const updated = await this.productModel.findByIdAndUpdate(
-      id,
-      { $inc: { quantity: quantityDelta } },
-      { returnDocument: 'after' }
-    );
+    const updated =
+      quantityDelta < 0
+        ? await productModel.findOneAndUpdate(
+            {
+              _id: id,
+              quantity: { $gte: Math.abs(quantityDelta) },
+            },
+            { $inc: { quantity: quantityDelta } },
+            { returnDocument: 'after' }
+          )
+        : await productModel.findByIdAndUpdate(
+            id,
+            { $inc: { quantity: quantityDelta } },
+            { returnDocument: 'after' }
+          );
 
     if (!updated) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
+      throw new BadRequestException(
+        'Insufficient stock to apply quantity update'
+      );
     }
 
     return this.formatProductResponse(updated);
   }
 
   /**
-   * Check if product exists for a business
+   * Check if product exists for a business (in tenant database)
    */
-  async existsForBusiness(id: string, businessId: string): Promise<boolean> {
-    const product = await this.productModel
+  async existsForBusiness(
+    id: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<boolean> {
+    const productModel = this.getProductModel(databaseName);
+    const product = await productModel
       .findOne({ _id: id, businessId })
       .select('_id')
       .lean();
@@ -201,12 +253,14 @@ export class ProductsService {
   }
 
   /**
-   * Import products from parsed CSV/Excel data
+   * Import products from parsed CSV/Excel data (into tenant database)
    */
   async importProducts(
     businessId: string,
+    databaseName: string,
     records: Record<string, unknown>[]
   ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const productModel = this.getProductModel(databaseName);
     const errors: string[] = [];
     let imported = 0;
 
@@ -243,7 +297,7 @@ export class ProductsService {
         }
 
         // Create product
-        const product = new this.productModel({
+        const product = new productModel({
           businessId,
           name: name.trim(),
           description: description.trim(),
@@ -270,7 +324,11 @@ export class ProductsService {
     productBusinessId: string,
     currentBusinessId: string
   ): void {
-    if (productBusinessId !== currentBusinessId) {
+    // Convert both to strings for comparison to handle ObjectId vs string mismatch
+    const productId = String(productBusinessId);
+    const currentId = String(currentBusinessId);
+
+    if (productId !== currentId) {
       throw new ForbiddenException(
         'You do not have permission to access this product'
       );

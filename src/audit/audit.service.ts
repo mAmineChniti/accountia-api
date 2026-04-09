@@ -47,7 +47,7 @@ export class AuditService {
       logs: logs.map((log) => ({
         id: log._id.toString(),
         action: log.action,
-        userId: log.userId.toString(),
+        userId: log.userId?.toString(),
         userEmail: log.userEmail,
         userRole: log.userRole,
         target: log.target,

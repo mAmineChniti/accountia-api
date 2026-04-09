@@ -7,12 +7,15 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
+import { ObjectId } from 'mongodb';
 import { randomBytes } from 'node:crypto';
 import { AuditService } from '@/audit/audit.service';
+import { AuditEmitter } from '@/audit/audit.emitter';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessApplication } from '@/business/schemas/business-application.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
+import { BusinessInvite } from '@/business/schemas/business-invite.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { User } from '@/users/schemas/user.schema';
 import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
@@ -21,6 +24,10 @@ import {
   ReviewBusinessApplicationDto,
 } from '@/business/dto/business-application.dto';
 import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
+import {
+  InviteBusinessUserDto,
+  BusinessInviteResponseDto,
+} from '@/business/dto/business-invite.dto';
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
@@ -117,10 +124,13 @@ export class BusinessService {
     private businessApplicationModel: Model<BusinessApplication>,
     @InjectModel(BusinessUser.name)
     private businessUserModel: Model<BusinessUser>,
+    @InjectModel(BusinessInvite.name)
+    private businessInviteModel: Model<BusinessInvite>,
     @InjectModel(User.name) private userModel: Model<User>,
     private emailService: EmailService,
     private tenantConnectionService: TenantConnectionService,
     private auditService: AuditService,
+    private auditEmitter: AuditEmitter,
     private notificationsService: NotificationsService
   ) {}
 
@@ -188,6 +198,7 @@ export class BusinessService {
         description: savedApplication.description,
         website: savedApplication.website,
         phone: savedApplication.phone,
+        businessEmail: savedApplication.businessEmail ?? '',
         applicantId: savedApplication.applicantId,
         status: savedApplication.status,
         createdAt: savedApplication.createdAt,
@@ -207,15 +218,29 @@ export class BusinessService {
       throw new NotFoundException('Business application not found');
     }
 
-    if (application.status === 'approved') {
-      throw new BadRequestException('Application has already been approved');
+    // only allow reviewing pending applications
+    if (application.status !== 'pending') {
+      throw new BadRequestException('Application has already been reviewed');
     }
 
     application.status = reviewDto.status;
     application.reviewedBy = reviewerId;
     application.reviewNotes = reviewDto.reviewNotes;
+    application.reviewedAt = new Date();
 
     if (reviewDto.status === 'approved') {
+      if (!application.businessEmail) {
+        const applicant = await this.userModel.findById(
+          application.applicantId
+        );
+        if (!applicant?.email) {
+          throw new NotFoundException(
+            'Applicant record with a valid email is required to approve this business application'
+          );
+        }
+        application.businessEmail = applicant.email;
+      }
+
       // Create the business within a transaction
       const databaseName = await this.generateUniqueDatabaseName(
         application.businessName
@@ -233,6 +258,7 @@ export class BusinessService {
         description: application.description,
         website: application.website,
         phone: application.phone,
+        email: application.businessEmail,
         databaseName,
         status: 'approved',
       });
@@ -286,7 +312,7 @@ export class BusinessService {
         }
       }
 
-      await this.auditService.logAction({
+      await this.auditEmitter.emitAction({
         action: AuditAction.APPROVE_BUSINESS,
         userId: reviewer.id,
         userEmail: reviewer.email ?? 'Unknown',
@@ -314,14 +340,25 @@ export class BusinessService {
         }
       }
 
-      await this.auditService.logAction({
-        action: AuditAction.REJECT_BUSINESS,
-        userId: reviewer.id,
-        userEmail: reviewer.email ?? 'Unknown',
-        userRole: reviewer.role ?? 'ADMIN',
-        target: application.businessName,
-        details: { applicationId, reason: reviewDto.reviewNotes },
-      });
+      try {
+        await this.auditEmitter.emitAction({
+          action: AuditAction.REJECT_BUSINESS,
+          userId: reviewer.id,
+          userEmail: reviewer.email ?? 'Unknown',
+          userRole: reviewer.role ?? 'ADMIN',
+          target: application.businessName,
+          details: { applicationId, reason: reviewDto.reviewNotes },
+        });
+      } catch (error) {
+        const auditErrorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error('Failed to emit REJECT_BUSINESS audit event', {
+          reviewerId: reviewer.id,
+          reviewerEmail: reviewer.email ?? 'Unknown',
+          applicationId,
+          error: auditErrorMessage,
+        });
+      }
     }
 
     return {
@@ -335,6 +372,7 @@ export class BusinessService {
         description: application.description,
         website: application.website,
         phone: application.phone,
+        businessEmail: application.businessEmail ?? '',
         applicantId: application.applicantId,
         status: application.status,
         createdAt: application.createdAt,
@@ -359,7 +397,7 @@ export class BusinessService {
     const applications = await this.businessApplicationModel
       .find()
       .select(
-        'businessName description website phone applicantId status createdAt'
+        'businessName description website phone businessEmail applicantId status createdAt'
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -372,6 +410,7 @@ export class BusinessService {
         description: app.description,
         website: app.website,
         phone: app.phone,
+        businessEmail: app.businessEmail ?? '',
         applicantId: app.applicantId,
         status: app.status,
         createdAt: app.createdAt,
@@ -482,6 +521,23 @@ export class BusinessService {
       );
     } catch {
       // Best-effort cleanup: platform deletion should not be blocked if DB drop fails.
+    }
+
+    // Audit: record business deletion
+    try {
+      const actor = await this.userModel
+        .findById(userId)
+        .catch(() => undefined as never);
+      await this.auditEmitter.emitAction({
+        action: AuditAction.DELETE_BUSINESS,
+        userId: userId,
+        userEmail: actor?.email ?? 'Unknown',
+        userRole: actor?.role ?? userRole ?? 'Unknown',
+        target: business.name,
+        details: { businessId },
+      });
+    } catch {
+      // ignore audit errors
     }
 
     return { message: 'Business deleted successfully' };
@@ -973,6 +1029,17 @@ export class BusinessService {
       pendingInvoices: 0,
       overdueInvoices: 0,
     };
+    let productProfitability: Array<{
+      productId: string;
+      productName: string;
+      unitPrice: number;
+      unitCost: number;
+      soldQuantity: number;
+      revenue: number;
+      totalCost: number;
+      grossProfit: number;
+      profitMarginPercent: number;
+    }> = [];
 
     const paidStatus = toInvoiceStatus(InvoiceStatus.PAID);
     const pendingStatus = toInvoiceStatus('PENDING');
@@ -997,6 +1064,11 @@ export class BusinessService {
           totalValue: number;
           lowStockProducts: number;
         }>([
+          {
+            $match: {
+              $or: [{ businessId: new ObjectId(businessId) }, { businessId }],
+            },
+          },
           {
             $group: {
               _id: '_all',
@@ -1029,6 +1101,15 @@ export class BusinessService {
         };
       }
 
+      // First, get total count using query that works with both string and ObjectId types
+      // (existing data has mix of both due to historical storage variation)
+      const totalCount = await invoicesCollection.countDocuments({
+        $or: [
+          { issuerBusinessId: new ObjectId(businessId) },
+          { issuerBusinessId: businessId }, // Also match string version
+        ],
+      });
+
       const [invoicesAggregation] = await invoicesCollection
         .aggregate<{
           totalInvoices: number;
@@ -1039,6 +1120,14 @@ export class BusinessService {
           pendingInvoices: number;
           overdueInvoices: number;
         }>([
+          {
+            $match: {
+              $or: [
+                { issuerBusinessId: new ObjectId(businessId) },
+                { issuerBusinessId: businessId }, // Also match string version
+              ],
+            },
+          },
           {
             $addFields: {
               normalizedStatus: {
@@ -1122,16 +1211,167 @@ export class BusinessService {
           pendingInvoices: toNumberOrZero(invoicesAggregation.pendingInvoices),
           overdueInvoices: toNumberOrZero(invoicesAggregation.overdueInvoices),
         };
+      } else {
+        // Fallback: if aggregation returns nothing (no matching group), use simple count
+        invoicesStats.totalInvoices = totalCount;
       }
+
+      // Product profitability is computed only from PAID invoices.
+      const paidLineItems = await invoicesCollection
+        .aggregate<{
+          productId: string;
+          soldQuantity: number;
+          revenue: number;
+        }>([
+          {
+            $match: {
+              $or: [
+                { issuerBusinessId: new ObjectId(businessId) },
+                { issuerBusinessId: businessId },
+              ],
+            },
+          },
+          {
+            $addFields: {
+              normalizedStatus: {
+                $toUpper: { $ifNull: ['$status', ''] },
+              },
+            },
+          },
+          {
+            $match: {
+              normalizedStatus: paidLabelUpper,
+            },
+          },
+          {
+            $unwind: '$lineItems',
+          },
+          {
+            $group: {
+              _id: { $toString: '$lineItems.productId' },
+              soldQuantity: {
+                $sum: { $ifNull: ['$lineItems.quantity', 0] },
+              },
+              revenue: {
+                $sum: {
+                  $ifNull: [
+                    '$lineItems.amount',
+                    {
+                      $multiply: [
+                        { $ifNull: ['$lineItems.quantity', 0] },
+                        { $ifNull: ['$lineItems.unitPrice', 0] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              productId: '$_id',
+              soldQuantity: 1,
+              revenue: 1,
+            },
+          },
+        ])
+        .toArray();
+
+      const salesByProductId = new Map(
+        paidLineItems.map((item) => [
+          item.productId,
+          {
+            soldQuantity: toNumberOrZero(item.soldQuantity),
+            revenue: toNumberOrZero(item.revenue),
+          },
+        ])
+      );
+
+      const products = await productsCollection
+        .find({
+          $or: [{ businessId: new ObjectId(businessId) }, { businessId }],
+        })
+        .project({ _id: 1, name: 1, unitPrice: 1, cost: 1 })
+        .toArray();
+
+      productProfitability = products.map((product) => {
+        const productId = String(product._id);
+        const sales = salesByProductId.get(productId);
+        const soldQuantity = sales?.soldQuantity ?? 0;
+        const revenue = sales?.revenue ?? 0;
+        const unitPrice = toNumberOrZero(product.unitPrice);
+        const unitCost = toNumberOrZero(product.cost);
+        const totalCost = soldQuantity * unitCost;
+        const grossProfit = revenue - totalCost;
+        const profitMarginPercent =
+          revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+
+        return {
+          productId,
+          productName:
+            typeof product.name === 'string' ? product.name : 'Unnamed Product',
+          unitPrice,
+          unitCost,
+          soldQuantity,
+          revenue,
+          totalCost,
+          grossProfit,
+          profitMarginPercent,
+        };
+      });
+
+      productProfitability.sort((a, b) => b.grossProfit - a.grossProfit);
     } catch (error) {
       if (!isMissingCollectionError(error)) {
-        console.error('Business statistics query failed', error);
         throw error;
       }
       // Missing collections are treated as empty statistics.
     }
 
-    // Calculate client podium - clients who have paid all their invoices
+    const finalResponse = {
+      businessId: business._id.toString(),
+      businessName: business.name,
+      products: productsStats,
+      invoices: invoicesStats,
+      productProfitability,
+      lastUpdated: new Date(),
+    };
+    return finalResponse;
+  }
+
+  async getClientPodium(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{
+    businessId: string;
+    podium: Array<{
+      clientId: string;
+      clientName: string;
+      clientEmail: string;
+      totalPaidAmount: number;
+      totalPaidInvoices: number;
+      medal: string;
+    }>;
+  }> {
+    // Check access
+    await this.checkBusinessAccess(businessId, userId, userRole, false);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // Connect to tenant database
+    const tenantDb = this.connection.useDb(business.databaseName, {
+      useCache: true,
+    });
+    const invoicesCollection = tenantDb.collection('invoices');
+
+    // Calculate client podium - recipients who have paid all their invoices
+    // Includes: Platform users (clients), external recipients, and businesses
     let clientPodium: Array<{
       clientId: string;
       clientName: string;
@@ -1142,91 +1382,554 @@ export class BusinessService {
     }> = [];
 
     try {
-      // Get all clients for this business
-      const businessUsers = await this.businessUserModel
-        .find({ businessId, role: BusinessUserRole.CLIENT })
-        .select('userId')
-        .lean();
+      const paidStatus = toInvoiceStatus(InvoiceStatus.PAID) ?? 'paid';
+      const paidLabelUpper = paidStatus.toUpperCase();
 
-      const clientIds = businessUsers.map((bu) => bu.userId);
+      const topRecipients = await invoicesCollection
+        .aggregate<{
+          recipientKey: string;
+          recipientName: string;
+          recipientEmail: string;
+          totalPaidAmount: number;
+          totalPaidInvoices: number;
+        }>([
+          {
+            $match: {
+              $or: [
+                { issuerBusinessId: new ObjectId(businessId) },
+                { issuerBusinessId: businessId },
+              ],
+            },
+          },
+          {
+            $addFields: {
+              normalizedStatus: {
+                $toUpper: { $ifNull: ['$status', ''] },
+              },
+              recipientType: {
+                $toUpper: {
+                  $trim: {
+                    input: { $ifNull: ['$recipient.type', ''] },
+                  },
+                },
+              },
+              recipientPlatformId: {
+                $trim: {
+                  input: { $ifNull: ['$recipient.platformId', ''] },
+                },
+              },
+              recipientEmailNormalized: {
+                $toLower: {
+                  $trim: {
+                    input: { $ifNull: ['$recipient.email', ''] },
+                  },
+                },
+              },
+              recipientDisplayNameNormalized: {
+                $trim: {
+                  input: { $ifNull: ['$recipient.displayName', ''] },
+                },
+              },
+              normalizedTotalAmount: { $ifNull: ['$totalAmount', 0] },
+            },
+          },
+          {
+            $match: {
+              normalizedStatus: paidLabelUpper,
+            },
+          },
+          {
+            $addFields: {
+              recipientKey: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$recipientType', 'PLATFORM_INDIVIDUAL'] },
+                      { $ne: ['$recipientPlatformId', ''] },
+                    ],
+                  },
+                  { $concat: ['user_', '$recipientPlatformId'] },
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$recipientType', 'PLATFORM_BUSINESS'] },
+                          { $ne: ['$recipientPlatformId', ''] },
+                        ],
+                      },
+                      { $concat: ['business_', '$recipientPlatformId'] },
+                      {
+                        $cond: [
+                          {
+                            $and: [
+                              { $eq: ['$recipientType', 'EXTERNAL'] },
+                              { $ne: ['$recipientEmailNormalized', ''] },
+                            ],
+                          },
+                          {
+                            $concat: ['external_', '$recipientEmailNormalized'],
+                          },
+                          '',
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              recipientName: {
+                $cond: [
+                  { $eq: ['$recipientType', 'PLATFORM_INDIVIDUAL'] },
+                  {
+                    $cond: [
+                      { $ne: ['$recipientDisplayNameNormalized', ''] },
+                      '$recipientDisplayNameNormalized',
+                      {
+                        $cond: [
+                          { $ne: ['$recipientEmailNormalized', ''] },
+                          '$recipientEmailNormalized',
+                          'Unknown',
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    $cond: [
+                      { $eq: ['$recipientType', 'PLATFORM_BUSINESS'] },
+                      {
+                        $cond: [
+                          { $ne: ['$recipientDisplayNameNormalized', ''] },
+                          '$recipientDisplayNameNormalized',
+                          'Unknown Business',
+                        ],
+                      },
+                      {
+                        $cond: [
+                          { $eq: ['$recipientType', 'EXTERNAL'] },
+                          {
+                            $cond: [
+                              { $ne: ['$recipientDisplayNameNormalized', ''] },
+                              '$recipientDisplayNameNormalized',
+                              {
+                                $cond: [
+                                  { $ne: ['$recipientEmailNormalized', ''] },
+                                  '$recipientEmailNormalized',
+                                  'External Contact',
+                                ],
+                              },
+                            ],
+                          },
+                          'Unknown',
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          {
+            $match: {
+              recipientKey: { $ne: '' },
+            },
+          },
+          {
+            $group: {
+              _id: '$recipientKey',
+              recipientName: { $first: '$recipientName' },
+              recipientEmail: { $first: '$recipientEmailNormalized' },
+              totalPaidAmount: { $sum: '$normalizedTotalAmount' },
+              totalPaidInvoices: { $sum: 1 },
+            },
+          },
+          {
+            $sort: {
+              totalPaidAmount: -1,
+            },
+          },
+          {
+            $limit: 3,
+          },
+          {
+            $project: {
+              _id: 0,
+              recipientKey: '$_id',
+              recipientName: 1,
+              recipientEmail: 1,
+              totalPaidAmount: 1,
+              totalPaidInvoices: 1,
+            },
+          },
+        ])
+        .toArray();
 
-      if (clientIds.length > 0) {
-        // Get client details
-        const clients = await this.userModel
-          .find({ _id: { $in: clientIds } })
-          .select('firstName lastName email')
-          .lean();
-
-        // For each client, check if all their invoices are paid and calculate total
-        const clientStatsPromises = clients.map(async (client) => {
-          const clientInvoices = await invoicesCollection
-            .find({
-              'recipient.platformId': client._id.toString(),
-              'recipient.type': 'PLATFORM_INDIVIDUAL',
-            })
-            .toArray();
-
-          if (clientInvoices.length === 0) {
-            return; // No invoices, skip
-          }
-
-          // Check if all invoices are paid
-          const allPaid = clientInvoices.every(
-            (invoice) => toInvoiceStatus(invoice.status) === 'paid'
-          );
-
-          if (!allPaid) {
-            return; // Not all invoices paid
-          }
-
-          // Calculate total paid amount
-          const totalPaidAmount = clientInvoices.reduce(
-            (sum, invoice) => sum + toNumberOrZero(invoice.totalAmount),
-            0
-          );
-
-          const clientData = client;
-          const clientId = clientData._id.toString();
-          const totalInvoices = clientInvoices.length;
-          return {
-            clientId,
-            clientName: `${clientData.firstName} ${clientData.lastName}`,
-            clientEmail: clientData.email,
-            totalPaidAmount,
-            totalPaidInvoices: totalInvoices,
-          };
-        });
-
-        const clientStatsRaw = await Promise.all(clientStatsPromises);
-        const clientStats = clientStatsRaw.filter(
-          (stat): stat is NonNullable<typeof stat> => stat !== undefined
-        );
-
-        // Sort by total paid amount descending and take top 3
-        clientStats.sort((a, b) => b.totalPaidAmount - a.totalPaidAmount);
-        const topClients = clientStats.slice(0, 3);
-
-        // Assign medals
-        const medals = ['🥇', '🥈', '🥉'];
-        clientPodium = topClients.map((client, index) => ({
-          ...client,
-          medal: medals[index] || '🏅',
-        }));
-      }
+      const medals = ['🥇', '🥈', '🥉'];
+      clientPodium = topRecipients.map((recipient, index) => ({
+        clientId: recipient.recipientKey,
+        clientName: recipient.recipientName,
+        clientEmail: recipient.recipientEmail,
+        totalPaidAmount: toNumberOrZero(recipient.totalPaidAmount),
+        totalPaidInvoices: toNumberOrZero(recipient.totalPaidInvoices),
+        medal: medals[index] || '🏅',
+      }));
     } catch (error) {
-      if (!isMissingCollectionError(error)) {
-        console.error('Client podium calculation failed', error);
-        // Don't throw - podium is optional enhancement
-      }
+      throw error;
     }
 
     return {
       businessId: business._id.toString(),
-      businessName: business.name,
-      products: productsStats,
-      invoices: invoicesStats,
-      clientPodium: { podium: clientPodium },
-      lastUpdated: new Date(),
+      podium: clientPodium,
     };
+  }
+
+  // === Business Invitations Flow ===
+
+  async inviteBusinessUser(
+    businessId: string,
+    inviteDto: InviteBusinessUserDto,
+    inviterId: string,
+    inviterRole: Role
+  ): Promise<BusinessInviteResponseDto> {
+    // Check if inviter has admin/owner permission
+    await this.checkBusinessAccess(businessId, inviterId, inviterRole, true);
+
+    // Validate business exists
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    const normalizedEmail = inviteDto.invitedEmail.toLowerCase().trim();
+    const inviter = await this.userModel.findById(inviterId);
+
+    const existingUser = await this.userModel.findOne({
+      email: normalizedEmail,
+    });
+    if (existingUser) {
+      const existingAssignment = await this.businessUserModel.findOne({
+        businessId,
+        userId: existingUser._id.toString(),
+      });
+
+      if (existingAssignment) {
+        throw new BadRequestException(
+          'User is already assigned to this business'
+        );
+      }
+
+      const businessUser = new this.businessUserModel({
+        businessId,
+        userId: existingUser._id.toString(),
+        role: inviteDto.businessRole,
+        assignedBy: inviterId,
+      });
+
+      const savedBusinessUser = await businessUser.save();
+
+      try {
+        await this.tenantConnectionService.upsertTenantUser(
+          business.databaseName,
+          {
+            userId: existingUser._id.toString(),
+            role: inviteDto.businessRole,
+            assignedBy: inviterId,
+          }
+        );
+      } catch {
+        await this.businessUserModel.findByIdAndDelete(savedBusinessUser._id);
+        throw new InternalServerErrorException(
+          'Failed to sync tenant user assignment'
+        );
+      }
+
+      try {
+        await this.auditEmitter.emitAction({
+          action: AuditAction.INVITE_ACCEPTED,
+          userId: existingUser._id.toString(),
+          userEmail: existingUser.email,
+          userRole: existingUser.role ?? inviteDto.businessRole,
+          target: normalizedEmail,
+          details: {
+            businessId,
+            businessRole: inviteDto.businessRole,
+            directAssignment: true,
+            assignedUserId: existingUser._id.toString(),
+            inviterId,
+          },
+        });
+      } catch {
+        // ignore audit errors
+      }
+
+      return {
+        message: 'User is already registered and has been assigned directly',
+      };
+    }
+
+    // Check if invite already exists for this email in this business
+    const existingInvite = await this.businessInviteModel.findOne({
+      businessId,
+      invitedEmail: normalizedEmail,
+    });
+
+    if (existingInvite) {
+      throw new BadRequestException(
+        'An invite already exists for this email in this business'
+      );
+    }
+
+    // Create the invite in platform DB
+    const invite = new this.businessInviteModel({
+      businessId,
+      invitedEmail: normalizedEmail,
+      inviterId,
+      businessRole: inviteDto.businessRole,
+      status: 'pending',
+    });
+
+    const savedInvite = await invite.save();
+
+    // Get inviter info for email
+    const inviterName = inviter
+      ? `${inviter.firstName} ${inviter.lastName}`
+      : 'A business owner';
+
+    let emailSent = false;
+
+    // Send invite email
+    try {
+      await this.emailService.sendBusinessInviteEmail(
+        normalizedEmail,
+        business.name,
+        inviterName,
+        inviteDto.businessRole
+      );
+
+      const updatedInvite = await this.businessInviteModel.findByIdAndUpdate(
+        savedInvite._id,
+        {
+          emailSent: true,
+        },
+        { returnDocument: 'after' }
+      );
+      emailSent = updatedInvite?.emailSent ?? false;
+    } catch (error) {
+      // Log error but don't fail the request
+      console.error('Failed to send invite email:', error);
+    }
+
+    if (emailSent) {
+      // Audit: record invite sent
+      try {
+        await this.auditEmitter.emitAction({
+          action: AuditAction.INVITE_SENT,
+          userId: inviterId,
+          userEmail: inviter?.email ?? 'Unknown',
+          userRole: inviter?.role ?? inviterRole ?? 'Unknown',
+          target: normalizedEmail,
+          details: { businessId, businessRole: inviteDto.businessRole },
+        });
+      } catch {
+        // ignore audit errors
+      }
+    }
+
+    return {
+      message: 'Invite sent successfully',
+      invite: {
+        id: savedInvite._id.toString(),
+        businessId: savedInvite.businessId,
+        invitedEmail: savedInvite.invitedEmail,
+        inviterId: savedInvite.inviterId,
+        businessRole: savedInvite.businessRole,
+        emailSent,
+        createdAt: savedInvite.createdAt,
+      },
+    };
+  }
+
+  async resendInvite(
+    businessId: string,
+    inviteId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<BusinessInviteResponseDto> {
+    // Check permission
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const invite = await this.businessInviteModel.findById(inviteId);
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.businessId !== businessId) {
+      throw new ForbiddenException(
+        'You do not have permission to resend this invite'
+      );
+    }
+
+    if (invite.status !== 'pending') {
+      throw new BadRequestException('Invite is not pending');
+    }
+
+    // Get business and inviter info for email
+    const business = await this.businessModel.findById(businessId);
+    const inviter = await this.userModel.findById(invite.inviterId);
+
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    if (!inviter) {
+      throw new NotFoundException('Inviter not found');
+    }
+
+    const inviterName = `${inviter.firstName} ${inviter.lastName}`;
+
+    try {
+      await this.emailService.sendBusinessInviteEmail(
+        invite.invitedEmail,
+        business.name,
+        inviterName,
+        invite.businessRole
+      );
+    } catch (error) {
+      console.error('Failed to resend invite email:', error);
+      throw new InternalServerErrorException('Failed to resend invite email');
+    }
+
+    invite.emailSent = true;
+    await invite.save();
+
+    // Audit: record invite resent
+    if (invite.emailSent) {
+      try {
+        const actor = await this.userModel
+          .findById(userId)
+          .catch(() => undefined as never);
+        await this.auditEmitter.emitAction({
+          action: AuditAction.INVITE_SENT,
+          userId: userId,
+          userEmail: actor?.email ?? 'Unknown',
+          userRole: actor?.role ?? userRole ?? 'Unknown',
+          target: invite.invitedEmail,
+          details: { businessId, inviteId, resend: true },
+        });
+      } catch {
+        // ignore audit errors
+      }
+    }
+
+    return {
+      message: 'Invite resent successfully',
+      invite: {
+        id: invite._id.toString(),
+        businessId: invite.businessId,
+        invitedEmail: invite.invitedEmail,
+        inviterId: invite.inviterId,
+        businessRole: invite.businessRole,
+        emailSent: invite.emailSent,
+        createdAt: invite.createdAt,
+      },
+    };
+  }
+
+  async processInvitesForNewUser(userId: string, email: string): Promise<void> {
+    // Find all pending invites for this email
+    const invites = await this.businessInviteModel.find({
+      invitedEmail: email.toLowerCase().trim(),
+      status: 'pending',
+    });
+
+    if (invites.length === 0) {
+      return; // No invites for this email
+    }
+
+    // Process each invite - create business user assignment and sync to tenant
+    for (const invite of invites) {
+      try {
+        if (invite.status !== 'pending') {
+          continue;
+        }
+
+        const business = await this.businessModel.findById(invite.businessId);
+        if (!business) {
+          console.warn(
+            `Business ${invite.businessId} not found for invite processing`
+          );
+          continue;
+        }
+
+        // Check if user is already assigned to this business
+        const existingAssignment = await this.businessUserModel.findOne({
+          businessId: invite.businessId,
+          userId,
+        });
+
+        if (existingAssignment) {
+          continue; // Already assigned
+        }
+
+        // Create business user assignment
+        const businessUser = new this.businessUserModel({
+          businessId: invite.businessId,
+          userId,
+          role: invite.businessRole,
+          assignedBy: invite.inviterId,
+        });
+
+        await businessUser.save();
+
+        // Sync to tenant database
+        try {
+          await this.tenantConnectionService.upsertTenantUser(
+            business.databaseName,
+            {
+              userId,
+              role: invite.businessRole,
+              assignedBy: invite.inviterId,
+            }
+          );
+        } catch (error) {
+          // Rollback if tenant sync fails
+          await this.businessUserModel.findByIdAndDelete(businessUser._id);
+          throw error;
+        }
+
+        try {
+          await this.businessInviteModel.findByIdAndUpdate(invite._id, {
+            status: 'accepted',
+            acceptedAt: new Date(),
+            processedBy: userId,
+          });
+        } catch (error) {
+          console.error(
+            `Failed to mark invite ${invite._id.toString()} as accepted for user ${userId}:`,
+            error
+          );
+        }
+        // Audit: record invite accepted / user assigned
+        try {
+          await this.auditEmitter.emitAction({
+            action: AuditAction.INVITE_ACCEPTED,
+            userId: userId,
+            userEmail: email,
+            userRole: invite.businessRole,
+            target: invite.businessId,
+            details: {
+              inviterId: invite.inviterId,
+              assignedBy: invite.inviterId,
+            },
+          });
+        } catch {
+          // ignore audit errors
+        }
+      } catch (error) {
+        // Log but continue processing other invites
+        console.error(
+          `Failed to process invite ${invite._id.toString()} for user ${userId}:`,
+          error
+        );
+      }
+    }
   }
 }
