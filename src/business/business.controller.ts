@@ -20,6 +20,7 @@ import {
   ApiParam,
   ApiBody,
   ApiQuery,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { BusinessService } from '@/business/business.service';
 import {
@@ -796,22 +797,17 @@ export class BusinessController {
     );
   }
 
-  @Post(':id/invites')
-  @UseGuards(JwtAuthGuard)
+  @Post('invites')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB] Send a business invitation',
     description:
-      'Send an invitation to a user to join the business. Data is created in: Platform-wide MongoDB database (accountia). If the user exists, they are assigned directly. If not, a registration link is sent via email.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID',
-    example: '507f1f77bcf86cd799439011',
+      'Send an invitation to a user to join the business. Data is created in: Platform-wide MongoDB database (accountia). If the user exists, they are assigned directly. If not, a registration link is sent via email. businessId must be provided in the request body.',
   })
   @ApiBody({
     type: InviteBusinessUserDto,
-    description: 'Invitation details',
+    description: 'Invitation details with businessId',
   })
   @ApiResponse({
     status: 201,
@@ -836,34 +832,29 @@ export class BusinessController {
     description: 'Business not found',
   })
   async inviteBusinessUser(
-    @Param('id') businessId: string,
     @Body() inviteDto: InviteBusinessUserDto,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @CurrentTenant() _tenant: TenantContext
   ): Promise<BusinessInviteResponseDto> {
     return this.businessService.inviteBusinessUser(
-      businessId,
+      inviteDto.businessId,
       inviteDto,
       user.id,
       user.role
     );
   }
 
-  @Post(':id/invites/resend')
-  @UseGuards(JwtAuthGuard)
+  @Post('invites/resend')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB] Resend a pending business invitation',
     description:
-      'Resend an invitation email to a user. Data is queried and updated in: Platform-wide MongoDB database (accountia). Only pending invitations can be resent.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID',
-    example: '507f1f77bcf86cd799439011',
+      'Resend an invitation email to a user. Data is queried and updated in: Platform-wide MongoDB database (accountia). Only pending invitations can be resent. businessId must be provided in the request body.',
   })
   @ApiBody({
     type: ResendInviteDto,
-    description: 'Invite ID to resend',
+    description: 'Invite ID and businessId to resend',
   })
   @ApiResponse({
     status: 200,
@@ -887,13 +878,116 @@ export class BusinessController {
     description: 'Business or invite not found',
   })
   async resendInvite(
-    @Param('id') businessId: string,
     @Body() resendDto: ResendInviteDto,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @CurrentTenant() _tenant: TenantContext
   ): Promise<BusinessInviteResponseDto> {
     return this.businessService.resendInvite(
-      businessId,
+      resendDto.businessId,
       resendDto.inviteId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get(':id/team')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Get business team members' })
+  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Team members retrieved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  @ApiResponse({ status: 404, description: 'Business not found' })
+  async getTeamMembers(
+    @Param('id') id: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; members: unknown[] }> {
+    return this.businessService.getTeamMembers(id, user.id, user.role);
+  }
+
+  @Get('invites/pending')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Get pending invitations' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Pending invites retrieved successfully',
+    schema: {
+      example: {
+        message: 'Pending invites retrieved successfully',
+        invites: [
+          {
+            id: '507f1f77bcf86cd799439013',
+            invitedEmail: 'user@example.com',
+            businessRole: 'CLIENT',
+            inviterName: 'John Smith',
+            emailSent: true,
+            expiresAt: '2026-04-20T10:30:00.000Z',
+            createdAt: '2026-04-13T10:30:00.000Z',
+          },
+        ],
+      },
+    },
+  })
+  async getPendingInvites(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; invites: unknown[] }> {
+    return this.businessService.getPendingInvites(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Delete('invites/:inviteId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Revoke an invitation' })
+  @ApiParam({ name: 'inviteId', description: 'Invitation ID to revoke' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Invitation revoked successfully',
+    schema: {
+      example: {
+        message: 'Invite revoked successfully',
+      },
+    },
+  })
+  async revokeInvite(
+    @Param('inviteId') inviteId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string }> {
+    return this.businessService.revokeInvite(
+      tenant.businessId,
+      inviteId,
       user.id,
       user.role
     );
