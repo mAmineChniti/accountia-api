@@ -87,6 +87,7 @@ export class ProductsController {
   }
 
   @Get()
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
   @ApiOperation({
     summary: 'Get all products for the business',
     description:
@@ -137,6 +138,7 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
   @ApiOperation({
     summary: 'Get a product by ID',
     description:
