@@ -8,9 +8,11 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -256,6 +258,29 @@ export class BusinessController {
     return this.businessService.getAllBusinesses(user.role);
   }
 
+  @Get('other')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all other businesses basic info',
+    description:
+      'Retrieve a list of all businesses with id, name, and email only. Accessible by any authenticated user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Businesses retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  async getOtherBusinesses(): Promise<{
+    message: string;
+    businesses: Array<{ id: string; name: string; email: string }>;
+  }> {
+    return this.businessService.getOtherBusinesses();
+  }
+
   @Get(':id/tenant/metadata')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
@@ -307,6 +332,49 @@ export class BusinessController {
     }
 
     return this.businessService.getTenantMetadata(tenant);
+  }
+
+  @Get('clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[TENANT DB] Get all clients for a business',
+    description:
+      'Retrieve all users linked to this business with the role client. Data is queried from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /businesses/clients?businessId=<businessId>',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Clients retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to access this business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getBusinessClients(
+    @Query('businessId') businessId: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
+    return this.businessService.getBusinessClients(
+      businessId,
+      user.id,
+      user.role
+    );
   }
 
   @Get(':id')
@@ -535,50 +603,6 @@ export class BusinessController {
     );
   }
 
-  @Get(':id/clients')
-  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: '[TENANT DB] Get all clients for a business',
-    description:
-      'Retrieve all users linked to this business with the role client. Data is queried from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /business/:id/clients?businessId=<businessId>',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    required: true,
-    type: String,
-    description:
-      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Clients retrieved successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Insufficient permissions to access this business',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Business not found',
-  })
-  async getBusinessClients(
-    @Param('id') id: string,
-    @CurrentUser() user: UserPayload
-  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
-    return this.businessService.getBusinessClients(id, user.id, user.role);
-  }
-
   @Patch(':id/clients/:clientId/role')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
@@ -670,13 +694,13 @@ export class BusinessController {
     return this.businessService.deleteClient(id, clientId, user.id, user.role);
   }
 
-  @Get('statistics')
+  @Post('statistics')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '[TENANT DB] Get business statistics',
+    summary: '[TENANT DB] Get business statistics with TensorFlow predictions',
     description:
-      'Retrieve business statistics showing product counts, invoice summaries, and financial metrics. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /business/statistics?businessId=<businessId>',
+      'Retrieve comprehensive business statistics including historical data and future predictions using TensorFlow models. Features revenue forecasting, product demand prediction, customer payment behavior analysis, product profitability optimization, and customer churn prediction. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: POST /business/statistics?businessId=<businessId>',
   })
   @ApiQuery({
     name: 'businessId',
@@ -685,18 +709,30 @@ export class BusinessController {
     description:
       'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        predictionHorizonDays: {
+          type: 'number',
+          description:
+            'Number of days into the future for predictions (default: 90)',
+        },
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
-    description: 'Business statistics retrieved successfully',
+    description: 'Business statistics with predictions retrieved successfully',
     type: BusinessStatisticsResponseDto,
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'Unauthorized',
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden - Insufficient permissions to access this business',
+    description: 'Forbidden - insufficient permissions',
   })
   @ApiResponse({
     status: 404,
@@ -704,10 +740,18 @@ export class BusinessController {
   })
   async getBusinessStatistics(
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @Query('businessId') businessId?: string
   ): Promise<BusinessStatisticsResponseDto> {
+    // If businessId is provided in query, validate it matches tenant context
+    const effectiveBusinessId = businessId ?? tenant.businessId;
+    if (businessId && businessId !== tenant.businessId) {
+      throw new ForbiddenException(
+        `Business ID in query parameter (${businessId}) does not match tenant context (${tenant.businessId})`
+      );
+    }
     return this.businessService.getBusinessStatistics(
-      tenant.businessId,
+      effectiveBusinessId,
       user.id,
       user.role
     );
