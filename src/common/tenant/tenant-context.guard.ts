@@ -18,6 +18,43 @@ export class TenantContextGuard implements CanActivate {
     return typeof value === 'string' ? value : undefined;
   }
 
+  private static resolveBusinessIdFromRequest(
+    request: AuthenticatedRequest,
+    isGetRequest: boolean,
+    isFileImport: boolean
+  ): string | undefined {
+    const queryBusinessId = TenantContextGuard.getStringValue(
+      (request.query as Record<string, unknown>)?.businessId
+    );
+    const routeBusinessId = TenantContextGuard.getStringValue(
+      (request.params as Record<string, unknown>)?.businessId
+    );
+    const routeId = TenantContextGuard.getStringValue(
+      (request.params as Record<string, unknown>)?.id
+    );
+    const bodyBusinessId = TenantContextGuard.getStringValue(
+      (request.body as Record<string, unknown>)?.businessId
+    );
+
+    // Priority order: explicit query, route businessId, body for mutations, then route id fallback.
+    if (queryBusinessId) {
+      return queryBusinessId;
+    }
+
+    if (routeBusinessId) {
+      return routeBusinessId;
+    }
+
+    if ((!isGetRequest || isFileImport) && bodyBusinessId)
+      return bodyBusinessId;
+
+    if (routeId) {
+      return routeId;
+    }
+
+    return undefined;
+  }
+
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
@@ -33,27 +70,11 @@ export class TenantContextGuard implements CanActivate {
         : new URL(request.url, 'http://localhost').pathname;
     const isFileImport = requestPath.includes('/import');
 
-    let businessId: string | undefined;
-
-    if (isGetRequest) {
-      // GET requests: extract businessId from query params
-      businessId = TenantContextGuard.getStringValue(
-        (request.query as Record<string, unknown>)?.businessId
-      );
-    } else if (isFileImport) {
-      // File import endpoints: extract businessId from query params
-      businessId = TenantContextGuard.getStringValue(
-        (request.query as Record<string, unknown>)?.businessId
-      );
-    } else {
-      // Other mutations (POST, PATCH, DELETE): prefer body, fallback to query
-      businessId = TenantContextGuard.getStringValue(
-        (request.body as Record<string, unknown>)?.businessId
-      );
-      businessId ??= TenantContextGuard.getStringValue(
-        (request.query as Record<string, unknown>)?.businessId
-      );
-    }
+    const businessId = TenantContextGuard.resolveBusinessIdFromRequest(
+      request,
+      isGetRequest,
+      isFileImport
+    );
 
     const isPlatformUser = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN].includes(
       user.role

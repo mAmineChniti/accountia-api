@@ -8,6 +8,8 @@ import {
   IsEnum,
   Min,
   IsBoolean,
+  MinLength,
+  Matches,
 } from 'class-validator';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
@@ -444,4 +446,44 @@ export class InvoiceReceiptListResponseDto {
 
   @IsNumber()
   totalPages!: number;
+}
+
+export class CreateInvoiceCheckoutSessionDto {
+  @IsOptional()
+  @IsString()
+  successUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  cancelUrl?: string;
+}
+
+export class MockInvoicePaymentDto {
+  @IsString()
+  @MinLength(2)
+  cardholderName!: string;
+
+  @IsString()
+  @Matches(/^\d{4}(?:\s\d{4}){3}$/)
+  cardNumber!: string;
+
+  @IsString()
+  @Matches(/^(0[1-9]|1[0-2])\/\d{2}$/)
+  expiry!: string;
+
+  @IsString()
+  @Matches(/^\d{3,4}$/)
+  cvc!: string;
+}
+
+export class InvoiceCheckoutSessionResponseDto {
+  @IsString()
+  clientSecret!: string;
+
+  @IsString()
+  sessionId!: string;
+
+  @IsOptional()
+  @IsString()
+  checkoutUrl?: string;
 }

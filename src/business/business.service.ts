@@ -1,11 +1,14 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 import { Connection, Model } from 'mongoose';
 import { ObjectId } from 'mongodb';
 import { randomBytes } from 'node:crypto';
@@ -36,6 +39,10 @@ import {
 import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
+import {
+  StripeOnboardingLinkDto,
+  StripeConnectStatusDto,
+} from '@/business/dto/stripe-onboarding.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
@@ -117,6 +124,9 @@ const isMissingCollectionError = (error: unknown): boolean => {
 
 @Injectable()
 export class BusinessService {
+  private readonly logger = new Logger(BusinessService.name);
+  private readonly stripeClient?: InstanceType<typeof Stripe>;
+
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(Business.name) private businessModel: Model<Business>,
@@ -131,8 +141,17 @@ export class BusinessService {
     private tenantConnectionService: TenantConnectionService,
     private auditService: AuditService,
     private auditEmitter: AuditEmitter,
-    private notificationsService: NotificationsService
-  ) {}
+    private notificationsService: NotificationsService,
+    private readonly configService: ConfigService
+  ) {
+    const stripeSecretKey = (
+      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      process.env.STRIPE_SECRET_KEY
+    )?.trim();
+    if (stripeSecretKey) {
+      this.stripeClient = new Stripe(stripeSecretKey);
+    }
+  }
 
   // Business Application Flow
   async submitBusinessApplication(
@@ -158,25 +177,29 @@ export class BusinessService {
 
     const savedApplication = await application.save();
 
-    // Send email notification about application submission
+    // Send email notification in background to avoid delaying API response.
     const applicant = await this.userModel
       .findById(userId)
       .catch((_error) => undefined as never);
     if (applicant) {
-      try {
-        await this.emailService.sendBusinessApplicationEmail(
+      void this.emailService
+        .sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
           savedApplication.businessName
-        );
-      } catch {
-        // Email service handles errors internally, but catch any unexpected issues
-      }
+        )
+        .catch((error) => {
+          this.logger.warn(
+            `Background business application email failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
     }
 
-    // Send real-time admin notification
-    try {
-      await this.notificationsService.createNotification({
+    // Send admin notification in background as well.
+    void this.notificationsService
+      .createNotification({
         type: NotificationType.NEW_BUSINESS_APPLICATION,
         message: `New business application: "${savedApplication.businessName}"`,
         payload: {
@@ -184,10 +207,14 @@ export class BusinessService {
           businessName: savedApplication.businessName,
           applicantId: userId,
         },
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `Background business application notification failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       });
-    } catch {
-      // Notification service handles errors internally
-    }
 
     return {
       message:
@@ -301,25 +328,37 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessApprovalEmail(
+        void this.emailService
+          .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             approvedBusinessName
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((error) => {
+            this.logger.warn(
+              `Background business approval email failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          });
       }
 
-      await this.auditEmitter.emitAction({
-        action: AuditAction.APPROVE_BUSINESS,
-        userId: reviewer.id,
-        userEmail: reviewer.email ?? 'Unknown',
-        userRole: reviewer.role ?? 'ADMIN',
-        target: approvedBusinessName,
-        details: { applicationId },
-      });
+      void this.auditEmitter
+        .emitAction({
+          action: AuditAction.APPROVE_BUSINESS,
+          userId: reviewer.id,
+          userEmail: reviewer.email ?? 'Unknown',
+          userRole: reviewer.role ?? 'ADMIN',
+          target: approvedBusinessName,
+          details: { applicationId },
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Background approve audit emit failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
     } else {
       await application.save();
 
@@ -328,37 +367,38 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessRejectionEmail(
+        void this.emailService
+          .sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             application.businessName,
             reviewDto.reviewNotes ?? 'No specific reason provided'
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((error) => {
+            this.logger.warn(
+              `Background business rejection email failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          });
       }
 
-      try {
-        await this.auditEmitter.emitAction({
+      void this.auditEmitter
+        .emitAction({
           action: AuditAction.REJECT_BUSINESS,
           userId: reviewer.id,
           userEmail: reviewer.email ?? 'Unknown',
           userRole: reviewer.role ?? 'ADMIN',
           target: application.businessName,
           details: { applicationId, reason: reviewDto.reviewNotes },
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Background reject audit emit failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         });
-      } catch (error) {
-        const auditErrorMessage =
-          error instanceof Error ? error.message : String(error);
-        console.error('Failed to emit REJECT_BUSINESS audit event', {
-          reviewerId: reviewer.id,
-          reviewerEmail: reviewer.email ?? 'Unknown',
-          applicationId,
-          error: auditErrorMessage,
-        });
-      }
     }
 
     return {
@@ -1930,6 +1970,157 @@ export class BusinessService {
           error
         );
       }
+    }
+  }
+
+  // === Stripe Connect Integration ===
+
+  private ensureStripeEnabled(): InstanceType<typeof Stripe> {
+    if (!this.stripeClient) {
+      throw new Error(
+        'Stripe client not configured. Please set STRIPE_SECRET_KEY environment variable.'
+      );
+    }
+    return this.stripeClient;
+  }
+
+  async getStripeOnboardingLink(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<StripeOnboardingLinkDto> {
+    // Check business access
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // Ensure Stripe is configured
+    const stripe = this.ensureStripeEnabled();
+
+    // Get frontend URL
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ??
+      process.env.FRONTEND_URL ??
+      'http://localhost:3000';
+
+    let stripeConnectId = business.stripeConnectId;
+
+    try {
+      // Create Stripe Express account if not already connected
+      if (!stripeConnectId) {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          country: 'US', // Default to US; can be made configurable per business
+        });
+        stripeConnectId = account.id;
+
+        // Save the new account ID to the business
+        await this.businessModel.updateOne(
+          { _id: businessId },
+          { stripeConnectId }
+        );
+      }
+
+      // Create the account link for onboarding
+      const accountLink = await stripe.accountLinks.create({
+        account: stripeConnectId,
+        type: 'account_onboarding',
+        refresh_url: `${frontendUrl}/business/${businessId}/stripe/refresh`,
+        return_url: `${frontendUrl}/business/${businessId}/stripe/callback`,
+      });
+
+      // Save the onboarding URL (temporary, expires after 24h)
+      await this.businessModel.updateOne(
+        { _id: businessId },
+        { stripeOnboardingUrl: accountLink.url }
+      );
+
+      return {
+        onboardingUrl: accountLink.url,
+        message:
+          'Please complete your Stripe account setup. You will be redirected back after completing onboarding.',
+      };
+    } catch (error) {
+      const stripeErrorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Stripe onboarding link generation failed for business ${businessId}: ${stripeErrorMessage}`
+      );
+
+      const normalized = stripeErrorMessage.toLowerCase();
+      if (
+        normalized.includes('signed up for connect') ||
+        normalized.includes('dashboard.stripe.com/connect')
+      ) {
+        throw new BadRequestException(
+          'Stripe Connect is not enabled on your Stripe platform account. Activate Connect at https://dashboard.stripe.com/connect, then retry.'
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Unable to generate Stripe onboarding link right now. Please try again later.'
+      );
+    }
+  }
+
+  async getStripeConnectStatus(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<StripeConnectStatusDto> {
+    // Check business access
+    await this.checkBusinessAccess(businessId, userId, userRole, false);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // If no Stripe Connect ID, account is not connected
+    if (!business.stripeConnectId) {
+      return {
+        isConnected: false,
+        message:
+          'Stripe Connect account not yet connected. Complete the onboarding to start receiving payments.',
+      };
+    }
+
+    // Verify the account status with Stripe
+    try {
+      const stripe = this.ensureStripeEnabled();
+      const account = await stripe.accounts.retrieve(business.stripeConnectId);
+
+      // Check if account is fully onboarded (charges_enabled)
+      const isFullyConnected = account.charges_enabled ?? false;
+
+      return {
+        isConnected: isFullyConnected,
+        stripeConnectId: business.stripeConnectId,
+        message: isFullyConnected
+          ? 'Stripe Connect account is fully configured. Ready to receive payments.'
+          : 'Stripe Connect account is connected but not fully set up. Please complete the required information.',
+      };
+    } catch (error) {
+      // If we can't verify with Stripe, assume not connected
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Unknown error verifying account';
+      this.logger.warn(
+        `Failed to verify Stripe account ${business.stripeConnectId}: ${errorMessage}`
+      );
+
+      return {
+        isConnected: false,
+        stripeConnectId: business.stripeConnectId,
+        message:
+          'Could not verify Stripe account status. Please try connecting again.',
+      };
     }
   }
 }
