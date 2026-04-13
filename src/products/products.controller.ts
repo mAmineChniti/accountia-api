@@ -36,6 +36,7 @@ import {
   ProductResponseDto,
   ProductListResponseDto,
 } from './dto/product-response.dto';
+import { StockInsightsResponseDto } from './dto/stock-insights.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -133,6 +134,53 @@ export class ProductsController {
       page,
       limit,
       search
+    );
+  }
+
+  @Get('stock-insights')
+  @ApiOperation({
+    summary: 'Local AI stock insights (non-chatbot)',
+    description:
+      'Computes stockout risk, safety stock, and reorder recommendations using local product and invoice data only (no external AI API).',
+  })
+  @ApiOkResponse({
+    description: 'Stock insights generated successfully',
+    type: StockInsightsResponseDto,
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business identifier required for tenant resolution',
+  })
+  @ApiQuery({
+    name: 'lookbackDays',
+    required: false,
+    type: Number,
+    description:
+      'How many days of historical invoices to analyze (default: 30)',
+  })
+  @ApiQuery({
+    name: 'planningHorizonDays',
+    required: false,
+    type: Number,
+    description: 'Reorder planning horizon in days (default: 30)',
+  })
+  async getStockInsights(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('lookbackDays') lookbackDays?: string,
+    @Query('planningHorizonDays') planningHorizonDays?: string
+  ): Promise<StockInsightsResponseDto> {
+    const parsedLookbackDays = lookbackDays ? Number(lookbackDays) : undefined;
+    const parsedPlanningHorizonDays = planningHorizonDays
+      ? Number(planningHorizonDays)
+      : undefined;
+
+    return this.productsService.getStockInsights(
+      tenant.businessId,
+      tenant.databaseName,
+      parsedLookbackDays,
+      parsedPlanningHorizonDays
     );
   }
 

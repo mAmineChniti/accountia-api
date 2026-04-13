@@ -28,6 +28,12 @@ export class Business extends Document {
   })
   status: 'pending' | 'approved' | 'rejected' | 'suspended';
 
+  @Prop()
+  stripeConnectId?: string; // Stripe Connect account ID for receiving payments
+
+  @Prop()
+  stripeOnboardingUrl?: string; // Temporary onboarding URL for Stripe Connect
+
   createdAt: Date;
   updatedAt: Date;
 }

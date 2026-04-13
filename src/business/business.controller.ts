@@ -44,6 +44,10 @@ import {
   BusinessApplicationListResponseDto,
 } from '@/business/dto/business-response.dto';
 import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
+import {
+  StripeOnboardingLinkDto,
+  StripeConnectStatusDto,
+} from '@/business/dto/stripe-onboarding.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -713,6 +717,36 @@ export class BusinessController {
     );
   }
 
+  @Get(':id/statistics')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[TENANT DB] Get business statistics by path id',
+    description:
+      'Compatibility endpoint for clients that send business id in the path. Retrieves the same aggregated statistics as GET /business/statistics.',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: String,
+    description: 'Business ID (MongoDB ObjectId)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Business statistics retrieved successfully',
+    type: BusinessStatisticsResponseDto,
+  })
+  async getBusinessStatisticsByPath(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<BusinessStatisticsResponseDto> {
+    return this.businessService.getBusinessStatistics(
+      businessId,
+      user.id,
+      user.role
+    );
+  }
+
   @Get('client-podium')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
@@ -894,6 +928,95 @@ export class BusinessController {
     return this.businessService.resendInvite(
       businessId,
       resendDto.inviteId,
+      user.id,
+      user.role
+    );
+  }
+
+  // Stripe Connect Integration Endpoints
+  @Get(':id/stripe/onboarding-link')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[PLATFORM DB] Get Stripe Connect onboarding link',
+    description:
+      'Generate a Stripe Connect onboarding link for this business. The business owner/admin can use this link to connect their Stripe account.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Onboarding link generated successfully',
+    type: StripeOnboardingLinkDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Must be business owner or admin',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getStripeOnboardingLink(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<StripeOnboardingLinkDto> {
+    return this.businessService.getStripeOnboardingLink(
+      businessId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get(':id/stripe/status')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.CLIENT
+  )
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[PLATFORM DB] Check Stripe Connect status',
+    description:
+      'Check if the business has a connected Stripe account and if it is fully set up for payments.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Business ID',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect status retrieved successfully',
+    type: StripeConnectStatusDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Must be part of the business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getStripeConnectStatus(
+    @Param('id') businessId: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<StripeConnectStatusDto> {
+    return this.businessService.getStripeConnectStatus(
+      businessId,
       user.id,
       user.role
     );

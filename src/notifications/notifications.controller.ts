@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -64,15 +65,22 @@ export class NotificationsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Insufficient role' })
-  async getRecent(@Req() req: { user: UserPayload }) {
+  async getRecent(
+    @Req() req: { user: UserPayload },
+    @Query('businessId') businessId?: string
+  ) {
     const userRole = req.user.role;
     const userEmail = req.user.email;
 
     const isClient = userRole === Role.CLIENT;
-    const filterEmail = isClient ? userEmail : undefined;
+    const filterBusinessId = businessId?.trim() ?? undefined;
+    const filterEmail =
+      !filterBusinessId && isClient
+        ? (userEmail?.trim() ?? undefined)
+        : undefined;
 
     const notifications = await this.notificationsService.getRecent(
-      undefined,
+      filterBusinessId,
       filterEmail
     );
     return {
@@ -135,14 +143,24 @@ export class NotificationsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Insufficient role' })
-  async markAllAsRead(@Req() req: { user: UserPayload }) {
+  async markAllAsRead(
+    @Req() req: { user: UserPayload },
+    @Query('businessId') businessId?: string
+  ) {
     const userRole = req.user.role;
     const userEmail = req.user.email;
 
     const isClient = userRole === Role.CLIENT;
-    const filterEmail = isClient ? userEmail : undefined;
+    const filterBusinessId = businessId?.trim() ?? undefined;
+    const filterEmail =
+      !filterBusinessId && isClient
+        ? (userEmail?.trim() ?? undefined)
+        : undefined;
 
-    await this.notificationsService.markAllAsRead(undefined, filterEmail);
+    await this.notificationsService.markAllAsRead(
+      filterBusinessId,
+      filterEmail
+    );
     return { message: 'All notifications marked as read' };
   }
 }

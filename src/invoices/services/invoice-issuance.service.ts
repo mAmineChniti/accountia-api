@@ -27,6 +27,8 @@ import {
 } from '@/invoices/enums/invoice-recipient.enum';
 import { Business } from '@/business/schemas/business.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationType } from '@/notifications/schemas/notification.schema';
 
 /**
  * InvoiceIssuanceService
@@ -61,7 +63,8 @@ export class InvoiceIssuanceService {
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectModel(Business.name) private businessModel: Model<Business>,
     @InjectConnection() private connection: Connection,
-    private tenantConnectionService: TenantConnectionService
+    private tenantConnectionService: TenantConnectionService,
+    private notificationsService: NotificationsService
   ) {}
 
   /**
@@ -94,6 +97,19 @@ export class InvoiceIssuanceService {
 
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  /**
+   * Accept only valid Mongo ObjectId values for audit user fields.
+   * This prevents runtime cast errors when payment callbacks run without a user context.
+   */
+  private normalizeAuditUserId(userId?: string): string | undefined {
+    const normalized = this.normalizeOptionalString(userId);
+    if (!normalized) {
+      return undefined;
+    }
+
+    return ObjectId.isValid(normalized) ? normalized : undefined;
   }
 
   private getTenantInvoiceModel(databaseName: string): Model<Invoice> {
@@ -419,7 +435,10 @@ export class InvoiceIssuanceService {
     invoice.description = dto.description ?? invoice.description;
     invoice.paymentTerms = dto.paymentTerms ?? invoice.paymentTerms;
     invoice.dueDate = dto.dueDate ?? invoice.dueDate;
-    invoice.lastModifiedBy = userId;
+    const auditUserId = this.normalizeAuditUserId(userId);
+    if (auditUserId) {
+      invoice.lastModifiedBy = auditUserId;
+    }
 
     await invoice.save();
 
@@ -493,7 +512,10 @@ export class InvoiceIssuanceService {
     const previousStatus = currentStatus;
     invoice.status = targetStatus;
     invoice.lastStatusChangeAt = new Date();
-    invoice.lastModifiedBy = userId;
+    const auditUserId = this.normalizeAuditUserId(userId);
+    if (auditUserId) {
+      invoice.lastModifiedBy = auditUserId;
+    }
 
     // Handle voiding
     if (targetStatus === InvoiceStatus.VOIDED) {
@@ -532,6 +554,33 @@ export class InvoiceIssuanceService {
     // ISSUED creates visibility, later transitions (VIEWED/PAID/etc.) update status for recipients.
     if (targetStatus !== InvoiceStatus.DRAFT) {
       await this.syncInvoiceToReceipt(invoice, databaseName);
+    }
+
+    if (targetStatus === InvoiceStatus.ISSUED && invoice.recipient.email) {
+      try {
+        const business = await this.businessModel.findById(businessId).exec();
+        const issuerBusinessName = business?.name ?? 'Unknown Business';
+
+        await this.notificationsService.createNotification({
+          type: NotificationType.INVOICE_CREATED,
+          message: `New invoice ${invoice.invoiceNumber} from ${issuerBusinessName}`,
+          targetUserEmail: invoice.recipient.email,
+          payload: {
+            invoiceId: invoice._id.toString(),
+            invoiceNumber: invoice.invoiceNumber,
+            issuerBusinessId: businessId,
+            issuerBusinessName,
+            totalAmount: invoice.totalAmount,
+            currency: invoice.currency,
+            dueDate: invoice.dueDate,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to notify recipient for issued invoice ${invoiceId}`,
+          error
+        );
+      }
     }
 
     return this.mapInvoiceToResponse(invoice);

@@ -38,6 +38,11 @@ import { InvoicesModule } from '@/invoices/invoices.module';
           .min(1000)
           .max(120_000)
           .default(30_000),
+        STRIPE_SECRET_KEY: Joi.string().optional(),
+        STRIPE_WEBHOOK_SECRET: Joi.string().optional(),
+        STRIPE_FALLBACK_CURRENCY: Joi.string().optional(),
+        STRIPE_FX_RATES: Joi.string().optional(),
+        MOCK_INVOICE_PAYMENTS: Joi.boolean().optional(),
       }),
     }),
 
