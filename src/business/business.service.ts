@@ -548,10 +548,10 @@ export class BusinessService {
     let businessUsers = (await this.businessUserModel
       .find({
         userId,
-        role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN] },
+        role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER] },
       })
-      .select('businessId')
-      .lean()) as Array<{ businessId: string }>;
+      .select('businessId role')
+      .lean()) as Array<{ businessId: string; role: string }>;
 
     // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
@@ -578,12 +578,13 @@ export class BusinessService {
             { upsert: true }
           );
 
-          businessUsers = [{ businessId: approvedApplication.businessId }];
+          businessUsers = [{ businessId: approvedApplication.businessId, role: BusinessUserRole.OWNER }];
         }
       }
     }
 
     const businessIds = businessUsers.map((bu) => bu.businessId);
+    const roleMap = new Map(businessUsers.map((bu) => [bu.businessId.toString(), bu.role]));
 
     if (businessIds.length === 0) {
       return {
@@ -606,6 +607,7 @@ export class BusinessService {
         phone: business.phone,
         status: business.status,
         createdAt: business.createdAt,
+        role: roleMap.get(business._id.toString()) ?? BusinessUserRole.MEMBER,
       })),
     };
   }

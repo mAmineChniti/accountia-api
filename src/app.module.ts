@@ -12,6 +12,14 @@ import { ChatModule } from '@/chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
+import { ReportsModule } from '@/reports/reports.module';
+import { CommentsModule } from '@/comments/comments.module';
+import { ExpensesModule } from '@/expenses/expenses.module';
+import { RecurringInvoicesModule } from '@/recurring-invoices/recurring-invoices.module';
+import { AnalyticsModule } from '@/analytics/analytics.module';
+import { VendorsModule } from '@/vendors/vendors.module';
+import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
+import { ClientPortalModule } from '@/client-portal/client-portal.module';
 
 @Module({
   imports: [
@@ -56,6 +64,14 @@ import { InvoicesModule } from '@/invoices/invoices.module';
     ChatModule,
     ProductsModule,
     InvoicesModule,
+    ReportsModule,
+    CommentsModule,
+    ExpensesModule,
+    RecurringInvoicesModule,
+    AnalyticsModule,
+    VendorsModule,
+    PurchaseOrdersModule,
+    ClientPortalModule,
   ],
   controllers: [],
   providers: [],
