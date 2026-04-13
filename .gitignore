@@ -14,10 +14,8 @@ coverage/
 
 # ===============================
 # Environment files
+# .env and .env.local are intentionally tracked
 # ===============================
-.env
-.env.*
-!.env.example
 
 # ===============================
 # Logs
