@@ -81,9 +81,13 @@
   },
   "trustedDependencies": [
     "bcrypt",
+    "@openrouter/sdk",
     "@scarf/scarf",
-    "@nestjs/core",
+    "@tensorflow/tfjs-node-gpu",
     "unrs-resolver",
+    "core-js",
+    "@tensorflow/tfjs-node",
+    "@nestjs/core",
   ],
   "packages": {
     "@angular-devkit/core": ["@angular-devkit/core@19.2.19", "", { "dependencies": { "ajv": "8.17.1", "ajv-formats": "3.0.1", "jsonc-parser": "3.3.1", "picomatch": "4.0.2", "rxjs": "7.8.1", "source-map": "0.7.4" }, "peerDependencies": { "chokidar": "^4.0.0" }, "optionalPeers": ["chokidar"] }, "sha512-JbLL+4IMLMBgjLZlnPG4lYDfz4zGrJ/s6Aoon321NJKuw1Kb1k5KpFu9dUY0BqLIe8xPQ2UJBpI+xXdK5MXMHQ=="],

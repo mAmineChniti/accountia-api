@@ -117,8 +117,12 @@
   },
   "trustedDependencies": [
     "@nestjs/core",
+    "@openrouter/sdk",
     "@scarf/scarf",
+    "@tensorflow/tfjs-node",
+    "@tensorflow/tfjs-node-gpu",
     "bcrypt",
+    "core-js",
     "unrs-resolver"
   ]
 }
