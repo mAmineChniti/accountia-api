@@ -548,7 +548,13 @@ export class BusinessService {
     let businessUsers = (await this.businessUserModel
       .find({
         userId,
-        role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN] },
+        role: {
+          $in: [
+            BusinessUserRole.OWNER,
+            BusinessUserRole.ADMIN,
+            BusinessUserRole.MEMBER,
+          ],
+        },
       })
       .select('businessId')
       .lean()) as Array<{ businessId: string }>;
@@ -855,12 +861,14 @@ export class BusinessService {
     // If ownership is required (for update/delete), owners and admins can proceed
     if (
       requireOwnership &&
-      ![BusinessUserRole.OWNER, BusinessUserRole.ADMIN].includes(
-        businessUser.role
-      )
+      ![
+        BusinessUserRole.OWNER,
+        BusinessUserRole.ADMIN,
+        BusinessUserRole.MEMBER,
+      ].includes(businessUser.role)
     ) {
       throw new ForbiddenException(
-        'Only business owners and administrators can modify business settings'
+        'Only business owners, administrators and members can access this business'
       );
     }
   }
@@ -1684,6 +1692,7 @@ export class BusinessService {
       inviterId,
       businessRole: inviteDto.businessRole,
       status: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     });
 
     const savedInvite = await invite.save();
@@ -1742,6 +1751,8 @@ export class BusinessService {
         inviterId: savedInvite.inviterId,
         businessRole: savedInvite.businessRole,
         emailSent,
+        status: savedInvite.status,
+        expiresAt: savedInvite.expiresAt,
         createdAt: savedInvite.createdAt,
       },
     };
@@ -1828,6 +1839,8 @@ export class BusinessService {
         inviterId: invite.inviterId,
         businessRole: invite.businessRole,
         emailSent: invite.emailSent,
+        status: invite.status,
+        expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
       },
     };
@@ -1931,5 +1944,136 @@ export class BusinessService {
         );
       }
     }
+  }
+
+  // Team Management
+  async getTeamMembers(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{
+    message: string;
+    members: Array<{
+      id: string;
+      userId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phoneNumber?: string;
+      role: BusinessUserRole;
+      createdAt: Date;
+    }>;
+  }> {
+    await this.checkBusinessAccess(businessId, userId, userRole);
+
+    const businessUsers = await this.businessUserModel
+      .find({ businessId })
+      .lean();
+
+    const userIds = businessUsers.map((bu) => bu.userId);
+    const users = await this.userModel
+      .find({ _id: { $in: userIds } })
+      .select('firstName lastName email phoneNumber role createdAt')
+      .lean();
+
+    const members = businessUsers.map((bu) => {
+      const user = users.find((u) => u._id.toString() === bu.userId);
+      return {
+        id: bu._id.toString(),
+        userId: bu.userId,
+        firstName: user?.firstName ?? 'Unknown',
+        lastName: user?.lastName ?? 'User',
+        email: user?.email ?? '',
+        phoneNumber: user?.phoneNumber,
+        role: bu.role,
+        createdAt: bu.createdAt,
+      };
+    });
+
+    return {
+      message: 'Team members retrieved successfully',
+      members,
+    };
+  }
+
+  async getPendingInvites(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{
+    message: string;
+    invites: Array<{
+      id: string;
+      invitedEmail: string;
+      businessRole: string;
+      inviterName: string;
+      emailSent: boolean;
+      expiresAt: Date | undefined;
+      createdAt: Date;
+    }>;
+  }> {
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const invites = await this.businessInviteModel
+      .find({
+        businessId,
+        status: 'pending',
+        expiresAt: { $gt: new Date() },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const inviterIds = invites.map((i) => i.inviterId);
+    const inviters = await this.userModel
+      .find({ _id: { $in: inviterIds } })
+      .select('firstName lastName')
+      .lean();
+
+    const formattedInvites = invites.map((invite) => {
+      const inviter = inviters.find(
+        (u) => u._id.toString() === invite.inviterId
+      );
+      return {
+        id: invite._id.toString(),
+        invitedEmail: invite.invitedEmail,
+        businessRole: invite.businessRole,
+        inviterName: inviter
+          ? `${inviter.firstName} ${inviter.lastName}`
+          : 'System',
+        emailSent: invite.emailSent,
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt,
+      };
+    });
+
+    return {
+      message: 'Pending invites retrieved successfully',
+      invites: formattedInvites,
+    };
+  }
+
+  async revokeInvite(
+    businessId: string,
+    inviteId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{ message: string }> {
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const invite = await this.businessInviteModel.findById(inviteId);
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.businessId !== businessId) {
+      throw new ForbiddenException(
+        'You do not have permission to revoke this invite'
+      );
+    }
+
+    invite.status = 'revoked';
+    await invite.save();
+
+    return { message: 'Invite revoked successfully' };
   }
 }

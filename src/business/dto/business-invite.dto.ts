@@ -54,11 +54,20 @@ export class BusinessInviteResponseDto {
     inviterId: string;
     businessRole: BusinessUserRole;
     emailSent: boolean;
+    status: 'pending' | 'accepted' | 'revoked';
+    expiresAt?: Date;
     createdAt: Date;
   };
 }
 
 export class ResendInviteDto {
+  @ApiProperty({
+    description: 'Tenant businessId',
+    type: String,
+  })
+  @IsString()
+  businessId: string;
+
   @ApiProperty({
     description: 'Invite ID to resend',
     example: '507f1f77bcf86cd799439013',
