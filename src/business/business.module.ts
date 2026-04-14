@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BusinessController } from '@/business/business.controller';
 import { BusinessService } from '@/business/business.service';
+import { TensorflowPredictionService } from '@/business/services/tensorflow-prediction.service';
 import { EmailModule } from '@/email/email.module';
 import { Business, BusinessSchema } from '@/business/schemas/business.schema';
 import {
@@ -40,6 +41,7 @@ import { InvoicesModule } from '@/invoices/invoices.module';
   controllers: [BusinessController],
   providers: [
     BusinessService,
+    TensorflowPredictionService,
     TenantConnectionService,
     TenantContextService,
     TenantContextGuard,

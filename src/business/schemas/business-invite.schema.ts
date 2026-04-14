@@ -44,6 +44,9 @@ export class BusinessInvite extends Document {
   @Prop()
   processedBy?: string;
 
+  @Prop()
+  expiresAt?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }

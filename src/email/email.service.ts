@@ -553,11 +553,15 @@ export class EmailService {
       };
       const roleDisplay = roleDisplayMap[businessRole] || businessRole;
 
+      // Build registration link - frontend will handle the actual registration flow
+      const registerLink = `${this.frontendUrl}/en/register`;
+
       const replacements = {
         '{{.BusinessName}}': EmailService.escapeHtml(businessName),
         '{{.InviterName}}': EmailService.escapeHtml(inviterName),
         '{{.BusinessRole}}': EmailService.escapeHtml(roleDisplay),
         '{{.InvitedEmail}}': EmailService.escapeHtml(to),
+        '{{.RegisterLink}}': registerLink, // No escaping needed for URLs
         '{{.Year}}': new Date().getFullYear().toString(),
       };
 
