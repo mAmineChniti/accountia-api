@@ -7,9 +7,11 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,6 +21,7 @@ import {
   ApiParam,
   ApiBody,
   ApiQuery,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { BusinessService } from '@/business/business.service';
 import {
@@ -239,6 +242,29 @@ export class BusinessController {
     @CurrentUser() user: UserPayload
   ): Promise<BusinessesListResponseDto> {
     return this.businessService.getAllBusinesses(user.role);
+  }
+
+  @Get('other')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get all other businesses basic info',
+    description:
+      'Retrieve a list of all businesses with id, name, and email only. Accessible by any authenticated user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Businesses retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  async getOtherBusinesses(): Promise<{
+    message: string;
+    businesses: Array<{ id: string; name: string; email: string }>;
+  }> {
+    return this.businessService.getOtherBusinesses();
   }
 
   @Get('tenant/metadata')
@@ -541,7 +567,7 @@ export class BusinessController {
     );
   }
 
-  @Patch('clients/:clientId/role')
+  @Patch(':id/clients/:clientId/role')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
@@ -635,13 +661,13 @@ export class BusinessController {
     );
   }
 
-  @Get('statistics')
+  @Post('statistics')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '[TENANT DB] Get business statistics',
+    summary: '[TENANT DB] Get business statistics with TensorFlow predictions',
     description:
-      'Retrieve business statistics showing product counts, invoice summaries, and financial metrics. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /business/statistics?businessId=<businessId>',
+      'Retrieve comprehensive business statistics including historical data and future predictions using TensorFlow models. Features revenue forecasting, product demand prediction, customer payment behavior analysis, product profitability optimization, and customer churn prediction. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: POST /business/statistics?businessId=<businessId>',
   })
   @ApiQuery({
     name: 'businessId',
@@ -650,18 +676,30 @@ export class BusinessController {
     description:
       'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        predictionHorizonDays: {
+          type: 'number',
+          description:
+            'Number of days into the future for predictions (default: 90)',
+        },
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
-    description: 'Business statistics retrieved successfully',
+    description: 'Business statistics with predictions retrieved successfully',
     type: BusinessStatisticsResponseDto,
   })
   @ApiResponse({
     status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
+    description: 'Unauthorized',
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden - Insufficient permissions to access this business',
+    description: 'Forbidden - insufficient permissions',
   })
   @ApiResponse({
     status: 404,
@@ -669,10 +707,18 @@ export class BusinessController {
   })
   async getBusinessStatistics(
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @Query('businessId') businessId?: string
   ): Promise<BusinessStatisticsResponseDto> {
+    // If businessId is provided in query, validate it matches tenant context
+    const effectiveBusinessId = businessId ?? tenant.businessId;
+    if (businessId && businessId !== tenant.businessId) {
+      throw new ForbiddenException(
+        `Business ID in query parameter (${businessId}) does not match tenant context (${tenant.businessId})`
+      );
+    }
     return this.businessService.getBusinessStatistics(
-      tenant.businessId,
+      effectiveBusinessId,
       user.id,
       user.role
     );
@@ -761,22 +807,17 @@ export class BusinessController {
     );
   }
 
-  @Post(':id/invites')
-  @UseGuards(JwtAuthGuard)
+  @Post('invites')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB] Send a business invitation',
     description:
-      'Send an invitation to a user to join the business. Data is created in: Platform-wide MongoDB database (accountia). If the user exists, they are assigned directly. If not, a registration link is sent via email.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID',
-    example: '507f1f77bcf86cd799439011',
+      'Send an invitation to a user to join the business. Data is created in: Platform-wide MongoDB database (accountia). If the user exists, they are assigned directly. If not, a registration link is sent via email. businessId must be provided in the request body.',
   })
   @ApiBody({
     type: InviteBusinessUserDto,
-    description: 'Invitation details',
+    description: 'Invitation details with businessId',
   })
   @ApiResponse({
     status: 201,
@@ -801,34 +842,29 @@ export class BusinessController {
     description: 'Business not found',
   })
   async inviteBusinessUser(
-    @Param('id') businessId: string,
     @Body() inviteDto: InviteBusinessUserDto,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @CurrentTenant() _tenant: TenantContext
   ): Promise<BusinessInviteResponseDto> {
     return this.businessService.inviteBusinessUser(
-      businessId,
+      inviteDto.businessId,
       inviteDto,
       user.id,
       user.role
     );
   }
 
-  @Post(':id/invites/resend')
-  @UseGuards(JwtAuthGuard)
+  @Post('invites/resend')
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB] Resend a pending business invitation',
     description:
-      'Resend an invitation email to a user. Data is queried and updated in: Platform-wide MongoDB database (accountia). Only pending invitations can be resent.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID',
-    example: '507f1f77bcf86cd799439011',
+      'Resend an invitation email to a user. Data is queried and updated in: Platform-wide MongoDB database (accountia). Only pending invitations can be resent. businessId must be provided in the request body.',
   })
   @ApiBody({
     type: ResendInviteDto,
-    description: 'Invite ID to resend',
+    description: 'Invite ID and businessId to resend',
   })
   @ApiResponse({
     status: 200,
@@ -852,13 +888,127 @@ export class BusinessController {
     description: 'Business or invite not found',
   })
   async resendInvite(
-    @Param('id') businessId: string,
     @Body() resendDto: ResendInviteDto,
-    @CurrentUser() user: UserPayload
+    @CurrentUser() user: UserPayload,
+    @CurrentTenant() _tenant: TenantContext
   ): Promise<BusinessInviteResponseDto> {
     return this.businessService.resendInvite(
-      businessId,
+      resendDto.businessId,
       resendDto.inviteId,
+      user.id,
+      user.role
+    );
+  }
+
+  // Team Management Endpoints
+  @Get('team')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Get business team members' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Team members retrieved successfully',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  @ApiResponse({ status: 404, description: 'Business not found' })
+  async getTeamMembers(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; members: unknown[] }> {
+    return this.businessService.getTeamMembers(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get('invites/pending')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Get pending invitations' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Pending invites retrieved successfully',
+    schema: {
+      example: {
+        message: 'Pending invites retrieved successfully',
+        invites: [
+          {
+            id: '507f1f77bcf86cd799439013',
+            invitedEmail: 'user@example.com',
+            businessRole: 'CLIENT',
+            inviterName: 'John Smith',
+            emailSent: true,
+            expiresAt: '2026-04-20T10:30:00.000Z',
+            createdAt: '2026-04-13T10:30:00.000Z',
+          },
+        ],
+      },
+    },
+  })
+  async getPendingInvites(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; invites: unknown[] }> {
+    return this.businessService.getPendingInvites(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Delete('invites/:inviteId')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[PLATFORM DB] Revoke an invitation' })
+  @ApiParam({ name: 'inviteId', description: 'Invitation ID to revoke' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Invitation revoked successfully',
+    schema: {
+      example: {
+        message: 'Invite revoked successfully',
+      },
+    },
+  })
+  async revokeInvite(
+    @Param('inviteId') inviteId: string,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string }> {
+    return this.businessService.revokeInvite(
+      tenant.businessId,
+      inviteId,
       user.id,
       user.role
     );

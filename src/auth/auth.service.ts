@@ -9,7 +9,8 @@ import {
   HttpException,
   HttpStatus,
   InternalServerErrorException,
-  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -42,7 +43,7 @@ import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { BusinessInvite } from '@/business/schemas/business-invite.schema';
-import type { BusinessService } from '@/business/business.service';
+import { BusinessService } from '@/business/business.service';
 
 interface TokenPayload {
   sub?: string;
@@ -123,7 +124,8 @@ export class AuthService {
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService,
     private auditEmitter: AuditEmitter,
-    @Optional() private businessService?: BusinessService
+    @Inject(forwardRef(() => BusinessService))
+    private businessService: BusinessService
   ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -503,37 +505,19 @@ export class AuthService {
 
       // If invited, auto-process invites; otherwise send confirmation email
       if (isInvited) {
-        // Process invites immediately
-        if (this.businessService) {
-          try {
-            await this.businessService.processInvitesForNewUser(
-              user._id.toString(),
-              normalizedEmail
-            );
-            invitesProcessed = true;
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            this.logger.error(
-              'Failed to process business invites during registration',
-              error instanceof Error ? error.stack : errorMessage
-            );
-            await this.auditEmitter.emitAction({
-              action: AuditAction.OTHER,
-              userId: user._id.toString(),
-              userEmail: user.email,
-              userRole: user.role || 'CLIENT',
-              details: {
-                reason: 'invite_processing_failed_during_registration',
-                invitedToBusinesses: pendingInvites.length,
-                error: errorMessage,
-              },
-            });
-            // Continue even if invite processing fails
-          }
-        } else {
-          this.logger.warn(
-            'Business service unavailable; invite processing deferred during registration'
+        // Process invites immediately - fail registration if processing fails
+        try {
+          await this.businessService.processInvitesForNewUser(
+            user._id.toString(),
+            normalizedEmail
+          );
+          invitesProcessed = true;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(
+            'Failed to process business invites during registration',
+            error instanceof Error ? error.stack : errorMessage
           );
           await this.auditEmitter.emitAction({
             action: AuditAction.OTHER,
@@ -541,10 +525,16 @@ export class AuthService {
             userEmail: user.email,
             userRole: user.role || 'CLIENT',
             details: {
-              reason: 'invite_processing_service_unavailable',
+              reason: 'invite_processing_failed_during_registration',
               invitedToBusinesses: pendingInvites.length,
+              error: errorMessage,
             },
           });
+          // Delete the user since invite processing failed
+          await this.userModel.findByIdAndDelete(user._id);
+          throw new InternalServerErrorException(
+            'Failed to process business invitation. Please try again later.'
+          );
         }
       } else {
         // Send confirmation email
