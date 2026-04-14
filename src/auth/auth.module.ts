@@ -31,7 +31,7 @@ import {
     ]),
     PassportModule,
     forwardRef(() => EmailModule),
-    BusinessModule,
+    forwardRef(() => BusinessModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({
