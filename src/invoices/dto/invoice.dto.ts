@@ -448,15 +448,7 @@ export class InvoiceReceiptListResponseDto {
   totalPages!: number;
 }
 
-export class CreateInvoiceCheckoutSessionDto {
-  @IsOptional()
-  @IsString()
-  successUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  cancelUrl?: string;
-}
+export class CreateInvoiceCheckoutSessionDto {}
 
 export class MockInvoicePaymentDto {
   @IsString()
