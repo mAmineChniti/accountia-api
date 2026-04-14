@@ -43,7 +43,10 @@ import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { BusinessInvite } from '@/business/schemas/business-invite.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { BusinessService } from '@/business/business.service';
+import { Business } from '@/business/schemas/business.schema';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 
 interface TokenPayload {
   sub?: string;
@@ -120,10 +123,14 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(BusinessInvite.name)
     private businessInviteModel: Model<BusinessInvite>,
+    @InjectModel(BusinessUser.name)
+    private businessUserModel: Model<BusinessUser>,
+    @InjectModel(Business.name) private businessModel: Model<Business>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService,
     private auditEmitter: AuditEmitter,
+    private tenantConnectionService: TenantConnectionService,
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService
   ) {}
@@ -1165,13 +1172,44 @@ export class AuthService {
     }
 
     try {
+      // Get all business associations before deleting
+      const businessUsers = await this.businessUserModel.find({ userId });
+      const businessIds = businessUsers.map((bu) => bu.businessId);
+
+      // Remove user from tenant databases first
+      let tenantDatabasesCleaned = 0;
+      if (businessIds.length > 0) {
+        const businesses = await this.businessModel.find({
+          _id: { $in: businessIds },
+        });
+        for (const business of businesses) {
+          if (business.databaseName) {
+            await this.tenantConnectionService.deactivateTenantUser(
+              business.databaseName,
+              userId,
+              userId
+            );
+            tenantDatabasesCleaned++;
+          }
+        }
+      }
+
+      // Delete user from platform business_users collection
+      const businessUserDeleteResult = await this.businessUserModel.deleteMany({
+        userId,
+      });
+
       await this.userModel.findByIdAndDelete(userId);
       await this.auditEmitter.emitAction({
         action: AuditAction.USER_DELETED,
         userId: user._id.toString(),
         userEmail: user.email,
         userRole: user.role || 'USER',
-        details: { method: 'self_delete' },
+        details: {
+          method: 'self_delete',
+          businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
+          tenantDatabasesCleaned,
+        },
       });
       return { message: 'Account deleted successfully' };
     } catch (error) {
@@ -1212,6 +1250,33 @@ export class AuthService {
       );
     }
 
+    // Get all business associations before deleting
+    const businessUsers = await this.businessUserModel.find({ userId });
+    const businessIds = businessUsers.map((bu) => bu.businessId);
+
+    // Remove user from tenant databases first
+    let tenantDatabasesCleaned = 0;
+    if (businessIds.length > 0) {
+      const businesses = await this.businessModel.find({
+        _id: { $in: businessIds },
+      });
+      for (const business of businesses) {
+        if (business.databaseName) {
+          await this.tenantConnectionService.deactivateTenantUser(
+            business.databaseName,
+            userId,
+            adminId
+          );
+          tenantDatabasesCleaned++;
+        }
+      }
+    }
+
+    // Delete user from platform business_users collection
+    const businessUserDeleteResult = await this.businessUserModel.deleteMany({
+      userId,
+    });
+
     await this.userModel.deleteOne({ _id: userId });
     await this.auditEmitter.emitAction({
       action: AuditAction.USER_DELETED,
@@ -1219,7 +1284,11 @@ export class AuthService {
       userEmail: admin.email ?? 'Unknown',
       userRole: admin.role || 'ADMIN',
       target: userId,
-      details: { method: 'admin_deleted_user' },
+      details: {
+        method: 'admin_deleted_user',
+        businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
+        tenantDatabasesCleaned,
+      },
     });
     return { message: 'User deleted successfully' };
   }
