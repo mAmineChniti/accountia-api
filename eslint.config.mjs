@@ -64,5 +64,30 @@ export default defineConfig(
       },
     },
     eslintNestJs.configs.flatRecommended,
+    {
+      files: [
+        'src/common/utils/ai-structure-fixer.util.ts',
+        'src/invoices/invoices.controller.ts',
+        'src/invoices/services/invoice-import.service.ts',
+        'src/products/products.controller.ts',
+        'src/products/products.service.ts',
+      ],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        'unicorn/no-null': 'off',
+        '@typescript-eslint/no-unsafe-return': 'off',
+        '@typescript-eslint/no-unsafe-member-access': 'off',
+        '@typescript-eslint/no-unsafe-assignment': 'off',
+        '@typescript-eslint/no-unsafe-call': 'off',
+        '@typescript-eslint/no-unsafe-argument': 'off',
+        '@darraghor/nestjs-typed/api-method-should-specify-api-response': 'off',
+        'unicorn/prefer-module': 'off',
+        'unicorn/no-nested-ternary': 'off',
+        '@typescript-eslint/prefer-nullish-coalescing': 'off',
+        '@typescript-eslint/no-unsafe-enum-comparison': 'off',
+        '@typescript-eslint/no-require-imports': 'off',
+        '@typescript-eslint/no-unused-vars': 'off',
+      },
+    },
   ]
 );

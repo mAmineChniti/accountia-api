@@ -510,7 +510,6 @@ export class InvoicesController {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ];
         if (allowedMimes.includes(file.mimetype)) {
-          // eslint-disable-next-line unicorn/no-null
           cb(null, true);
         } else {
           cb(
@@ -552,5 +551,78 @@ export class InvoicesController {
       tenant.databaseName,
       user.id
     );
+  }
+
+  @Post('import-smart')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    })
+  )
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: '[TENANT DB] Bulk import invoices with AI structural correction',
+    description:
+      'Import multiple invoices from a CSV or XLSX file. AI will analyze and correct structural issues (misaligned columns) automatically.',
+  })
+  async importInvoicesSmart(
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<BulkImportInvoicesResponseDto> {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    return await this.importService.importInvoicesSmart(
+      file,
+      tenant.businessId,
+      tenant.databaseName,
+      user.id
+    );
+  }
+
+  @Post('ai-extract')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+        if (allowedMimes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Only CSV and XLSX files are allowed for AI extraction'
+            ),
+            false
+          );
+        }
+      },
+    })
+  )
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: '[TENANT DB] Extract single invoice data via AI',
+    description:
+      'Upload a CSV/Excel invoice draft. AI will parse it and return a JSON object pre-filling the Create Invoice form.',
+  })
+  async extractAiInvoice(
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<any> {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    return await this.importService.extractDraftInvoiceWithAi(file);
   }
 }

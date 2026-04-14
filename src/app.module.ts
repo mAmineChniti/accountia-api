@@ -26,7 +26,7 @@ import { InvoicesModule } from '@/invoices/invoices.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
-        OPENROUTER_API_KEY: Joi.string().required(),
+        OPENROUTER_API_KEY: Joi.string().allow(''),
         OPENROUTER_MODEL: Joi.string().default('google/gemini-2.5-flash'),
         OPENROUTER_MAX_COMPLETION_TOKENS: Joi.number()
           .integer()
@@ -38,6 +38,8 @@ import { InvoicesModule } from '@/invoices/invoices.module';
           .min(1000)
           .max(120_000)
           .default(30_000),
+        ADMIN_EMAIL: Joi.string().email().required(),
+        ADMIN_PASSWORD: Joi.string().required(),
       }),
     }),
 

@@ -55,6 +55,43 @@ import type { TenantContext } from '@/common/tenant/tenant.types';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
+  @Post('import-ai')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import products from PDF using AI',
+    description: 'Uses AI to extract product data from a PDF file.',
+  })
+  async importProductsAi(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    return this.productsService.importProductsAi(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      file.buffer
+    );
+  }
+
+  @Get('export-ai')
+  @ApiOperation({
+    summary: 'Generate an AI-powered product report',
+    description: 'Analyzes products and generates a business summary.',
+  })
+  async generateAiReport(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string,
+    @Query('lang') lang?: string
+  ): Promise<{ summary: string }> {
+    return this.productsService.generateAiReport(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      lang
+    );
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -133,6 +170,74 @@ export class ProductsController {
       page,
       limit,
       search
+    );
+  }
+
+  @Post('import')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import products from CSV or Excel',
+    description:
+      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. businessId is REQUIRED as a query parameter.',
+  })
+  @ApiCreatedResponse({
+    description: 'Products imported successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        imported: { type: 'number' },
+        failed: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file format or data' })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business identifier for tenant resolution',
+  })
+  async importProducts(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    const records = await parseFile(
+      (file as unknown as { buffer: Buffer; originalname: string }).buffer,
+      (file as unknown as { buffer: Buffer; originalname: string }).originalname
+    );
+    return this.productsService.importProducts(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      records
+    );
+  }
+
+  @Post('import-smart')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import products with AI structural correction',
+    description:
+      'Bulk import products from a CSV or Excel file. AI will analyze headers and data to map them correctly even if misaligned. businessId is REQUIRED as a query parameter.',
+  })
+  async importProductsSmart(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    return this.productsService.importProductsSmart(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      file.buffer,
+      file.originalname
     );
   }
 
@@ -242,52 +347,6 @@ export class ProductsController {
       id,
       businessId || tenant.businessId,
       tenant.databaseName
-    );
-  }
-
-  @Post('import')
-  @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary: 'Import products from CSV or Excel',
-    description:
-      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. businessId is REQUIRED as a query parameter.',
-  })
-  @ApiCreatedResponse({
-    description: 'Products imported successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        imported: { type: 'number' },
-        failed: { type: 'number' },
-        errors: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'Invalid file format or data' })
-  @ApiForbiddenResponse({
-    description: 'Insufficient permissions',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    required: true,
-    type: String,
-    description: 'Business identifier for tenant resolution',
-  })
-  async importProducts(
-    @UploadedFile() file: Multer.File,
-    @CurrentTenant() tenant: TenantContext,
-    @Query('businessId') businessId: string
-  ): Promise<{ imported: number; failed: number; errors: string[] }> {
-    const records = await parseFile(
-      (file as unknown as { buffer: Buffer; originalname: string }).buffer,
-      (file as unknown as { buffer: Buffer; originalname: string }).originalname
-    );
-    return this.productsService.importProducts(
-      businessId || tenant.businessId,
-      tenant.databaseName,
-      records
     );
   }
 }

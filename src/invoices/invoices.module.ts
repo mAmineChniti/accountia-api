@@ -24,11 +24,13 @@ import { TenantContextService } from '@/common/tenant/tenant-context.service';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 import { EmailModule } from '@/email/email.module';
 import { NotificationsModule } from '@/notifications/notifications.module';
+import { ProductsModule } from '@/products/products.module';
 
 @Module({
   imports: [
     EmailModule,
     NotificationsModule,
+    ProductsModule,
     MongooseModule.forFeature([
       { name: Invoice.name, schema: InvoiceSchema },
       { name: InvoiceReceipt.name, schema: InvoiceReceiptSchema },

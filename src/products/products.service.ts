@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -13,9 +14,15 @@ import {
   ProductResponseDto,
   ProductListResponseDto,
 } from './dto/product-response.dto';
+const pdf = require('pdf-parse');
+import { parseFile } from '@/common/utils/file-parser.util';
+import { fixStructureWithAi } from '@/common/utils/ai-structure-fixer.util';
+import { Role } from '@/auth/enums/role.enum';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(@InjectConnection() private connection: Connection) {}
 
   /**
@@ -274,20 +281,24 @@ export class ProductsService {
         const quantityRaw = record.quantity;
 
         if (!name) {
-          throw new Error('Missing required field: name');
+          throw new Error('Le champ "name" (Nom du produit) est obligatoire.');
         }
         if (!description) {
-          throw new Error('Missing required field: description');
+          throw new Error('Le champ "description" est obligatoire.');
         }
 
         const parsedUnitPrice = this.parseNumberField(unitPriceRaw);
         if (Number.isNaN(parsedUnitPrice) || parsedUnitPrice < 0) {
-          throw new Error('unitPrice must be a valid positive number');
+          throw new Error(
+            'Le champ "unitPrice" (Prix) doit être un nombre positif valide.'
+          );
         }
 
         const parsedQuantity = this.parseNumberField(quantityRaw);
         if (Number.isNaN(parsedQuantity) || parsedQuantity < 0) {
-          throw new Error('quantity must be a valid positive number');
+          throw new Error(
+            'Le champ "quantity" (Quantité) doit être un nombre positif valide.'
+          );
         }
 
         const costRaw = record.cost;
@@ -296,17 +307,36 @@ export class ProductsService {
           // Default cost to 0 if not provided or invalid
         }
 
-        // Create product
-        const product = new productModel({
+        // ✅ SMART UPSERT LOGIC
+        // Search for existing product by name (case-insensitive) for this business
+        let product = await productModel.findOne({
           businessId,
-          name: name.trim(),
-          description: description.trim(),
-          unitPrice: parsedUnitPrice,
-          cost: Number.isNaN(parsedCost) ? 0 : parsedCost,
-          quantity: parsedQuantity || 0,
+          name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
         });
 
-        await product.save();
+        if (product) {
+          // UPDATE Existing Product
+          this.logger.debug(`Import: Updating existing product "${name}"`);
+          product.description = description.trim();
+          product.unitPrice = parsedUnitPrice;
+          product.cost = Number.isNaN(parsedCost) ? product.cost : parsedCost;
+          // For quantity, we overwrite with the new value (standard for inventory sync)
+          product.quantity = parsedQuantity;
+          await product.save();
+        } else {
+          // CREATE New Product
+          this.logger.debug(`Import: Creating new product "${name}"`);
+          product = new productModel({
+            businessId,
+            name: name.trim(),
+            description: description.trim(),
+            unitPrice: parsedUnitPrice,
+            cost: Number.isNaN(parsedCost) ? 0 : parsedCost,
+            quantity: parsedQuantity || 0,
+          });
+          await product.save();
+        }
+
         imported++;
       } catch (error) {
         errors.push(`Row ${rowNum}: ${(error as Error).message}`);
@@ -366,5 +396,327 @@ export class ProductsService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };
+  }
+
+  /**
+   * AI Powered PDF Import
+   */
+  async importProductsAi(
+    businessId: string,
+    databaseName: string,
+    pdfBuffer: Buffer
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    try {
+      const data = await pdf(pdfBuffer);
+      const text = data.text;
+
+      const prompt = `You are an expert data extractor. Extract products from the following text extracted from a PDF.
+Return ONLY a valid JSON array of objects with these keys: "name", "description", "unitPrice", "cost", "quantity".
+- "name": string
+- "description": string
+- "unitPrice": number
+- "cost": number
+- "quantity": number
+
+If a value is missing, use sensible defaults (0 for numbers, empty string for description).
+Text:
+${text}`;
+
+      let aiResponse = '';
+      try {
+        aiResponse = await this.callAi(prompt);
+      } catch {
+        throw new BadRequestException(
+          "Le service IA est temporairement indisponible. Veuillez utiliser l'importation CSV classique."
+        );
+      }
+
+      if (!aiResponse) {
+        throw new BadRequestException(
+          'Configuration IA manquante ou invalide.'
+        );
+      }
+
+      const records = this.parseAiJson(aiResponse);
+      if (records.length === 0) {
+        throw new BadRequestException(
+          "Aucun produit n'a pu être extrait du PDF."
+        );
+      }
+
+      return this.importProducts(businessId, databaseName, records);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Failed to import products with AI:', error);
+      throw new BadRequestException(
+        `Échec du traitement PDF : ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Import products with AI Smart Structural Correction
+   */
+  async importProductsSmart(
+    businessId: string,
+    databaseName: string,
+    fileBuffer: Buffer,
+    filename: string
+  ): Promise<{ imported: number; failed: number; errors: string[] }> {
+    try {
+      // 1. Raw parse
+      const rawRecords = await parseFile(fileBuffer, filename);
+
+      // 2. Use AI to fix structure
+      const schema = {
+        targetKeys: ['name', 'description', 'unitPrice', 'cost', 'quantity'],
+        description: 'Product inventory items for a business',
+      };
+
+      const normalizedRecords = await fixStructureWithAi(
+        rawRecords,
+        schema,
+        this.logger
+      );
+
+      // 3. Delegate to standard importer
+      return this.importProducts(businessId, databaseName, normalizedRecords);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Smart Import failed:', error);
+      throw new BadRequestException(
+        `L'IA n'a pas pu traiter ce fichier : ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * AI Powered Product Report Analysis
+   */
+  async generateAiReport(
+    businessId: string,
+    databaseName: string,
+    lang = 'fr'
+  ): Promise<{ summary: string }> {
+    this.logger.log(
+      `Generating AI report for business ${businessId} in language: ${lang}`
+    );
+    const normalizedLang = lang.split('-')[0].toLowerCase();
+    const productModel = this.getProductModel(databaseName);
+    const products = await productModel.find({ businessId }).lean();
+
+    if (products.length === 0) {
+      const emptyMsg =
+        normalizedLang === 'ar'
+          ? 'لم يتم العثور على منتجات لإنشاء تقرير.'
+          : normalizedLang === 'en'
+            ? 'No products found to generate a report.'
+            : 'Aucun produit trouvé pour générer un rapport.';
+      return { summary: emptyMsg };
+    }
+
+    const reportData = products.map((p) => ({
+      name: p.name,
+      price: p.unitPrice,
+      stock: p.quantity,
+    }));
+
+    const langName =
+      normalizedLang === 'ar'
+        ? 'Arabic'
+        : normalizedLang === 'en'
+          ? 'English'
+          : 'French';
+    const prompt = `Analyze this inventory data for a business and provide a professional, concise strategic summary in ${langName}.
+Please ensure all monetary values are expressed in TND (Tunisian Dinar).
+Include:
+1. Stock health (low stock alerts)
+2. Revenue potential
+3. 2-3 Actionable recommendations.
+
+Data:
+${JSON.stringify(reportData, null, 2)}`;
+
+    let summary = '';
+    try {
+      summary = await this.callAi(prompt);
+    } catch (error) {
+      this.logger.warn(`AI Analysis failed: ${error.message}`);
+    }
+
+    if (!summary) {
+      // Professional fallback when AI is unavailable
+      const totalStock = products.reduce(
+        (sum, p) => sum + (p.quantity || 0),
+        0
+      );
+      const totalValue = products.reduce(
+        (sum, p) => sum + (p.unitPrice || 0) * (p.quantity || 0),
+        0
+      );
+      const lowStockItems = products.filter((p) => (p.quantity || 0) < 10);
+
+      const valFormatted = totalValue
+        .toFixed(2)
+        .replace('.', ',')
+        .replaceAll(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+      if (normalizedLang === 'ar') {
+        summary = `تقرير المخزون الاستراتيجي
+        
+تحليل المخزون:
+- الكتالوج: ${products.length} مراجع نشطة.
+- الحجم الإجمالي: ${totalStock} وحدات في المخزون.
+- قيمة المخزون: ${valFormatted} TND.
+
+نقاط الاهتمام:
+- ${lowStockItems.length} عناصر تحت عتبة إعادة التعبئة (10 وحدات).
+- التوصية: خطط لإعادة التعبئة لتجنب الانقطاع.
+
+ملاحظة: للحصول على تحليل معمق، قم بتهيئة مفتاح Gemini في إعدادات النظام.`;
+      } else if (normalizedLang === 'en') {
+        summary = `STRATEGIC INVENTORY REPORT
+
+Stock Analysis:
+- Catalog: ${products.length} active references.
+- Total Volume: ${totalStock} units in stock.
+- Inventory Value: ${valFormatted} TND.
+
+Points of Interest:
+- ${lowStockItems.length} items are below the replenishment threshold (10 units).
+- Recommendation: Plan replenishment to avoid stockouts.
+
+Note: For deep AI analysis, configure your Gemini API key in system settings.`;
+      } else {
+        const stockMsg =
+          lowStockItems.length === 1
+            ? '1 article est'
+            : `${lowStockItems.length} articles sont`;
+
+        summary = `RAPPORT D'INVENTAIRE STRATÉGIQUE
+
+Analyse de Stock :
+- Catalogue : ${products.length} références actives.
+- Volume Total : ${totalStock} unités en stock.
+- Valeur de l'Inventaire : ${valFormatted} TND.
+
+Points d'Attention :
+- ${stockMsg} sous le seuil de réapprovisionnement (10 unités).
+- Recommandation : Planifier un réapprovisionnement pour éviter les ruptures.
+
+Note : Pour une analyse IA approfondie, configurez votre clé API Gemini dans les paramètres système.`;
+      }
+    }
+
+    return { summary };
+  }
+
+  /**
+   * Universal AI Caller (Gemini priority, then OpenRouter, then Local Fallback)
+   */
+  private async callAi(prompt: string): Promise<string> {
+    let geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) geminiKey = geminiKey.replaceAll('"', '');
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+
+    // 1. Try Google Gemini (Direct REST API)
+    if (geminiKey && geminiKey.length > 20) {
+      const models = [
+        'gemini-2.0-flash-lite',
+        'gemini-2.0-flash-001',
+        'gemini-2.0-flash',
+      ];
+
+      for (const model of models) {
+        try {
+          this.logger.log(
+            `Attempting AI Analysis with Gemini Model: ${model}...`
+          );
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+              }),
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              this.logger.log(`AI Analysis Successful with ${model}`);
+              return text;
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({}));
+            this.logger.warn(
+              `Gemini API (${model}) failed: ${response.status} - ${JSON.stringify(errorData)}`
+            );
+            // Continue to next model
+          }
+        } catch (error) {
+          this.logger.error(`Gemini call (${model}) error:`, error.message);
+        }
+      }
+    }
+
+    // 2. Try OpenRouter (Fallback)
+    if (openRouterKey && openRouterKey.length > 10) {
+      return this.callOpenRouter(prompt);
+    }
+
+    this.logger.warn('No valid AI API keys found. Using local fallback.');
+    return '';
+  }
+
+  private async callOpenRouter(prompt: string): Promise<string> {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      this.logger.warn('OPENROUTER_API_KEY is not set');
+      return '';
+    }
+
+    const response = await fetch(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-exp',
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      this.logger.warn(
+        `OpenRouter API responded with status ${response.status}: ${JSON.stringify(errorData)}`
+      );
+      return '';
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  private parseAiJson(text: string): Record<string, unknown>[] {
+    try {
+      const jsonMatch = /\[[\S\s]*]/.exec(text);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]) as Record<string, unknown>[];
+      }
+      return [];
+    } catch {
+      return [];
+    }
   }
 }

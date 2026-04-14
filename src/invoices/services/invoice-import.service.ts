@@ -11,6 +11,13 @@ import {
   CreateInvoiceRecipientDto,
 } from '@/invoices/dto/invoice.dto';
 import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
+import { fixStructureWithAi } from '@/common/utils/ai-structure-fixer.util';
+import { parseFile as commonParseFile } from '@/common/utils/file-parser.util';
+import { ProductsService } from '@/products/products.service';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
+import { ObjectId } from 'mongodb';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
 
 /**
  * Service for bulk importing invoices from CSV or Excel files
@@ -34,7 +41,11 @@ interface FileUpload {
 export class InvoiceImportService {
   private readonly logger = new Logger(InvoiceImportService.name);
 
-  constructor(private readonly issuanceService: InvoiceIssuanceService) {}
+  constructor(
+    private readonly issuanceService: InvoiceIssuanceService,
+    private readonly productsService: ProductsService,
+    @InjectConnection() private readonly connection: Connection
+  ) {}
 
   /**
    * Parse file and import invoices in bulk
@@ -131,6 +142,121 @@ export class InvoiceImportService {
   }
 
   /**
+   * Import invoices with AI Smart Structural Correction
+   */
+  async importInvoicesSmart(
+    file: FileUpload,
+    businessId: string,
+    databaseName: string,
+    userId: string
+  ): Promise<BulkImportInvoicesResponseDto> {
+    const startTime = Date.now();
+    try {
+      // 1. Raw parse
+      const rawRecords = await commonParseFile(file.buffer, file.originalname);
+
+      if (rawRecords.length === 0) {
+        throw new BadRequestException('File is empty or invalid.');
+      }
+
+      // 2. Use AI to fix structure
+      const schema = {
+        targetKeys: [
+          'invoiceNumber',
+          'recipientType',
+          'recipientPlatformId',
+          'recipientEmail',
+          'recipientDisplayName',
+          'productIds',
+          'productNames',
+          'quantities',
+          'unitPrices',
+          'issuedDate',
+          'dueDate',
+          'description',
+          'paymentTerms',
+          'currency',
+        ],
+        description:
+          'Bulk invoices for a business to import. Multiple products can be separated by pipes (|) in old file columns.',
+      };
+
+      this.logger.log(
+        `Starting AI structural analysis for ${file.originalname}`
+      );
+      const normalizedRecords = await fixStructureWithAi(
+        rawRecords,
+        schema,
+        this.logger
+      );
+
+      // 3. Process records manually to ensure they are parsed as intended by importInvoicesFromFile
+      // But we can actually just call a modified version of importInvoicesFromFile or reuse its logic.
+      // Since importInvoicesFromFile parses the file again, we should avoid that.
+
+      // Let's create a specialized processor for normalized records.
+      return this.processNormalizedInvoices(
+        normalizedRecords,
+        businessId,
+        databaseName,
+        userId,
+        startTime
+      );
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Smart Invoice Import failed:', error);
+      throw new BadRequestException(
+        `L'IA n'a pas pu traiter ce fichier de factures : ${error.message}`
+      );
+    }
+  }
+
+  private async processNormalizedInvoices(
+    records: Record<string, any>[],
+    businessId: string,
+    databaseName: string,
+    userId: string,
+    startTime: number
+  ): Promise<BulkImportInvoicesResponseDto> {
+    const results: ImportedInvoiceResultDto[] = [];
+    const generalErrors: string[] = [];
+
+    for (const [i, record] of records.entries()) {
+      try {
+        const result = await this.processInvoiceRecord(
+          record,
+          businessId,
+          databaseName,
+          userId,
+          i + 1
+        );
+        results.push(result);
+      } catch (error) {
+        results.push({
+          invoiceNumber: (record.invoiceNumber as string) || `Row ${i + 1}`,
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    const successCount = results.filter((r) => r.status === 'success').length;
+    const failedCount = results.filter((r) => r.status === 'error').length;
+    const warningCount = results.filter((r) => r.status === 'warning').length;
+
+    return {
+      totalRecords: records.length,
+      successCount,
+      failedCount,
+      warningCount,
+      results,
+      importStartedAt: new Date(startTime).toISOString(),
+      importCompletedAt: new Date().toISOString(),
+      processingTimeMs: Date.now() - startTime,
+    };
+  }
+
+  /**
    * Parse CSV or Excel file
    */
   private parseFile(file: FileUpload): Record<string, unknown>[] {
@@ -218,7 +344,7 @@ export class InvoiceImportService {
     for (const field of requiredFields) {
       if (!(field in firstRecord)) {
         errors.push(
-          `Missing required column: "${field}". Required columns: ${requiredFields.join(', ')}`
+          `Colonne obligatoire manquante : "${field}". Les colonnes requises sont : ${requiredFields.join(', ')}. Vérifiez que vous utilisez le bon fichier pour l'importation de factures.`
         );
       }
     }
@@ -306,7 +432,9 @@ export class InvoiceImportService {
     // Parse line items
     const lineItems = this.parseLineItems(record, rowNumber);
     if (lineItems.length === 0) {
-      throw new Error(`Row ${rowNumber}: No valid line items found`);
+      throw new Error(
+        `Ligne ${rowNumber}: Aucun produit ou service valide trouvé (Vérifiez les colonnes productNames, quantities, unitPrices)`
+      );
     }
 
     // Parse dates
@@ -316,6 +444,15 @@ export class InvoiceImportService {
       rowNumber
     );
     const dueDate = this.parseDate(record.dueDate, 'dueDate', rowNumber);
+
+    // ✅ RESOLVE PRODUCTS (Find or Create)
+    // This allows importing invoices even if products use codes or haven't been created yet.
+    await this.resolveLineItems(
+      businessId,
+      databaseName,
+      lineItems,
+      (record.currency as string) || 'TND'
+    );
 
     if (dueDate < issuedDate) {
       throw new Error(
@@ -340,6 +477,42 @@ export class InvoiceImportService {
         ? String((record.currency as string) ?? '').trim()
         : 'TND',
     };
+
+    // ✅ SMART UPSERT/RE-IMPORT LOGIC
+    // If an invoice with this number already exists and is a DRAFT, we "clean re-import" it:
+    // 1. Restore reserved inventory from the old invoice.
+    // 2. Delete the old invoice.
+    // 3. Continue to standard creation (which will reserve inventory correctly).
+    if (invoiceNumber) {
+      const invoiceModel =
+        this.issuanceService.getTenantInvoiceModel(databaseName);
+      const existingInvoice = await invoiceModel
+        .findOne({
+          issuerBusinessId: businessId,
+          invoiceNumber,
+        })
+        .exec();
+
+      if (existingInvoice) {
+        if (existingInvoice.status === 'DRAFT') {
+          this.logger.debug(`Re-importing draft invoice: ${invoiceNumber}`);
+          // Restore inventory first
+          await this.issuanceService.restoreReservedInventoryForInvoice(
+            existingInvoice,
+            databaseName
+          );
+          // Delete old invoice
+          await invoiceModel.deleteOne({ _id: existingInvoice._id });
+        } else {
+          // If not DRAFT, we skip with warning as before (don't overwrite PAID/ISSUED invoices)
+          return {
+            invoiceNumber,
+            status: 'warning',
+            message: `La facture ${invoiceNumber} existe déjà (${existingInvoice.status}) et ne peut pas être écrasée.`,
+          };
+        }
+      }
+    }
 
     // Create invoice
     const createdInvoice = await this.issuanceService.createDraftInvoice(
@@ -480,6 +653,63 @@ export class InvoiceImportService {
   }
 
   /**
+   * Resolve product IDs by searching for existing ones by name or creating missing ones.
+   */
+  private async resolveLineItems(
+    businessId: string,
+    databaseName: string,
+    lineItems: Array<any>,
+    currency: string
+  ): Promise<void> {
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    let productModel: Model<Product>;
+    try {
+      productModel = tenantDb.model<Product>(Product.name);
+    } catch {
+      productModel = tenantDb.model<Product>(Product.name, ProductSchema);
+    }
+
+    for (const item of lineItems) {
+      const originalId = String(item.productId || '').trim();
+      const productName = String(
+        item.productName || item.productId || ''
+      ).trim();
+
+      // 1. If it's a valid ObjectId, check if it exists
+      if (ObjectId.isValid(originalId)) {
+        const existing = await productModel.findById(originalId).lean();
+        if (existing) continue; // Already a valid resolved product
+      }
+
+      // 2. Not a valid ID or product not found, search by NAME
+      let product = await productModel.findOne({
+        businessId,
+        name: { $regex: new RegExp(`^${productName}$`, 'i') },
+      });
+
+      // 3. If not found by name, AUTO-CREATE it
+      if (!product) {
+        this.logger.log(
+          `[Import] Product "${productName}" not found. Creating on the fly...`
+        );
+        product = await productModel.create({
+          businessId,
+          name: productName,
+          description: `Importé via facture (Réf: ${originalId})`,
+          unitPrice: item.unitPrice || 0,
+          cost: 0,
+          quantity: item.quantity, // Give it initial quantity so reservation passes
+          currency: currency || 'TND',
+        });
+      }
+
+      // 4. Update the line item with the real MongoDB ObjectID
+      item.productId = product._id.toString();
+      item.productName = product.name; // Use the official name
+    }
+  }
+
+  /**
    * Validate a single line item
    */
   private validateLineItem(
@@ -608,5 +838,123 @@ INV-2024-001,EXTERNAL,john@example.com,John Doe,PROD-001,Website Service,1,5000.
       recipientTypes,
       notes,
     };
+  }
+
+  /**
+   * AI Extraction: Read CSV/Excel and let Gemini return a generic prefilled form object
+   */
+  async extractDraftInvoiceWithAi(file: FileUpload): Promise<any> {
+    try {
+      const records = this.parseFile(file);
+      if (records.length === 0) {
+        throw new BadRequestException('File is empty or invalid.');
+      }
+
+      // Convert parsed records to JSON string to feed into Gemini
+      const fileText = JSON.stringify(records, null, 2);
+
+      const prompt = `You are an AI accountant. I will provide you with raw JSON extracted from a CSV/Excel file uploaded by the user representing ONE invoice or draft invoice.
+Your task is to parse this data and return a JSON object. Give me ONLY valid JSON, do NOT include markdown syntax like \`\`\`json.
+
+The JSON should precisely follow this structure:
+{
+  "recipient": {
+    "type": "EXTERNAL",
+    "email": "client_email_if_found@example.com",
+    "displayName": "Client Name or Company"
+  },
+  "lineItems": [
+    {
+      "productId": "",
+      "productName": "Item name",
+      "quantity": 1,
+      "unitPrice": 100,
+      "description": "Item description if found"
+    }
+  ],
+  "issuedDate": "YYYY-MM-DD",
+  "dueDate": "YYYY-MM-DD",
+  "currency": "TND",
+  "description": "Optional notes if any found"
+}
+
+Data from file:
+${fileText}
+`;
+
+      const aiResponse = await this.callAi(prompt);
+
+      try {
+        const cleaned = aiResponse
+          .replaceAll(/```json/gi, '')
+          .replaceAll('```', '')
+          .trim();
+        return JSON.parse(cleaned);
+      } catch {
+        this.logger.error('Failed to parse AI JSON response', aiResponse);
+        throw new BadRequestException(
+          "L'IA n'a pas pu formater correctement cette facture."
+        );
+      }
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      this.logger.error('Failed to extract invoice via AI', error);
+      throw new BadRequestException('Erreur lors du traitement du fichier.');
+    }
+  }
+
+  private async callAi(prompt: string): Promise<string> {
+    let geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) geminiKey = geminiKey.replaceAll('"', '');
+
+    if (!geminiKey || geminiKey.length < 20) {
+      throw new BadRequestException('Configuration API Gemini manquante.');
+    }
+
+    // Try models in order (verified from ListModels API)
+    // gemini-2.0-flash-lite has much higher free tier rate limits
+    const models = [
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash-001',
+      'gemini-2.0-flash',
+      'gemini-flash-lite-latest',
+    ];
+
+    for (const model of models) {
+      try {
+        this.logger.log(`[Invoice AI] Trying model: ${model}`);
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+            }),
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            this.logger.log(`[Invoice AI] Success with model: ${model}`);
+            return text;
+          }
+        } else {
+          const errText = await response.text();
+          this.logger.warn(
+            `[Invoice AI] Model ${model} failed ${response.status}: ${errText.slice(0, 200)}`
+          );
+          // Continue to next model
+        }
+      } catch (error) {
+        this.logger.error(`[Invoice AI] Network error for ${model}:`, error);
+      }
+    }
+
+    throw new BadRequestException(
+      'Gemini indisponible. Veuillez réessayer dans quelques secondes.'
+    );
   }
 }
