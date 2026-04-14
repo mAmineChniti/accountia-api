@@ -413,6 +413,47 @@ export class EmailService {
     }
   }
 
+  async sendInvoicePaymentConfirmation(
+    to: string,
+    invoiceNumber: string,
+    amount: number,
+    currency: string,
+    businessName: string
+  ): Promise<void> {
+    try {
+      const templatePath = path.join(
+        process.cwd(),
+        'src/email/templates/invoice_payment_confirmation.html'
+      );
+      let html = await readFile(templatePath, 'utf8');
+
+      const replacements = {
+        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
+        '{{.InvoiceNumber}}': EmailService.escapeHtml(invoiceNumber),
+        '{{.Amount}}': amount.toFixed(2),
+        '{{.Currency}}': currency,
+        '{{.InvoicesUrl}}': `${this.frontendUrl}/invoices`,
+        '{{.Year}}': new Date().getFullYear().toString(),
+      };
+
+      for (const [placeholder, value] of Object.entries(replacements)) {
+        html = html.replaceAll(placeholder, value);
+      }
+
+      await this.sendEmail({
+        to,
+        subject: `Payment received - Invoice ${invoiceNumber}`,
+        html,
+        text: `Your payment for invoice ${invoiceNumber} (${amount.toFixed(2)} ${currency}) has been received.`,
+        type: EmailType.SYSTEM,
+        metadata: { businessName },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Invoice payment confirmation email failed: ${msg}`);
+    }
+  }
+
   async sendInvoiceSentConfirmation(
     to: string,
     invoiceNumber: string,

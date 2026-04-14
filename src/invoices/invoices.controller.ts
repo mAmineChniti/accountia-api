@@ -4,8 +4,11 @@ import {
   Post,
   Patch,
   Body,
+  Headers,
   Param,
   Query,
+  Req,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -13,6 +16,7 @@ import {
   UploadedFile,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,15 +33,20 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import {
   InvoiceIssuanceService,
   InvoiceReceiptService,
   InvoiceImportService,
+  InvoicePaymentService,
 } from '@/invoices/services';
 import {
   CreateInvoiceDto,
+  CreateInvoiceCheckoutSessionDto,
+  MockInvoicePaymentDto,
   UpdateInvoiceDto,
   TransitionInvoiceStateDto,
+  InvoiceCheckoutSessionResponseDto,
   InvoiceResponseDto,
   InvoiceListResponseDto,
   InvoiceReceiptListResponseDto,
@@ -62,10 +71,13 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @ApiBearerAuth()
 @Controller('invoices')
 export class InvoicesController {
+  private readonly logger = new Logger(InvoicesController.name);
+
   constructor(
     private readonly issuanceService: InvoiceIssuanceService,
     private readonly receiptService: InvoiceReceiptService,
-    private readonly importService: InvoiceImportService
+    private readonly importService: InvoiceImportService,
+    private readonly paymentService: InvoicePaymentService
   ) {}
 
   /**
@@ -463,6 +475,134 @@ export class InvoicesController {
     );
   }
 
+  @Post('received/individual/:receiptId/payments/checkout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '[STRIPE] Create payment checkout session for an individual recipient',
+    description:
+      'Creates a Stripe Checkout session so the recipient can securely pay an invoice online.',
+  })
+  @ApiOkResponse({
+    description: 'Stripe checkout session created',
+    type: InvoiceCheckoutSessionResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'You do not have access to this invoice receipt',
+  })
+  async createIndividualCheckoutSession(
+    @Param('receiptId') receiptId: string,
+    @CurrentUser() user: UserPayload,
+    @Body() dto: CreateInvoiceCheckoutSessionDto
+  ): Promise<InvoiceCheckoutSessionResponseDto> {
+    return await this.paymentService.createCheckoutSession(
+      receiptId,
+      user,
+      dto
+    );
+  }
+
+  @Post('received/individual/:receiptId/payments/mock')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '[DEMO] Simulate payment for an individual recipient',
+    description:
+      'Simulates an invoice payment without Stripe. Intended for demo or faculty environments only.',
+  })
+  @ApiOkResponse({
+    description: 'Invoice marked as paid in demo mode',
+    type: InvoiceResponseDto,
+  })
+  async createIndividualMockPayment(
+    @Param('receiptId') receiptId: string,
+    @CurrentUser() user: UserPayload,
+    @Body() dto: MockInvoicePaymentDto
+  ): Promise<InvoiceResponseDto> {
+    return await this.paymentService.simulateIndividualPayment(
+      receiptId,
+      user,
+      dto
+    );
+  }
+
+  @Post('payments/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '[STRIPE] Payment webhook',
+    description:
+      'Consumes Stripe webhook events to finalize invoice payments and update statuses.',
+  })
+  @ApiOkResponse({
+    description: 'Webhook received',
+    schema: { type: 'object', properties: { received: { type: 'boolean' } } },
+  })
+  async handleStripeWebhook(
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('stripe-signature') stripeSignature?: string
+  ): Promise<{ received: boolean }> {
+    const rawBody = req.rawBody;
+    if (!rawBody) {
+      throw new BadRequestException(
+        'Raw request body is required for webhook signature validation'
+      );
+    }
+
+    await this.paymentService.handleStripeWebhook(stripeSignature, rawBody);
+    return { received: true };
+  }
+
+  @Get('payments/return')
+  @HttpCode(HttpStatus.FOUND)
+  @ApiOperation({
+    summary: '[STRIPE] Checkout return handler',
+    description:
+      'Finalizes payment status after Stripe checkout return, then redirects to frontend invoices page.',
+  })
+  @ApiOkResponse({
+    description: 'Redirects to frontend with payment status',
+  })
+  async handleStripeCheckoutReturn(
+    @Query('session_id') sessionId: string,
+    @Query('receipt_id') receiptId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    if (!sessionId || !receiptId) {
+      throw new BadRequestException('session_id and receipt_id are required');
+    }
+
+    let paid = false;
+    let hasError = false;
+
+    try {
+      paid = await this.paymentService.finalizeCheckoutSessionFromReturn(
+        sessionId,
+        receiptId
+      );
+    } catch (error) {
+      hasError = true;
+      this.logger.error(
+        `Checkout return finalization failed for session ${sessionId} and receipt ${receiptId}`,
+        error instanceof Error ? error.stack : String(error)
+      );
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    let paymentStatus = 'pending';
+    if (hasError) {
+      paymentStatus = 'error';
+    } else if (paid) {
+      paymentStatus = 'success';
+    }
+
+    const redirectTo = `${frontendUrl}/en/invoices?payment=${paymentStatus}&session_id=${encodeURIComponent(
+      sessionId
+    )}`;
+
+    res.redirect(HttpStatus.FOUND, redirectTo);
+  }
+
   /**
    * ============================================
    * IMPORT ENDPOINTS (Tenant DB - Bulk Operations)
@@ -509,6 +649,7 @@ export class InvoicesController {
           'application/vnd.ms-excel',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ];
+
         if (allowedMimes.includes(file.mimetype)) {
           // eslint-disable-next-line unicorn/no-null
           cb(null, true);

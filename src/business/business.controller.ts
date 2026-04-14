@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Post,
@@ -47,6 +46,10 @@ import {
   BusinessApplicationListResponseDto,
 } from '@/business/dto/business-response.dto';
 import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
+import {
+  StripeOnboardingLinkDto,
+  StripeConnectStatusDto,
+} from '@/business/dto/stripe-onboarding.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { Roles } from '@/auth/decorators/roles.decorator';
@@ -114,24 +117,6 @@ export class BusinessController {
       user.id
     );
   }
-
-  /* 
-  @Get(':id/invoices')
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Get all invoices for a business',
-    description: 'Retrieve invoices. Strictly isolated for clients.',
-  })
-  @ApiParam({ name: 'id', description: 'Business ID' })
-  async getBusinessInvoices(
-    @Param('id') id: string,
-    @CurrentUser() user: UserPayload,
-    @Query('clientId') clientId?: string
-  ) {
-    return this.businessService.getBusinessInvoices(id, user.id, user.role, clientId);
-  }
-  */
 
   @Get('applications')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -282,18 +267,13 @@ export class BusinessController {
     return this.businessService.getOtherBusinesses();
   }
 
-  @Get(':id/tenant/metadata')
+  @Get('tenant/metadata')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[TENANT DB] Get tenant metadata for business',
     description:
-      'Resolve and retrieve tenant context metadata using businessId from query parameter. Data is queried from: Tenant-specific MongoDB database. Endpoint: GET /business/:id/tenant/metadata?businessId=<businessId>',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
+      'Resolve and retrieve tenant context metadata using businessId from query parameter. Data is queried from: Tenant-specific MongoDB database. Endpoint: GET /business/tenant/metadata?businessId=<businessId>',
   })
   @ApiQuery({
     name: 'businessId',
@@ -318,78 +298,21 @@ export class BusinessController {
     status: 404,
     description: 'Business or tenant metadata not found',
   })
-  async getTenantMetadata(
-    @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext
-  ): Promise<{
+  async getTenantMetadata(@CurrentTenant() tenant: TenantContext): Promise<{
     message: string;
     tenant: TenantContext;
     metadata: TenantMetadata;
   }> {
-    if (id !== tenant.businessId) {
-      throw new BadRequestException(
-        'Path business id must match tenant businessId context'
-      );
-    }
-
     return this.businessService.getTenantMetadata(tenant);
   }
 
-  @Get('clients')
-  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: '[TENANT DB] Get all clients for a business',
-    description:
-      'Retrieve all users linked to this business with the role client. Data is queried from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /businesses/clients?businessId=<businessId>',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    required: true,
-    type: String,
-    description:
-      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Clients retrieved successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Invalid or missing JWT token',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - Insufficient permissions to access this business',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Business not found',
-  })
-  async getBusinessClients(
-    @Query('businessId') businessId: string,
-    @CurrentUser() user: UserPayload
-  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
-    return this.businessService.getBusinessClients(
-      businessId,
-      user.id,
-      user.role
-    );
-  }
-
-  @Get(':id')
+  @Get('details')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB → TENANT DB] Get business details',
     description:
-      'Retrieve detailed information about a specific business. Data is queried from: Platform database (accountia) for business info and Tenant database for additional context. businessId is REQUIRED as a query parameter. Endpoint: GET /business/:id?businessId=<businessId>',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
+      'Retrieve detailed information about a specific business. Data is queried from: Platform database (accountia) for business info and Tenant database for additional context. businessId is REQUIRED as a query parameter. Endpoint: GET /business/details?businessId=<businessId>',
   })
   @ApiQuery({
     name: 'businessId',
@@ -416,13 +339,17 @@ export class BusinessController {
     description: 'Business not found',
   })
   async getBusinessById(
-    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessResponseDto> {
-    return this.businessService.getBusinessById(id, user.id, user.role);
+    return this.businessService.getBusinessById(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
   }
 
-  @Put(':id')
+  @Put('update')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
@@ -435,11 +362,6 @@ export class BusinessController {
     description:
       'Update business payload with businessId to resolve tenant context.',
     type: UpdateBusinessDto,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
   })
   @ApiResponse({
     status: 200,
@@ -463,24 +385,28 @@ export class BusinessController {
     description: 'Business not found',
   })
   async updateBusiness(
-    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
     @Body() updateBusinessDto: UpdateBusinessDto,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessResponseDto> {
     return this.businessService.updateBusiness(
-      id,
+      tenant.businessId,
       updateBusinessDto,
       user.id,
       user.role
     );
   }
 
-  @Delete(':id')
+  @Delete('delete')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '[PLATFORM DB] Delete business' })
+  @ApiOperation({
+    summary: '[PLATFORM DB] Delete business',
+    description:
+      'Delete a business. Data is deleted from: Platform-wide MongoDB database (accountia). Only accessible by business owners. Include businessId in the request body to resolve tenant context.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Business deleted successfully',
@@ -492,31 +418,30 @@ export class BusinessController {
   })
   @ApiResponse({ status: 404, description: 'Business not found' })
   async deleteBusiness(
-    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<{ message: string }> {
-    return this.businessService.deleteBusiness(id, user.id, user.role);
+    return this.businessService.deleteBusiness(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
   }
 
   // Business User Management Endpoints
-  @Post(':id/users')
+  @Post('users')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[PLATFORM DB + TENANT DB] Assign user to business',
     description:
-      'Assign a user to a business with a specific role. Data is updated in: Platform database (accountia) for business user links and Tenant database for team management. BusinessId must be provided in the request body to resolve tenant context. Only accessible by business owners or administrators.',
+      'Assign a user to a business with a specific role. Data is updated in: Platform database (accountia) for business user links and Tenant database for team management. Include businessId in the request body to resolve tenant context. Only accessible by business owners or administrators.',
   })
   @ApiBody({
     description:
       'Assign business user payload with businessId to resolve tenant context.',
     type: AssignBusinessUserDto,
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
   })
   @ApiResponse({
     status: 201,
@@ -542,19 +467,19 @@ export class BusinessController {
     description: 'Business not found',
   })
   async assignBusinessUser(
-    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
     @Body() assignDto: AssignBusinessUserDto,
     @CurrentUser() user: UserPayload
   ): Promise<BusinessUserResponseDto> {
     return this.businessService.assignBusinessUser(
-      id,
+      tenant.businessId,
       assignDto,
       user.id,
       user.role
     );
   }
 
-  @Delete(':id/users/:userId')
+  @Delete('users/:userId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
@@ -563,11 +488,6 @@ export class BusinessController {
     summary: '[PLATFORM DB + TENANT DB] Unassign user from business',
     description:
       'Remove a user assignment from a business. Data is updated in: Platform database (accountia) and Tenant database. Only accessible by business owners or administrators.',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'Business ID (MongoDB ObjectId)',
-    example: '507f1f77bcf86cd799439011',
   })
   @ApiParam({
     name: 'userId',
@@ -592,13 +512,56 @@ export class BusinessController {
     description: 'Business or user assignment not found',
   })
   async unassignBusinessUser(
-    @Param('id') id: string,
     @Param('userId') userId: string,
+    @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<{ message: string }> {
     return this.businessService.unassignBusinessUser(
-      id,
+      tenant.businessId,
       userId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get('clients')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[TENANT DB] Get all clients for a business',
+    description:
+      'Retrieve all users linked to this business with the role client. Data is queried from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /business/clients?businessId=<businessId>',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Clients retrieved successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions to access this business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getBusinessClients(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
+    return this.businessService.getBusinessClients(
+      tenant.businessId,
       user.id,
       user.role
     );
@@ -618,7 +581,6 @@ export class BusinessController {
       'Client role change payload with businessId to resolve tenant context.',
     type: ChangeClientRoleDto,
   })
-  @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'Client User ID' })
   @ApiResponse({
     status: 200,
@@ -641,13 +603,13 @@ export class BusinessController {
     description: 'Business or user not found',
   })
   async changeClientRole(
-    @Param('id') id: string,
     @Param('clientId') clientId: string,
+    @CurrentTenant() tenant: TenantContext,
     @Body() changeRoleDto: ChangeClientRoleDto,
     @CurrentUser() user: UserPayload
   ) {
     return this.businessService.changeClientRole(
-      id,
+      tenant.businessId,
       clientId,
       changeRoleDto,
       user.id,
@@ -655,7 +617,7 @@ export class BusinessController {
     );
   }
 
-  @Delete(':id/clients/:clientId')
+  @Delete('clients/:clientId')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiBearerAuth()
@@ -665,7 +627,6 @@ export class BusinessController {
     description:
       'Unlink/remove a user from this business. Data is updated in: Tenant-specific MongoDB database. Cannot remove business owner. Only accessible by business owners or administrators.',
   })
-  @ApiParam({ name: 'id', description: 'Business ID' })
   @ApiParam({ name: 'clientId', description: 'User ID to remove' })
   @ApiResponse({
     status: 200,
@@ -688,11 +649,16 @@ export class BusinessController {
     description: 'Business or user not found',
   })
   async deleteClient(
-    @Param('id') id: string,
     @Param('clientId') clientId: string,
+    @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ) {
-    return this.businessService.deleteClient(id, clientId, user.id, user.role);
+    return this.businessService.deleteClient(
+      tenant.businessId,
+      clientId,
+      user.id,
+      user.role
+    );
   }
 
   @Post('statistics')
@@ -934,7 +900,8 @@ export class BusinessController {
     );
   }
 
-  @Get(':id/team')
+  // Team Management Endpoints
+  @Get('team')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(
     BusinessUserRole.OWNER,
@@ -943,7 +910,13 @@ export class BusinessController {
   )
   @ApiBearerAuth()
   @ApiOperation({ summary: '[PLATFORM DB] Get business team members' })
-  @ApiParam({ name: 'id', description: 'Business ID' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
   @ApiResponse({
     status: 200,
     description: 'Team members retrieved successfully',
@@ -955,10 +928,14 @@ export class BusinessController {
   })
   @ApiResponse({ status: 404, description: 'Business not found' })
   async getTeamMembers(
-    @Param('id') id: string,
+    @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<{ message: string; members: unknown[] }> {
-    return this.businessService.getTeamMembers(id, user.id, user.role);
+    return this.businessService.getTeamMembers(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
   }
 
   @Get('invites/pending')
@@ -1032,6 +1009,99 @@ export class BusinessController {
     return this.businessService.revokeInvite(
       tenant.businessId,
       inviteId,
+      user.id,
+      user.role
+    );
+  }
+
+  // Stripe Connect Integration Endpoints
+  @Get('stripe/onboarding-link')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[PLATFORM DB] Get Stripe Connect onboarding link',
+    description:
+      'Generate a Stripe Connect onboarding link for this business. The business owner/admin can use this link to connect their Stripe account. businessId is REQUIRED as a query parameter.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Onboarding link generated successfully',
+    type: StripeOnboardingLinkDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Must be business owner or admin',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getStripeOnboardingLink(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<StripeOnboardingLinkDto> {
+    return this.businessService.getStripeOnboardingLink(
+      tenant.businessId,
+      user.id,
+      user.role
+    );
+  }
+
+  @Get('stripe/status')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.CLIENT
+  )
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: '[PLATFORM DB] Check Stripe Connect status',
+    description:
+      'Check if the business has a connected Stripe account and if it is fully set up for payments. businessId is REQUIRED as a query parameter.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stripe Connect status retrieved successfully',
+    type: StripeConnectStatusDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Must be part of the business',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Business not found',
+  })
+  async getStripeConnectStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<StripeConnectStatusDto> {
+    return this.businessService.getStripeConnectStatus(
+      tenant.businessId,
       user.id,
       user.role
     );
