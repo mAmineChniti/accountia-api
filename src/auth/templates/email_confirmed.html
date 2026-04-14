@@ -27,7 +27,7 @@
       }
 
       body {
-        font-family: 'Segoe UI', Arial, sans-serif;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
         min-height: 100vh;
         color: var(--text);
         background:
@@ -46,42 +46,56 @@
 
       .brand {
         text-align: center;
-        margin-bottom: 14px;
+        margin-bottom: 20px;
         font-weight: 800;
         color: var(--brand);
-        font-size: 26px;
-        letter-spacing: -0.4px;
+        font-size: 28px;
+        letter-spacing: -0.5px;
       }
 
       .card {
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: 0 10px 35px rgba(15, 23, 42, 0.08);
+        border-radius: 20px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
         overflow: hidden;
       }
 
       .top {
-        padding: 28px 30px 22px;
+        padding: 32px 30px 24px;
         background: linear-gradient(135deg, var(--brand), var(--brand-dark));
         color: #fff;
       }
 
       .top h1 {
-        font-size: 24px;
+        font-size: 26px;
+        font-weight: 700;
         letter-spacing: -0.3px;
       }
 
       .content {
-        padding: 28px 30px 22px;
+        padding: 32px 30px 28px;
       }
 
       .status {
         border-radius: 12px;
-        padding: 14px 16px;
-        margin-bottom: 16px;
+        padding: 16px 18px;
+        margin-bottom: 20px;
         font-size: 15px;
         font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status::before {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
       }
 
       .status.success {
@@ -90,63 +104,104 @@
         border: 1px solid #bbf7d0;
       }
 
+      .status.success::before {
+        content: '✓';
+        background: var(--success);
+        color: white;
+      }
+
       .status.error {
         background: var(--danger-bg);
         color: var(--danger);
         border: 1px solid #fecaca;
       }
 
-      p {
-        margin-bottom: 12px;
+      .status.error::before {
+        content: '✕';
+        background: var(--danger);
+        color: white;
+      }
+
+      .message {
         color: var(--muted);
         line-height: 1.7;
+        font-size: 15px;
+        margin-bottom: 8px;
       }
 
       .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 18px;
+        gap: 12px;
+        margin-top: 24px;
       }
 
       .btn {
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         text-decoration: none;
         border-radius: 10px;
-        padding: 11px 18px;
+        padding: 12px 24px;
         font-weight: 600;
         font-size: 14px;
+        transition: all 0.2s ease;
+        border: none;
+        cursor: pointer;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
       }
 
       .btn-primary {
         background: var(--brand);
         color: #fff;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+      }
+
+      .btn-primary:hover {
+        background: var(--brand-dark);
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
       }
 
       .btn-secondary {
+        background: #f8fafc;
+        color: #475569;
+        border: 1px solid var(--border);
+      }
+
+      .btn-secondary:hover {
         background: #f1f5f9;
         color: #1e293b;
-        border: 1px solid var(--border);
       }
 
       .footer {
         border-top: 1px solid #f1f5f9;
-        padding: 14px 30px 18px;
-        font-size: 12px;
+        padding: 20px 30px;
+        font-size: 13px;
         color: #94a3b8;
         text-align: center;
       }
 
       @media (max-width: 640px) {
+        .brand {
+          font-size: 24px;
+        }
+
         .top,
         .content,
         .footer {
-          padding-left: 18px;
-          padding-right: 18px;
+          padding-left: 20px;
+          padding-right: 20px;
         }
 
         .top h1 {
-          font-size: 20px;
+          font-size: 22px;
+        }
+
+        .btn {
+          width: 100%;
         }
       }
     </style>
@@ -156,22 +211,33 @@
       <div class="brand">Accountia</div>
       <section class="card" aria-live="polite">
         <header class="top">
-          <h1>{{.Title}}</h1>
+          {{if .Success}}
+          <h1>Email Confirmed</h1>
+          {{else}}
+          <h1>Email Confirmation Failed</h1>
+          {{end}}
         </header>
 
         <div class="content">
-          <div class="status {{.StatusClass}}">{{.StatusText}}</div>
-
-          <p>{{.Message}}</p>
-
+          {{if .Success}}
+          <div class="status success">Success! Your email is verified</div>
+          <p class="message">
+            Your email has been verified successfully. You can now sign in to your Accountia account and start managing your business finances, invoices, and more.
+          </p>
           <div class="actions">
-            <a class="btn btn-primary" href="{{.PrimaryActionUrl}}"
-              >{{.PrimaryActionLabel}}</a
-            >
-            <a class="btn btn-secondary" href="{{.SecondaryActionUrl}}"
-              >{{.SecondaryActionLabel}}</a
-            >
+            <a class="btn btn-primary" href="{{.FrontendURL}}/en/login">Sign In</a>
+            <a class="btn btn-secondary" href="{{.FrontendURL}}">Go to Homepage</a>
           </div>
+          {{else}}
+          <div class="status error">Unable to Verify Email</div>
+          <p class="message">
+            {{.Message}} Please check your email for a new verification link or contact support if you continue to experience issues.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="{{.FrontendURL}}/en/register">Try Again</a>
+            <a class="btn btn-secondary" href="{{.FrontendURL}}">Go to Homepage</a>
+          </div>
+          {{end}}
         </div>
 
         <footer class="footer">

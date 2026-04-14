@@ -15,7 +15,8 @@ import {
   Res,
   HttpException,
   BadRequestException,
-  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -29,7 +30,6 @@ import { RefreshTokenDto, RefreshResponseDto } from '@/auth/dto/refresh.dto';
 import type { Request } from 'express';
 import type { Response } from 'express';
 import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { AuthService } from '@/auth/auth.service';
 import { RegisterDto } from '@/auth/dto/register.dto';
 import { LoginDto } from '@/auth/dto/login.dto';
@@ -72,18 +72,10 @@ import { BusinessService } from '@/business/business.service';
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  private static escapeHtml(input: string): string {
-    return input
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
-
   constructor(
     private readonly authService: AuthService,
-    @Optional() private readonly businessService?: BusinessService
+    @Inject(forwardRef(() => BusinessService))
+    private readonly businessService: BusinessService
   ) {}
 
   @Get('google')
@@ -381,7 +373,7 @@ export class AuthController {
     const result = await this.authService.confirmEmail(token);
 
     // Process business invites if email confirmation was successful
-    if (result.success && result.user && this.businessService) {
+    if (result.success && result.user) {
       this.businessService
         .processInvitesForNewUser(result.user._id.toString(), result.user.email)
         .catch((error) => {
@@ -394,52 +386,35 @@ export class AuthController {
     }
 
     try {
-      const templatePath = path.join(
-        process.cwd(),
-        'src/auth/templates/email_confirmed.html'
-      );
+      const templatePath = `${process.cwd()}/src/auth/templates/email_confirmed.html`;
       const template = await readFile(templatePath, 'utf8');
-      const frontendBase = (process.env.FRONTEND_URL ?? 'http://localhost:3000')
-        .trim()
-        .replaceAll(/\/+$/g, '');
-      const year = new Date().getFullYear().toString();
-      const isSuccess = result.success;
 
-      const values: Record<string, string> = {
-        '{{.Title}}': isSuccess
-          ? 'Email Verified Successfully'
-          : 'Email Verification Failed',
-        '{{.StatusClass}}': isSuccess ? 'success' : 'error',
-        '{{.StatusText}}': isSuccess
-          ? 'Verification complete'
-          : 'Verification failed',
-        '{{.Message}}': AuthController.escapeHtml(result.message),
-        '{{.PrimaryActionUrl}}': isSuccess
-          ? `${frontendBase}/login`
-          : `${frontendBase}/register`,
-        '{{.PrimaryActionLabel}}': isSuccess ? 'Go to login' : 'Create account',
-        '{{.SecondaryActionUrl}}': isSuccess
-          ? frontendBase
-          : `${frontendBase}/resend-confirmation`,
-        '{{.SecondaryActionLabel}}': isSuccess
-          ? 'Open dashboard'
-          : 'Resend confirmation email',
-        '{{.Year}}': year,
-      };
+      const year = new Date().getFullYear();
+      let html = template.replaceAll('{{.Year}}', year.toString());
 
-      let html = template;
-      for (const [placeholder, value] of Object.entries(values)) {
-        html = html.replaceAll(placeholder, value);
+      // Inject frontend URL for action links in the template
+      const frontendBase = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      html = html.replaceAll(
+        '{{.FrontendURL}}',
+        frontendBase.replaceAll(/\/+$/g, '')
+      );
+
+      if (result.success) {
+        // Remove entire else block and remaining markers
+        html = html.replaceAll(/{{else}}[\S\s]*?{{end}}/g, '');
+        html = html.replaceAll('{{if .Success}}', '').replaceAll('{{end}}', '');
+        html = html.replaceAll('{{.Message}}', '');
+      } else {
+        // Remove if block and remaining markers
+        html = html.replaceAll(/{{if .Success}}[\S\s]*?{{else}}/g, '');
+        html = html.replaceAll('{{end}}', '');
+        html = html.replaceAll('{{.Message}}', result.message);
       }
 
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.status(isSuccess ? HttpStatus.OK : HttpStatus.BAD_REQUEST).send(html);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
       return;
-    } catch (error) {
-      this.logger.error(
-        'Failed to render email confirmation HTML template',
-        error instanceof Error ? error.stack : String(error)
-      );
+    } catch {
       return result;
     }
   }
