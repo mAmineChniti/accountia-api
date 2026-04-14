@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -80,6 +81,8 @@ import {
 })
 @ApiResponse({ status: 500, description: 'Internal Server Error' })
 export class BusinessController {
+  private readonly logger = new Logger(BusinessController.name);
+
   constructor(private readonly businessService: BusinessService) {}
 
   // Business Application Endpoints
@@ -487,12 +490,19 @@ export class BusinessController {
   @ApiOperation({
     summary: '[PLATFORM DB + TENANT DB] Unassign user from business',
     description:
-      'Remove a user assignment from a business. Data is updated in: Platform database (accountia) and Tenant database. Only accessible by business owners or administrators.',
+      'Remove a user assignment from a business. Data is updated in: Platform database (accountia) and Tenant database. businessId is REQUIRED as a query parameter. Only accessible by business owners or administrators.',
   })
   @ApiParam({
     name: 'userId',
     description: 'User ID to unassign (MongoDB ObjectId)',
     example: '507f1f77bcf86cd799439012',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiResponse({
     status: 200,
@@ -559,12 +569,20 @@ export class BusinessController {
   async getBusinessClients(
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
-  ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
-    return this.businessService.getBusinessClients(
+  ): Promise<{ message: string; clients: unknown[] }> {
+    this.logger.log(
+      `Getting business clients for businessId: ${tenant.businessId}, requested by userId: ${user.id}`
+    );
+    const result = await this.businessService.getBusinessClients(
       tenant.businessId,
       user.id,
       user.role
     );
+    this.logger.log(
+      `Retrieved ${result.clients.length} clients for businessId: ${tenant.businessId}`
+    );
+    this.logger.debug(`Clients data: ${JSON.stringify(result.clients)}`);
+    return result;
   }
 
   @Patch(':id/clients/:clientId/role')
@@ -625,9 +643,16 @@ export class BusinessController {
   @ApiOperation({
     summary: '[TENANT DB] Remove a user from the business',
     description:
-      'Unlink/remove a user from this business. Data is updated in: Tenant-specific MongoDB database. Cannot remove business owner. Only accessible by business owners or administrators.',
+      'Unlink/remove a user from this business. Data is updated in: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Cannot remove business owner. Only accessible by business owners or administrators.',
   })
   @ApiParam({ name: 'clientId', description: 'User ID to remove' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
   @ApiResponse({
     status: 200,
     description: 'User removed successfully',
@@ -661,13 +686,13 @@ export class BusinessController {
     );
   }
 
-  @Post('statistics')
+  @Get('statistics')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: '[TENANT DB] Get business statistics with TensorFlow predictions',
     description:
-      'Retrieve comprehensive business statistics including historical data and future predictions using TensorFlow models. Features revenue forecasting, product demand prediction, customer payment behavior analysis, product profitability optimization, and customer churn prediction. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: POST /business/statistics?businessId=<businessId>',
+      'Retrieve comprehensive business statistics including historical data and future predictions using TensorFlow models. Features revenue forecasting, product demand prediction, customer payment behavior analysis, product profitability optimization, and customer churn prediction. Data is aggregated from: Tenant-specific MongoDB database. businessId is REQUIRED as a query parameter. Endpoint: GET /business/statistics?businessId=<businessId>',
   })
   @ApiQuery({
     name: 'businessId',
@@ -676,17 +701,11 @@ export class BusinessController {
     description:
       'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        predictionHorizonDays: {
-          type: 'number',
-          description:
-            'Number of days into the future for predictions (default: 90)',
-        },
-      },
-    },
+  @ApiQuery({
+    name: 'horizonDays',
+    required: false,
+    type: Number,
+    description: 'Prediction horizon in days (default: 30)',
   })
   @ApiResponse({
     status: 200,
@@ -708,7 +727,8 @@ export class BusinessController {
   async getBusinessStatistics(
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload,
-    @Query('businessId') businessId?: string
+    @Query('businessId') businessId?: string,
+    @Query('predictionHorizonDays') predictionHorizonDays?: string
   ): Promise<BusinessStatisticsResponseDto> {
     // If businessId is provided in query, validate it matches tenant context
     const effectiveBusinessId = businessId ?? tenant.businessId;
@@ -717,10 +737,14 @@ export class BusinessController {
         `Business ID in query parameter (${businessId}) does not match tenant context (${tenant.businessId})`
       );
     }
+    const horizonDays = predictionHorizonDays
+      ? Number.parseInt(predictionHorizonDays, 10)
+      : 90;
     return this.businessService.getBusinessStatistics(
       effectiveBusinessId,
       user.id,
-      user.role
+      user.role,
+      horizonDays
     );
   }
 
