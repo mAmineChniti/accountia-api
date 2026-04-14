@@ -7,6 +7,7 @@ export enum NotificationType {
   BUSINESS_REJECTED = 'BUSINESS_REJECTED',
   USER_BANNED = 'USER_BANNED',
   INVOICE_CREATED = 'INVOICE_CREATED',
+  INVOICE_PAID = 'INVOICE_PAID',
 }
 
 @Schema({ timestamps: true, collection: 'notifications' })
