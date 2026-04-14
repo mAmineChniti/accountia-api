@@ -182,7 +182,7 @@ export class BusinessService {
       .findById(userId)
       .catch((_error) => undefined as never);
     if (applicant) {
-      void this.emailService
+      await this.emailService
         .sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
@@ -198,7 +198,7 @@ export class BusinessService {
     }
 
     // Send admin notification in background as well.
-    void this.notificationsService
+    await this.notificationsService
       .createNotification({
         type: NotificationType.NEW_BUSINESS_APPLICATION,
         message: `New business application: "${savedApplication.businessName}"`,
@@ -328,7 +328,7 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        void this.emailService
+        await this.emailService
           .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
@@ -343,7 +343,7 @@ export class BusinessService {
           });
       }
 
-      void this.auditEmitter
+      await this.auditEmitter
         .emitAction({
           action: AuditAction.APPROVE_BUSINESS,
           userId: reviewer.id,
@@ -367,7 +367,7 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        void this.emailService
+        await this.emailService
           .sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
@@ -383,7 +383,7 @@ export class BusinessService {
           });
       }
 
-      void this.auditEmitter
+      await this.auditEmitter
         .emitAction({
           action: AuditAction.REJECT_BUSINESS,
           userId: reviewer.id,
