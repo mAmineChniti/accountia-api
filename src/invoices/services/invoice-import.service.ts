@@ -1,9 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
 import { parse as csvParse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
-import { Connection } from 'mongoose';
-import { ObjectId } from 'mongodb';
 import { InvoiceIssuanceService } from './invoice-issuance.service';
 import {
   ImportedInvoiceResultDto,
@@ -37,10 +34,7 @@ interface FileUpload {
 export class InvoiceImportService {
   private readonly logger = new Logger(InvoiceImportService.name);
 
-  constructor(
-    private readonly issuanceService: InvoiceIssuanceService,
-    @InjectConnection() private readonly connection: Connection
-  ) {}
+  constructor(private readonly issuanceService: InvoiceIssuanceService) {}
 
   /**
    * Parse file and import invoices in bulk
@@ -95,10 +89,7 @@ export class InvoiceImportService {
           const invoiceNumber =
             (record.invoiceNumber as string) || `Row ${i + 2}`;
           const errorRecord: ImportedInvoiceResultDto = {
-            itemNumber: i + 2,
             invoiceNumber,
-            success: false,
-            errors: [error instanceof Error ? error.message : 'Unknown error'],
             status: 'error',
             message: error instanceof Error ? error.message : 'Unknown error',
           };
@@ -166,13 +157,10 @@ export class InvoiceImportService {
         columns: true, // Use first row as column headers
         skip_empty_lines: true,
         trim: true,
-        bom: true,
         cast: false, // Keep all values as strings initially
       });
 
-      return (records as Record<string, unknown>[]).map((record) =>
-        this.normalizeRecordKeys(record)
-      );
+      return records as Record<string, unknown>[];
     } catch (error) {
       throw new BadRequestException(
         `CSV parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -203,7 +191,7 @@ export class InvoiceImportService {
         `Parsed ${records.length} records from Excel sheet "${sheetName}"`
       );
 
-      return records.map((record) => this.normalizeRecordKeys(record));
+      return records;
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException(
@@ -316,12 +304,7 @@ export class InvoiceImportService {
     }
 
     // Parse line items
-    const lineItems = await this.parseLineItems(
-      record,
-      businessId,
-      databaseName,
-      rowNumber
-    );
+    const lineItems = this.parseLineItems(record, rowNumber);
     if (lineItems.length === 0) {
       throw new Error(`Row ${rowNumber}: No valid line items found`);
     }
@@ -373,10 +356,8 @@ export class InvoiceImportService {
     );
 
     const result: ImportedInvoiceResultDto = {
-      itemNumber: rowNumber,
       invoiceNumber,
       invoiceId: createdInvoice.id,
-      success: true,
       status: 'success',
       message: 'Invoice created successfully',
       lineItemsCount: lineItems.length,
@@ -397,29 +378,6 @@ export class InvoiceImportService {
    * 2. Comma-separated values in productIds, productNames, quantities, unitPrices
    */
   private parseLineItems(
-    record: Record<string, unknown>,
-    businessId: string,
-    databaseName: string,
-    rowNumber: number
-  ): Promise<
-    Array<{
-      productId: string;
-      productName: string;
-      quantity: number;
-      unitPrice: number;
-      description?: string;
-    }>
-  > {
-    const parsedItems = this.parseLineItemsRaw(record, rowNumber);
-    return this.resolveLineItemProductReferences(
-      parsedItems,
-      businessId,
-      databaseName,
-      rowNumber
-    );
-  }
-
-  private parseLineItemsRaw(
     record: Record<string, unknown>,
     rowNumber: number
   ): Array<{
@@ -521,106 +479,6 @@ export class InvoiceImportService {
     );
   }
 
-  private async resolveLineItemProductReferences(
-    items: Array<{
-      productId: string;
-      productName: string;
-      quantity: number;
-      unitPrice: number;
-      description?: string;
-    }>,
-    businessId: string,
-    databaseName: string,
-    rowNumber: number
-  ): Promise<
-    Array<{
-      productId: string;
-      productName: string;
-      quantity: number;
-      unitPrice: number;
-      description?: string;
-    }>
-  > {
-    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    const productsCollection = tenantDb.collection('products');
-    const businessObjectId = ObjectId.isValid(businessId)
-      ? new ObjectId(businessId)
-      : undefined;
-
-    const cache = new Map<string, string>();
-
-    const resolvedItems = await Promise.all(
-      items.map(async (item, idx) => {
-        const rawProductId = item.productId.trim();
-        const businessFilter = businessObjectId
-          ? { $or: [{ businessId: businessObjectId }, { businessId }] }
-          : { businessId };
-
-        if (ObjectId.isValid(rawProductId)) {
-          const idMatch = await productsCollection.findOne(
-            {
-              ...businessFilter,
-              _id: new ObjectId(rawProductId),
-            },
-            { projection: { _id: 1 } }
-          );
-
-          if (idMatch?._id) {
-            return item;
-          }
-          // If the provided ObjectId exists in another tenant or no longer exists,
-          // try resolving by product name within this business.
-        }
-
-        const normalizedName = item.productName.trim().toLowerCase();
-        if (!normalizedName) {
-          throw new Error(
-            `Row ${rowNumber}: Line item ${idx + 1} has non-ObjectId productId and missing productName`
-          );
-        }
-
-        const cachedId = cache.get(normalizedName);
-        if (cachedId) {
-          return { ...item, productId: cachedId };
-        }
-
-        const matchedProduct = await productsCollection.findOne(
-          {
-            ...businessFilter,
-            name: {
-              $regex: `^${this.escapeRegex(item.productName.trim())}$`,
-              $options: 'i',
-            },
-          },
-          { projection: { _id: 1 } }
-        );
-
-        if (!matchedProduct?._id) {
-          throw new Error(
-            `Row ${rowNumber}: Product reference "${item.productId}" not found. Use a valid product ObjectId or an existing product name in productNames.`
-          );
-        }
-
-        const resolvedProductId = String(matchedProduct._id);
-        cache.set(normalizedName, resolvedProductId);
-        this.logger.debug(
-          `Resolved import product reference "${item.productId}" to ${resolvedProductId} using name "${item.productName}"`
-        );
-
-        return {
-          ...item,
-          productId: resolvedProductId,
-        };
-      })
-    );
-
-    return resolvedItems;
-  }
-
-  private escapeRegex(value: string): string {
-    return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`);
-  }
-
   /**
    * Validate a single line item
    */
@@ -681,28 +539,9 @@ export class InvoiceImportService {
     if (dateValue instanceof Date) {
       date = dateValue;
     } else if (typeof dateValue === 'number') {
-      // Support Excel serial date numbers for wider file compatibility.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const parsed = (XLSX as any).SSF.parse_date_code(dateValue) as {
-        y: number;
-        m: number;
-        d: number;
-        H: number;
-        M: number;
-        S: number;
-      };
-      if (!parsed) {
-        throw new TypeError(
-          `Row ${rowNumber}: Invalid ${fieldName} numeric format "${dateValue}"`
-        );
-      }
-      date = new Date(
-        parsed.y,
-        Math.max(0, parsed.m - 1),
-        parsed.d,
-        parsed.H,
-        parsed.M,
-        parsed.S
+      // With cellDates: true, numbers should not appear - they should be Date objects
+      throw new TypeError(
+        `Row ${rowNumber}: Invalid ${fieldName} format. Expected a date object or ISO string`
       );
     } else if (typeof dateValue === 'string') {
       // Try to parse string
@@ -722,45 +561,6 @@ export class InvoiceImportService {
     }
 
     return date;
-  }
-
-  private normalizeRecordKeys(
-    record: Record<string, unknown>
-  ): Record<string, unknown> {
-    const aliasMap: Record<string, string> = {
-      invoicenumber: 'invoiceNumber',
-      recipienttype: 'recipientType',
-      issueddate: 'issuedDate',
-      duedate: 'dueDate',
-      recipientplatformid: 'recipientPlatformId',
-      recipientplatfoormid: 'recipientPlatformId',
-      recipientplatformld: 'recipientPlatformId',
-      recipientemail: 'recipientEmail',
-      recipienemail: 'recipientEmail',
-      recipientdisplayname: 'recipientDisplayName',
-      productids: 'productIds',
-      productnames: 'productNames',
-      quantities: 'quantities',
-      unitprices: 'unitPrices',
-      lineitemsjson: 'lineItemsJson',
-      description: 'description',
-      paymentterms: 'paymentTerms',
-      currency: 'currency',
-    };
-
-    const normalizedRecord: Record<string, unknown> = {};
-
-    for (const [rawKey, value] of Object.entries(record)) {
-      const normalizedLookup = rawKey
-        .replace(/^\uFEFF/, '')
-        .replaceAll(/[^\dA-Za-z]/g, '')
-        .toLowerCase();
-
-      const canonicalKey = aliasMap[normalizedLookup] ?? rawKey.trim();
-      normalizedRecord[canonicalKey] = value;
-    }
-
-    return normalizedRecord;
   }
 
   /**
@@ -800,8 +600,7 @@ INV-2024-001,EXTERNAL,john@example.com,John Doe,PROD-001,Website Service,1,5000.
       'invoiceNumber is optional - if not provided, it will be auto-generated in format INV-{YYYYMMDD}-{randomString}. ' +
       'For PLATFORM_BUSINESS, provide recipientPlatformId. ' +
       'For EXTERNAL, provide recipientEmail and recipientDisplayName. ' +
-      'Multiple line items can be separated by pipe (|) character. ' +
-      'productIds accepts either Mongo ObjectId values or legacy references; when legacy values are used, productNames must match existing tenant product names.';
+      'Multiple line items can be separated by pipe (|) character.';
 
     return {
       csvExample,

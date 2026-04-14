@@ -278,19 +278,12 @@ export class ImportInvoicesFromFileDto {
  */
 export class ImportedInvoiceResultDto {
   @IsOptional()
-  @IsNumber()
-  itemNumber?: number;
-
-  @IsOptional()
   @IsString()
   invoiceNumber?: string;
 
   @IsOptional()
   @IsString()
   invoiceId?: string;
-
-  @IsOptional()
-  success?: boolean;
 
   @IsString()
   @IsIn(['success', 'error', 'warning'])
@@ -299,11 +292,6 @@ export class ImportedInvoiceResultDto {
   @IsOptional()
   @IsString()
   message?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  errors?: string[];
 
   @IsOptional()
   @IsArray()
