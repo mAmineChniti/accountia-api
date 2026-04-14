@@ -646,20 +646,11 @@ export class InvoicesController {
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
           'text/csv',
-          'text/plain',
-          'application/csv',
-          'text/x-csv',
           'application/vnd.ms-excel',
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ];
 
-        const originalName = (file.originalname ?? '').toLowerCase();
-        const hasAllowedExtension =
-          originalName.endsWith('.csv') ||
-          originalName.endsWith('.xls') ||
-          originalName.endsWith('.xlsx');
-
-        if (allowedMimes.includes(file.mimetype) || hasAllowedExtension) {
+        if (allowedMimes.includes(file.mimetype)) {
           // eslint-disable-next-line unicorn/no-null
           cb(null, true);
         } else {
