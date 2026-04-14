@@ -96,7 +96,7 @@ export class InvoiceIssuanceService {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
-  private getTenantInvoiceModel(databaseName: string): Model<Invoice> {
+  public getTenantInvoiceModel(databaseName: string): Model<Invoice> {
     return this.tenantConnectionService.getTenantModel<Invoice>({
       databaseName,
       modelName: Invoice.name,
@@ -687,7 +687,7 @@ export class InvoiceIssuanceService {
     }
   }
 
-  private async restoreReservedInventoryForInvoice(
+  public async restoreReservedInventoryForInvoice(
     invoice: Invoice,
     databaseName: string
   ): Promise<void> {

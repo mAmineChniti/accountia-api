@@ -14,6 +14,7 @@ import { GoogleStrategy } from '@/auth/strategies/google.strategy';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { RefreshJwtGuard } from '@/auth/guards/refresh-jwt.guard';
 import { AdminGuard } from '@/auth/guards/admin.guard';
+import { AdminSeederService } from '@/auth/admin-seeder.service';
 import { RolesGuard } from '@/auth/guards/roles.guard';
 import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
 import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
@@ -55,6 +56,7 @@ import {
     RolesGuard,
     GoogleAuthGuard,
     GoogleCallbackGuard,
+    AdminSeederService,
   ],
   controllers: [AuthController],
   exports: [
