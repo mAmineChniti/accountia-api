@@ -12,13 +12,6 @@ import { Connection, Model } from 'mongoose';
 import Stripe from 'stripe';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 
-interface StripeSessionMetadata {
-  invoiceId?: string;
-  issuerBusinessId?: string;
-  issuerTenantDatabaseName?: string;
-  payerUserId?: string;
-  payerEmail?: string;
-}
 import {
   CreateInvoiceCheckoutSessionDto,
   InvoiceCheckoutSessionResponseDto,
@@ -225,16 +218,6 @@ export class InvoicePaymentService {
       );
     }
 
-    const appHost = this.configService.get<string>('APP_HOST') ?? 'localhost';
-    const appPort = this.configService.get<string>('PORT') ?? '4789';
-    const backendBaseUrl =
-      this.configService.get<string>('BACKEND_PUBLIC_URL') ??
-      `http://${appHost}:${appPort}/api`;
-    const returnUrl =
-      `${backendBaseUrl}/invoices/payments/return` +
-      `?receipt_id=${encodeURIComponent(receiptId)}` +
-      '&session_id={CHECKOUT_SESSION_ID}';
-
     const baseMetadata: Record<string, string> = {
       invoiceId: invoice.id,
       receiptId,
@@ -246,51 +229,29 @@ export class InvoicePaymentService {
       originalInvoiceAmount: remainingAmount.toFixed(2),
     };
 
-    const createCheckoutSession = async (
+    const createPaymentIntent = async (
       currency: string,
       amount: number,
-      _metadata: Record<string, string>
+      metadata: Record<string, string>
     ) => {
       const requestOptions = undefined; // Quick override to bypass connect onboarding issues during testing
-      const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
 
-      return stripe.checkout.sessions.create(
+      return stripe.paymentIntents.create(
         {
-          ui_mode: 'embedded_page' as never,
-          mode: 'payment',
-          ...(paymentMethodConfigurationId
-            ? {
-                payment_method_configuration: paymentMethodConfigurationId,
-              }
-            : {
-                payment_method_types: ['card'],
-              }),
-          customer_email: user.email,
-          return_url: returnUrl,
-          line_items: [
-            {
-              quantity: 1,
-              price_data: {
-                currency,
-                unit_amount: Math.round(amount * 100),
-                product_data: {
-                  name: `Invoice ${invoice.invoiceNumber}`,
-                  description:
-                    invoice.description ??
-                    `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`,
-                },
-              },
-            },
-          ],
+          amount: Math.round(amount * 100),
+          currency,
+          metadata,
+          receipt_email: user.email,
+          automatic_payment_methods: { enabled: true },
         },
         requestOptions
       );
     };
 
     const invoiceCurrency = invoice.currency.trim().toLowerCase();
-    let session;
+    let paymentIntent: { id: string; client_secret: string | null } | undefined;
     try {
-      session = await createCheckoutSession(
+      paymentIntent = await createPaymentIntent(
         invoiceCurrency,
         remainingAmount,
         baseMetadata
@@ -318,7 +279,7 @@ export class InvoicePaymentService {
         `Stripe currency fallback used for invoice ${invoice.invoiceNumber}: ${invoiceCurrency} -> ${this.stripeFallbackCurrency} (rate=${conversion.rate})`
       );
 
-      session = await createCheckoutSession(
+      paymentIntent = await createPaymentIntent(
         this.stripeFallbackCurrency,
         conversion.convertedAmount,
         {
@@ -330,28 +291,16 @@ export class InvoicePaymentService {
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sessionObj = session as Record<string, any>;
-
-    if (!sessionObj.url || !sessionObj.id) {
-      const clientSecret = sessionObj.client_secret as string | undefined;
-      if (!clientSecret || !sessionObj.id) {
-        throw new ServiceUnavailableException(
-          'Unable to create payment session. Please try again.'
-        );
-      }
-
-      return {
-        clientSecret,
-        sessionId: sessionObj.id as string,
-        checkoutUrl: undefined,
-      };
+    if (!paymentIntent) {
+      throw new ServiceUnavailableException(
+        'Unable to create payment session. Please try again.'
+      );
     }
 
     return {
-      clientSecret: (sessionObj.client_secret as string) ?? '',
-      sessionId: sessionObj.id as string,
-      checkoutUrl: sessionObj.url as string,
+      clientSecret: paymentIntent.client_secret ?? '',
+      sessionId: paymentIntent.id,
+      checkoutUrl: undefined,
     };
   }
 
@@ -441,65 +390,6 @@ export class InvoicePaymentService {
     );
 
     return updatedInvoice;
-  }
-
-  async finalizeCheckoutSessionFromReturn(
-    sessionId: string,
-    receiptId: string
-  ): Promise<boolean> {
-    const stripe = this.ensureStripeEnabled();
-
-    const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
-    if (!receipt) {
-      throw new NotFoundException('Invoice receipt not found');
-    }
-
-    const _businessId = receipt.issuerBusinessId;
-    void _businessId;
-    // Connected account logic skipped for this fix
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let session: any;
-    const requestOptions = undefined; // Force platform account testing
-
-    try {
-      session = await stripe.checkout.sessions.retrieve(
-        sessionId,
-        undefined,
-        requestOptions
-      );
-    } catch {
-      // Fallback to platform account retrieval if connected-account retrieval fails.
-      session = await stripe.checkout.sessions.retrieve(sessionId);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sessionObj = session as Record<string, any>;
-    if (sessionObj.payment_status !== 'paid') {
-      return false;
-    }
-
-    const metadata =
-      (sessionObj.metadata as unknown as StripeSessionMetadata) ?? {};
-    const invoiceId: string =
-      metadata.invoiceId ?? receipt.invoiceId.toString();
-    const issuerBusinessId: string =
-      metadata.issuerBusinessId ?? receipt.issuerBusinessId.toString();
-    const issuerTenantDatabaseName: string =
-      metadata.issuerTenantDatabaseName ?? receipt.issuerTenantDatabaseName;
-    const payerUserId: string | undefined =
-      metadata.payerUserId ?? receipt.recipientUserId?.toString();
-    const payerEmailStr: string | undefined =
-      metadata.payerEmail ?? receipt.recipientEmail;
-
-    return this.completeInvoicePayment({
-      invoiceId,
-      issuerBusinessId,
-      issuerTenantDatabaseName,
-      payerUserId,
-      payerEmail: payerEmailStr,
-      issuerBusinessName: receipt.issuerBusinessName,
-    });
   }
 
   private async completeInvoicePayment(input: {
@@ -616,7 +506,8 @@ export class InvoicePaymentService {
 
     if (
       event.type !== 'checkout.session.completed' &&
-      event.type !== 'checkout.session.async_payment_succeeded'
+      event.type !== 'checkout.session.async_payment_succeeded' &&
+      event.type !== 'payment_intent.succeeded'
     ) {
       return;
     }
@@ -624,9 +515,16 @@ export class InvoicePaymentService {
     const session = event.data.object as {
       id?: string;
       payment_status?: string;
+      status?: string;
       metadata?: Record<string, string>;
     };
-    if (session.payment_status !== 'paid') {
+
+    // For Payment Intents, success is indicated by status 'succeeded'
+    // For Checkout Sessions, it's payment_status 'paid'
+    const isPaid =
+      session.payment_status === 'paid' || session.status === 'succeeded';
+
+    if (!isPaid) {
       return;
     }
 

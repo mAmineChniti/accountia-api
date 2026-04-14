@@ -8,7 +8,6 @@ import {
   Param,
   Query,
   Req,
-  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -33,7 +32,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import {
   InvoiceIssuanceService,
   InvoiceReceiptService,
@@ -551,56 +550,6 @@ export class InvoicesController {
 
     await this.paymentService.handleStripeWebhook(stripeSignature, rawBody);
     return { received: true };
-  }
-
-  @Get('payments/return')
-  @HttpCode(HttpStatus.FOUND)
-  @ApiOperation({
-    summary: '[STRIPE] Checkout return handler',
-    description:
-      'Finalizes payment status after Stripe checkout return, then redirects to frontend invoices page.',
-  })
-  @ApiOkResponse({
-    description: 'Redirects to frontend with payment status',
-  })
-  async handleStripeCheckoutReturn(
-    @Query('session_id') sessionId: string,
-    @Query('receipt_id') receiptId: string,
-    @Res() res: Response
-  ): Promise<void> {
-    if (!sessionId || !receiptId) {
-      throw new BadRequestException('session_id and receipt_id are required');
-    }
-
-    let paid = false;
-    let hasError = false;
-
-    try {
-      paid = await this.paymentService.finalizeCheckoutSessionFromReturn(
-        sessionId,
-        receiptId
-      );
-    } catch (error) {
-      hasError = true;
-      this.logger.error(
-        `Checkout return finalization failed for session ${sessionId} and receipt ${receiptId}`,
-        error instanceof Error ? error.stack : String(error)
-      );
-    }
-
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-    let paymentStatus = 'pending';
-    if (hasError) {
-      paymentStatus = 'error';
-    } else if (paid) {
-      paymentStatus = 'success';
-    }
-
-    const redirectTo = `${frontendUrl}/en/invoices?payment=${paymentStatus}&session_id=${encodeURIComponent(
-      sessionId
-    )}`;
-
-    res.redirect(HttpStatus.FOUND, redirectTo);
   }
 
   /**
