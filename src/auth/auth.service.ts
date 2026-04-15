@@ -545,10 +545,11 @@ export class AuthService {
         }
       } else {
         // Send confirmation email
-        await this.emailService.sendConfirmationEmail(
-          normalizedEmail,
-          user.emailToken!
-        );
+        await this.emailService
+          .sendConfirmationEmail(normalizedEmail, user.emailToken!)
+          .catch((error) => {
+            this.logger.error('Failed to send confirmation email', error);
+          });
       }
 
       await this.auditEmitter.emitAction({
@@ -904,13 +905,13 @@ export class AuthService {
     user.emailTokenGeneratedAt = emailTokenGeneratedAt;
     await user.save();
 
-    try {
-      await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
-      this.rateLimitingService.recordEmailAttempt(user._id.toString());
-      return { message: 'Confirmation email sent successfully' };
-    } catch {
-      throw new BadRequestException('Unable to resend confirmation email');
-    }
+    void this.emailService
+      .sendConfirmationEmail(user.email, newEmailToken)
+      .catch((error) => {
+        this.logger.error('Failed to send confirmation email', error);
+      });
+    this.rateLimitingService.recordEmailAttempt(user._id.toString());
+    return { message: 'Confirmation email sent successfully' };
   }
 
   async fetchUser(userId: string): Promise<PrivateUserResponseDto> {
@@ -1119,14 +1120,11 @@ export class AuthService {
       }
 
       if (updateData.email && updateData.emailToken) {
-        try {
-          await this.emailService.sendConfirmationEmail(
-            updateData.email,
-            updateData.emailToken
-          );
-        } catch {
-          // Silently handle email failure
-        }
+        void this.emailService
+          .sendConfirmationEmail(updateData.email, updateData.emailToken)
+          .catch((error) => {
+            this.logger.error('Failed to send confirmation email', error);
+          });
       }
 
       const publicUser: PrivateUserDto = {
