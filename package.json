@@ -34,7 +34,7 @@
     "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/websockets": "^11.1.17",
-    "@openrouter/sdk": "^0.11.2",
+    "@openrouter/sdk": "^0.12.7",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-node": "^4.22.0",
     "bcrypt": "^6.0.0",
