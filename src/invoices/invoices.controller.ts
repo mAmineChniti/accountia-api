@@ -670,7 +670,15 @@ export class InvoicesController {
       'Import multiple invoices at once from a CSV or XLSX file. ' +
       'Each row represents one invoice. Supports multiple recipient types and line item formats. ' +
       'Use GET /invoices/import/template to get the required format. ' +
+      'businessId is REQUIRED as a query parameter. ' +
       'Data is created in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiOkResponse({
     description: 'Import completed with detailed results',
@@ -687,11 +695,19 @@ export class InvoicesController {
     if (!file) {
       throw new BadRequestException('File is required');
     }
-    return await this.importService.importInvoicesFromFile(
+    this.logger.log(
+      `Importing invoices from file: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`
+    );
+    const result = await this.importService.importInvoicesFromFile(
       file,
       tenant.businessId,
       tenant.databaseName,
       user.id
     );
+    this.logger.log(
+      `Import completed: ${result.successCount} success, ${result.failedCount} failed, ${result.warningCount} warnings, ${result.generalErrors?.length ?? 0} general errors`
+    );
+    this.logger.debug(`Import results: ${JSON.stringify(result.results)}`);
+    return result;
   }
 }

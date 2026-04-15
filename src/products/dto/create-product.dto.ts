@@ -1,15 +1,14 @@
-import { IsString, IsNumber, Min, IsOptional } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNumber, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateProductDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
-      'Tenant businessId used to resolve the current business context.',
+      'Tenant businessId used to resolve the current business context (REQUIRED for non-platform users).',
     type: String,
   })
-  @IsOptional()
   @IsString()
-  businessId?: string;
+  businessId!: string;
 
   @IsString()
   name!: string;
