@@ -1,0 +1,4 @@
+Numéro de Facture,Type de Client,Email du Client,Nom du Client,ID du Produit,Quantité,Prix Unitaire,Date d'Émission,Date d'Échéance,Devise,Notes
+INV-2026-001,INDIVIDUAL,client.test@email.com,Jean Dupont,69df5996b442687f632db9b3,2,1100,2026-04-15,2026-05-15,TND,Facture pour test AI
+INV-2026-002,BUSINESS,entreprise@pro.tn,Société Pro,69df5996b442687f632db9b3,1,1100,2026-04-15,2026-04-30,TND,Achat casque Sony
+INV-2026-003,INDIVIDUAL,amine@accountia.tn,Amine Chniti,69df5996b442687f632db9b3,5,1050,2026-04-10,2026-04-25,TND,Remise spéciale client fidèle

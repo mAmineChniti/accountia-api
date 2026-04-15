@@ -19,6 +19,7 @@ import {
   StockInsightItemDto,
   StockInsightsResponseDto,
 } from './dto/stock-insights.dto';
+import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
 
 @Injectable()
 export class ProductsService {
@@ -512,7 +513,16 @@ export class ProductsService {
     const errors: string[] = [];
     let imported = 0;
 
-    for (const [i, record] of records.entries()) {
+    const expectedColumns = [
+      'name',
+      'description',
+      'unitPrice',
+      'quantity',
+      'cost',
+    ];
+    const mappedRecords = await mapColumnsUsingAi(records, expectedColumns);
+
+    for (const [i, record] of mappedRecords.entries()) {
       const rowNum = i + 2; // +2 because header is row 1 and arrays are 0-indexed
 
       try {
