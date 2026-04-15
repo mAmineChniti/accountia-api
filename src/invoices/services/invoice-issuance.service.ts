@@ -133,22 +133,6 @@ export class InvoiceIssuanceService {
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
 
-    // Calculate total amount from line items
-    const totalAmount = dto.lineItems.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0
-    );
-
-    // Create line items with amounts
-    const lineItems = dto.lineItems.map((item) => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      amount: item.quantity * item.unitPrice,
-      description: item.description,
-    }));
-
     // Auto-generate invoiceNumber if not provided
     // Format: INV-{YYYYMMDD}-{randomString}
     // Example: INV-20250404-k7x9m2
@@ -178,13 +162,29 @@ export class InvoiceIssuanceService {
       [];
 
     try {
-      // Reserve product quantities before creating invoice so imports and direct creates behave consistently.
+      // Reserve product quantities FIRST — this also resolves product names → real ObjectIds
+      // by mutating dto.lineItems[i].productId in-place.
       await this.reserveProductQuantities(
         businessId,
         databaseName,
         dto.lineItems,
         reservedProducts
       );
+
+      // Build lineItems AFTER reservation so resolved ObjectIds are used in the invoice document.
+      const totalAmount = dto.lineItems.reduce(
+        (sum, item) => sum + item.quantity * item.unitPrice,
+        0
+      );
+
+      const lineItems = dto.lineItems.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: item.quantity * item.unitPrice,
+        description: item.description,
+      }));
 
       // Create invoice in draft state in tenant database
       // Note: Mongoose will auto-convert businessId string to ObjectId in MongoDB
@@ -237,6 +237,44 @@ export class InvoiceIssuanceService {
     }
   }
 
+  /**
+   * Resolve a productId or product name to a MongoDB ObjectId.
+   * If the value is already a valid ObjectId string, it is used directly.
+   * Otherwise, it is treated as a product name and looked up in the tenant DB.
+   * Returns the resolved ObjectId string, or throws if not found.
+   */
+  private async resolveProductId(
+    productIdOrName: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<string> {
+    if (ObjectId.isValid(productIdOrName)) {
+      return productIdOrName;
+    }
+
+    // Treat as product name — look up by exact name (case-insensitive)
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    const productsCollection = tenantDb.collection('products');
+    const businessObjectId = new ObjectId(businessId);
+
+    const product = await productsCollection.findOne({
+      name: {
+        $regex: `^${productIdOrName.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}$`,
+        $options: 'i',
+      },
+      $or: [{ businessId: businessObjectId }, { businessId }],
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Product "${productIdOrName}" not found for this business. ` +
+          `Please use a valid product name or MongoDB ObjectId.`
+      );
+    }
+
+    return product._id.toString();
+  }
+
   private async reserveProductQuantities(
     businessId: string,
     databaseName: string,
@@ -251,19 +289,28 @@ export class InvoiceIssuanceService {
     const productsCollection = tenantDb.collection('products');
     const businessObjectId = new ObjectId(businessId);
 
+    // Resolve all productIds (supports both ObjectId strings and product names)
     const quantitiesByProduct = new Map<string, number>();
     for (const item of lineItems) {
-      const productId = this.normalizeOptionalString(item.productId);
-      if (!productId || !ObjectId.isValid(productId)) {
-        throw new BadRequestException(
-          `Invalid productId in line items: ${String(item.productId)}`
-        );
+      const rawId = this.normalizeOptionalString(item.productId);
+      if (!rawId) {
+        throw new BadRequestException(`Missing productId in line items`);
       }
 
-      quantitiesByProduct.set(
-        productId,
-        (quantitiesByProduct.get(productId) ?? 0) + item.quantity
+      // Resolve name → ObjectId if needed
+      const resolvedId = await this.resolveProductId(
+        rawId,
+        businessId,
+        databaseName
       );
+
+      quantitiesByProduct.set(
+        resolvedId,
+        (quantitiesByProduct.get(resolvedId) ?? 0) + item.quantity
+      );
+
+      // Mutate the lineItem so the invoice document stores the real ObjectId
+      item.productId = resolvedId;
     }
 
     for (const [
@@ -295,7 +342,7 @@ export class InvoiceIssuanceService {
         const currentQuantity =
           typeof product.quantity === 'number' ? product.quantity : 0;
         throw new BadRequestException(
-          `Insufficient quantity for product ${productId}. Available: ${currentQuantity}, required: ${quantityToReserve}`
+          `Insufficient quantity for product "${product.name ?? productId}". Available: ${currentQuantity}, required: ${quantityToReserve}`
         );
       }
 
