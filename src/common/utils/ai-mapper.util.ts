@@ -1,8 +1,19 @@
 import { Logger } from '@nestjs/common';
+import OpenAI from 'openai';
 
 const logger = new Logger('AiMapper');
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
+
+// Initialize OpenAI client with Groq's base URL
+function getGroqClient(): OpenAI | undefined {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return undefined;
+
+  return new OpenAI({
+    apiKey,
+    baseURL: 'https://api.groq.com/openai/v1',
+  });
+}
 
 export async function mapColumnsUsingAi(
   records: Record<string, unknown>[],
@@ -25,8 +36,8 @@ export async function mapColumnsUsingAi(
     return records;
   }
 
-  const apiKey = process.env.GROQ_API_KEY ?? process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
+  const client = getGroqClient();
+  if (!client) {
     logger.warn('GROQ_API_KEY is not set. Skipping AI column mapping.');
     return records;
   }
@@ -43,28 +54,14 @@ Respond strictly with ONLY a valid JSON object. Every key should be an actual co
 Return exclusively the JSON map without markdown formatting or other text.
     `;
 
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      }),
+    const res = await client.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
     });
 
-    if (!response.ok) {
-      throw new Error(`Groq API error: ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = data.choices?.[0]?.message?.content;
+    const content = res.choices[0]?.message?.content;
 
     let mapping: Record<string, string> = {};
     if (typeof content === 'string') {

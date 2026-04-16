@@ -1,0 +1,171 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { Logger } from '@nestjs/common';
+import { ChatService } from './chat.service';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+
+interface ChatMessage {
+  query: string;
+  businessId?: string;
+  history?: Array<{ role: string; content: string }>;
+  messageId?: string; // Client-generated ID for tracking
+}
+
+interface AuthenticatedSocket extends Socket {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+  };
+}
+
+@WebSocketGateway({
+  namespace: 'chat',
+  cors: {
+    origin: '*',
+    credentials: true,
+  },
+  transports: ['websocket', 'polling'], // Prefer websocket for speed
+  pingInterval: 10_000,
+  pingTimeout: 5000,
+})
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer()
+  server!: Server;
+
+  private readonly logger = new Logger(ChatGateway.name);
+
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService
+  ) {}
+
+  handleConnection(client: AuthenticatedSocket) {
+    try {
+      const token =
+        (client.handshake.auth.token as string | undefined) ??
+        (client.handshake.query.token as string | undefined);
+
+      if (!token || typeof token !== 'string') {
+        this.logger.warn('Client connected without token');
+        client.disconnect(true);
+        return;
+      }
+
+      const secret = this.configService.get<string>('JWT_SECRET');
+      if (!secret) {
+        this.logger.error('JWT_SECRET not configured');
+        client.disconnect(true);
+        return;
+      }
+
+      const payload = this.jwtService.verify<{
+        sub: string;
+        email: string;
+        role: string;
+      }>(token, { secret });
+      client.user = {
+        id: payload.sub,
+        email: payload.email,
+        role: payload.role,
+      };
+
+      this.logger.debug(`Client connected: ${client.user.id}`);
+      client.emit('connected', { status: 'connected', userId: client.user.id });
+    } catch {
+      this.logger.warn('Authentication failed, disconnecting client');
+      client.disconnect(true);
+    }
+  }
+
+  handleDisconnect(client: AuthenticatedSocket) {
+    this.logger.debug(`Client disconnected: ${client.user?.id ?? 'unknown'}`);
+  }
+
+  @SubscribeMessage('chat_message')
+  async handleChatMessage(
+    @MessageBody() data: ChatMessage,
+    @ConnectedSocket() client: AuthenticatedSocket
+  ): Promise<void> {
+    if (!client.user) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
+    const { query, businessId, history = [], messageId } = data;
+
+    if (!query || typeof query !== 'string') {
+      client.emit('error', { message: 'Query is required', messageId });
+      return;
+    }
+
+    const startTime = Date.now();
+
+    // Send start event immediately
+    client.emit('message_start', {
+      messageId,
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      // Use volatile emit for chunks to prioritize speed over guaranteed delivery
+      // This prevents buffering if client is slow to receive
+      await this.chatService.streamAiResponse(
+        client.user.id,
+        query,
+        businessId ?? undefined,
+        client.user.email,
+        history,
+        {
+          onChunk: (chunk: string) => {
+            // Use volatile for real-time chunks - drops if client can't keep up
+            client.volatile.emit('message_chunk', {
+              messageId,
+              chunk,
+            });
+          },
+          onComplete: (fullResponse: string) => {
+            const duration = Date.now() - startTime;
+            this.logger.debug(
+              `Response completed in ${duration}ms for user ${client.user?.id}`
+            );
+
+            client.emit('message_complete', {
+              messageId,
+              response: fullResponse,
+              duration,
+              timestamp: new Date().toISOString(),
+            });
+          },
+          onError: (error: Error) => {
+            this.logger.error('Streaming error:', error.message);
+            client.emit('message_error', {
+              messageId,
+              message: error.message || 'An error occurred',
+            });
+          },
+        }
+      );
+    } catch (error) {
+      this.logger.error('Chat error:', error);
+      const message =
+        error instanceof Error ? error.message : 'An error occurred';
+      client.emit('message_error', { messageId, message });
+    }
+  }
+
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: Socket): void {
+    client.emit('pong', { timestamp: Date.now() });
+  }
+}

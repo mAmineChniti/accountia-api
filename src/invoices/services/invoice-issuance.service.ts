@@ -248,14 +248,24 @@ export class InvoiceIssuanceService {
     businessId: string,
     databaseName: string
   ): Promise<string> {
-    if (ObjectId.isValid(productIdOrName)) {
-      return productIdOrName;
-    }
-
-    // Treat as product name — look up by exact name (case-insensitive)
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
     const productsCollection = tenantDb.collection('products');
     const businessObjectId = new ObjectId(businessId);
+
+    // If it looks like an ObjectId, verify it actually exists in the database
+    if (ObjectId.isValid(productIdOrName)) {
+      const objectId = new ObjectId(productIdOrName);
+      const productById = await productsCollection.findOne({
+        _id: objectId,
+        $or: [{ businessId: businessObjectId }, { businessId }],
+      });
+      if (productById) {
+        return productById._id.toString();
+      }
+      // If not found by ID, continue to name-based lookup (product name might be 24-char hex)
+    }
+
+    // Treat as product name — look up by exact name (case-insensitive)
 
     const product = await productsCollection.findOne({
       name: {
