@@ -905,7 +905,7 @@ export class AuthService {
     user.emailTokenGeneratedAt = emailTokenGeneratedAt;
     await user.save();
 
-    void this.emailService
+    await this.emailService
       .sendConfirmationEmail(user.email, newEmailToken)
       .catch((error) => {
         this.logger.error('Failed to send confirmation email', error);
@@ -1120,7 +1120,7 @@ export class AuthService {
       }
 
       if (updateData.email && updateData.emailToken) {
-        void this.emailService
+        await this.emailService
           .sendConfirmationEmail(updateData.email, updateData.emailToken)
           .catch((error) => {
             this.logger.error('Failed to send confirmation email', error);
