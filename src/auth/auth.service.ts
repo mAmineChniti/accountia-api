@@ -897,6 +897,9 @@ export class AuthService {
       );
     }
 
+    // Record attempt immediately after check passes (reduces race condition window)
+    this.rateLimitingService.recordEmailAttempt(user._id.toString());
+
     const newEmailToken = this.generateEmailToken();
     const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
     const emailTokenGeneratedAt = new Date();
@@ -907,8 +910,6 @@ export class AuthService {
 
     try {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
-      // Only record attempt after successful email send
-      this.rateLimitingService.recordEmailAttempt(user._id.toString());
       return { message: 'Confirmation email sent successfully' };
     } catch (error) {
       this.logger.error('Failed to send confirmation email', error);
@@ -1112,6 +1113,21 @@ export class AuthService {
       throw new BadRequestException('No update fields provided');
     }
 
+    // If email is being updated, send confirmation email BEFORE persisting changes
+    if (updateData.email && updateData.emailToken) {
+      try {
+        await this.emailService.sendConfirmationEmail(
+          updateData.email,
+          updateData.emailToken
+        );
+      } catch (error) {
+        this.logger.error('Failed to send confirmation email', error);
+        throw new InternalServerErrorException(
+          'Failed to send confirmation email. Email change was not saved. Please try again later.'
+        );
+      }
+    }
+
     try {
       const updatedUser = await this.userModel.findByIdAndUpdate(
         userId,
@@ -1121,20 +1137,6 @@ export class AuthService {
 
       if (!updatedUser) {
         throw new BadRequestException('Failed to update user');
-      }
-
-      if (updateData.email && updateData.emailToken) {
-        try {
-          await this.emailService.sendConfirmationEmail(
-            updateData.email,
-            updateData.emailToken
-          );
-        } catch (error) {
-          this.logger.error('Failed to send confirmation email', error);
-          throw new InternalServerErrorException(
-            'Profile updated but failed to send confirmation email. Please request a new confirmation email.'
-          );
-        }
       }
 
       const publicUser: PrivateUserDto = {

@@ -101,16 +101,21 @@ export class EmailService {
         .replaceAll('{{.ConfirmationLink}}', confirmationLink)
         .replaceAll('{{.Year}}', new Date().getFullYear().toString());
 
-      await this.sendEmail({
+      const result = await this.sendEmail({
         to: email,
         subject: 'Confirm Your Accountia Account',
         html,
         text: `Please confirm your Accountia account by visiting: ${confirmationLink}`,
         type: EmailType.SYSTEM,
       });
+
+      if (!result.success) {
+        throw new Error(result.error ?? 'Failed to send confirmation email');
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Confirmation email failed: ${msg}`);
+      throw error; // Rethrow so callers can handle delivery failures
     }
   }
 
@@ -463,54 +468,23 @@ export class EmailService {
     currency: string
   ): Promise<void> {
     try {
+      const templatePath = path.join(
+        process.cwd(),
+        'src/email/templates/invoice_sent_confirmation.html'
+      );
+      let html = await readFile(templatePath, 'utf8');
+
       const year = new Date().getFullYear().toString();
-      const html = `
-      <!doctype html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <title>Invoice Sent Confirmation</title>
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1a1a2e; background-color: #f0f2f5; padding: 40px 20px; }
-          .wrapper { max-width: 600px; margin: 0 auto; }
-          .brand { text-align: center; margin-bottom: 24px; }
-          .brand-name { font-size: 26px; font-weight: 700; color: #8B0000; }
-          .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; }
-          .header-bar { background: #16a34a; padding: 32px 40px; text-align: center; }
-          .header-bar h1 { color: #fff; font-size: 22px; font-weight: 600; }
-          .body { padding: 40px; }
-          .body p { font-size: 15px; color: #374151; margin-bottom: 16px; }
-          .info-box { background: #f0fdf4; border-left: 4px solid #16a34a; border-radius: 0 8px 8px 0; padding: 20px 24px; margin: 24px 0; }
-          .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-          .info-label { color: #64748b; font-size: 13px; text-transform: uppercase; font-weight: 600; }
-          .info-value { color: #1e293b; font-weight: 600; font-size: 15px; }
-          .footer { text-align: center; padding: 24px 40px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8; }
-        </style>
-      </head>
-      <body>
-        <div class="wrapper">
-          <div class="brand"><span class="brand-name">Accountia</span></div>
-          <div class="container">
-            <div class="header-bar"><h1>✓ Invoice Sent Successfully</h1></div>
-            <div class="body">
-              <p>Your invoice has been successfully sent to your client. Here's a summary:</p>
-              <div class="info-box">
-                <div class="info-row"><span class="info-label">Invoice</span><span class="info-value">${EmailService.escapeHtml(invoiceNumber)}</span></div>
-                <div class="info-row"><span class="info-label">Client</span><span class="info-value">${EmailService.escapeHtml(clientName)}</span></div>
-                <div class="info-row"><span class="info-label">Email</span><span class="info-value">${EmailService.escapeHtml(clientEmail)}</span></div>
-                <div class="info-row"><span class="info-label">Amount</span><span class="info-value" style="color:#16a34a;font-size:18px;">${amount.toFixed(2)} ${currency}</span></div>
-              </div>
-              <p style="font-size:13px;color:#6b7280;">The client will receive an email with the invoice details and a link to view it on their dashboard.</p>
-            </div>
-            <div class="footer">
-              <p>&copy; ${year} Accountia. All rights reserved.</p>
-              <p>This is an automated confirmation &mdash; please do not reply.</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>`;
+      html = html
+        .replaceAll(
+          '{{.InvoiceNumber}}',
+          EmailService.escapeHtml(invoiceNumber)
+        )
+        .replaceAll('{{.ClientName}}', EmailService.escapeHtml(clientName))
+        .replaceAll('{{.ClientEmail}}', EmailService.escapeHtml(clientEmail))
+        .replaceAll('{{.Amount}}', amount.toFixed(2))
+        .replaceAll('{{.Currency}}', EmailService.escapeHtml(currency))
+        .replaceAll('{{.Year}}', year);
 
       await this.sendEmail({
         to,
@@ -520,7 +494,10 @@ export class EmailService {
         type: EmailType.SYSTEM,
       });
     } catch (error) {
-      this.logger.error('Failed to send BO confirmation email:', error);
+      this.logger.error(
+        'Failed to send invoice sent confirmation email:',
+        error
+      );
     }
   }
 

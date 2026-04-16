@@ -239,7 +239,7 @@ export class InvoicePaymentService {
     const createCheckoutSession = async (
       currency: string,
       amount: number,
-      _metadata: Record<string, string>
+      metadata: Record<string, string>
     ) => {
       const requestOptions = undefined; // Quick override to bypass connect onboarding issues during testing
       const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
@@ -257,6 +257,7 @@ export class InvoicePaymentService {
                 payment_method_types: ['card'],
               }),
           customer_email: user.email,
+          metadata,
           line_items: [
             {
               quantity: 1,

@@ -252,26 +252,26 @@ export class ChatService {
       { role: 'user', content: safeQuery },
     ];
 
+    // Create AbortController for request-level timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
     try {
-      const stream = await this.client.chat.completions.create({
-        model: GROQ_MODEL,
-        messages,
-        max_tokens: this.maxCompletionTokens,
-        temperature: 0.7,
-        top_p: 0.95,
-        stream: true,
-      });
+      const stream = await this.client.chat.completions.create(
+        {
+          model: GROQ_MODEL,
+          messages,
+          max_tokens: this.maxCompletionTokens,
+          temperature: 0.7,
+          top_p: 0.95,
+          stream: true,
+        },
+        { signal: controller.signal }
+      );
 
       let fullContent = '';
-      const timeoutMs = this.timeoutMs;
-      const startTime = Date.now();
 
       for await (const chunk of stream) {
-        // Check timeout
-        if (Date.now() - startTime > timeoutMs) {
-          throw new Error(`Streaming timed out after ${timeoutMs}ms`);
-        }
-
         const content = chunk.choices[0]?.delta?.content;
         if (content) {
           fullContent += content;
@@ -291,6 +291,8 @@ export class ChatService {
       this.logger.error(`Groq streaming request failed: ${message}`);
       if (error instanceof Error) throw error;
       throw new Error(message);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -523,8 +525,18 @@ export class ChatService {
       (r) => r.invoiceStatus === InvoiceStatus.PAID
     ).length;
 
+    // Get upcoming due invoices (next 14 days, not paid)
+    const now = new Date();
+    const fourteenDaysFromNow = new Date(
+      now.getTime() + 14 * 24 * 60 * 60 * 1000
+    );
+
     const overdueInvoices = receipts.filter(
-      (r) => r.invoiceStatus === InvoiceStatus.OVERDUE
+      (r) =>
+        r.invoiceStatus === InvoiceStatus.OVERDUE ||
+        ((r.invoiceStatus === InvoiceStatus.ISSUED ||
+          r.invoiceStatus === InvoiceStatus.PARTIAL) &&
+          new Date(r.dueDate) < now)
     ).length;
 
     // Calculate amounts
@@ -551,11 +563,6 @@ export class ChatService {
       dueDate: r.dueDate,
     }));
 
-    // Get upcoming due invoices (next 14 days, not paid)
-    const now = new Date();
-    const fourteenDaysFromNow = new Date(
-      now.getTime() + 14 * 24 * 60 * 60 * 1000
-    );
     const upcomingInvoices = receipts
       .filter(
         (r) =>
