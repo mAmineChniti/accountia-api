@@ -28,13 +28,28 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
+// Allowed origins for CORS (configure via FRONTEND_URL env var)
+const getAllowedOrigins = (): string[] => {
+  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+  return [frontendUrl, 'http://localhost:3000', 'http://localhost:3001'];
+};
+
 @WebSocketGateway({
   namespace: 'chat',
   cors: {
-    origin: '*',
+    origin: (origin, callback) => {
+      const allowed = getAllowedOrigins();
+      // Allow requests with no origin (e.g., mobile apps, Postman)
+      if (!origin || allowed.includes(origin)) {
+        // eslint-disable-next-line unicorn/no-null -- Socket.IO CORS callback type requires null
+        callback(null, true);
+      } else {
+        callback(new Error('Origin not allowed by CORS'), false);
+      }
+    },
     credentials: true,
   },
-  transports: ['websocket', 'polling'], // Prefer websocket for speed
+  transports: ['websocket', 'polling'],
   pingInterval: 10_000,
   pingTimeout: 5000,
 })
@@ -52,9 +67,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleConnection(client: AuthenticatedSocket) {
     try {
-      const token =
-        (client.handshake.auth.token as string | undefined) ??
-        (client.handshake.query.token as string | undefined);
+      // Only accept token from auth (not query) to prevent JWT logging in URLs
+      const token = client.handshake.auth.token as string | undefined;
 
       if (!token || typeof token !== 'string') {
         this.logger.warn('Client connected without token');
@@ -98,14 +112,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthenticatedSocket
   ): Promise<void> {
     if (!client.user) {
-      client.emit('error', { message: 'Not authenticated' });
+      client.emit('message_error', {
+        messageId: data.messageId,
+        message: 'Not authenticated',
+      });
       return;
     }
 
     const { query, businessId, history = [], messageId } = data;
 
     if (!query || typeof query !== 'string') {
-      client.emit('error', { message: 'Query is required', messageId });
+      client.emit('message_error', { messageId, message: 'Query is required' });
       return;
     }
 

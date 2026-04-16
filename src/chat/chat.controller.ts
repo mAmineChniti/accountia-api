@@ -20,30 +20,33 @@ export class ChatController {
   @ApiOperation({
     summary: 'Chat WebSocket status',
     description:
-      'Returns WebSocket endpoint info. Connect to ws://host/chat with JWT token for real-time streaming chat.',
+      'Returns Socket.IO connection info. Use the Socket.IO client library to connect with JWT token in auth.token.',
   })
   @ApiResponse({
     status: 200,
-    description: 'WebSocket endpoint info',
+    description: 'Socket.IO endpoint info',
     schema: {
       properties: {
-        websocket: { type: 'string' },
+        path: { type: 'string' },
         namespace: { type: 'string' },
+        transport: { type: 'string' },
         events: { type: 'object' },
       },
     },
   })
   getStatus(): {
-    websocket: string;
+    path: string;
     namespace: string;
+    transport: string;
     events: Record<string, string>;
   } {
     return {
-      websocket: 'ws://host/chat',
+      path: '/socket.io/',
       namespace: '/chat',
+      transport: 'websocket,polling',
       events: {
-        connect: 'Send JWT token in auth.token or query.token',
-        chat_message: 'Send: { query, businessId?, history?[] }',
+        connect: 'Send JWT token in auth.token (Socket.IO handshake)',
+        chat_message: 'Send: { query, businessId?, history?[], messageId? }',
         message_start: 'Streaming started',
         message_chunk: 'Response text chunk (streamed from Groq)',
         message_complete: 'Full response received',

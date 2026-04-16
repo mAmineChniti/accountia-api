@@ -54,46 +54,66 @@ Respond strictly with ONLY a valid JSON object. Every key should be an actual co
 Return exclusively the JSON map without markdown formatting or other text.
     `;
 
-    const res = await client.chat.completions.create({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-    });
+    // Create AbortController for timeout (30 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
-    const content = res.choices[0]?.message?.content;
-
-    let mapping: Record<string, string> = {};
-    if (typeof content === 'string') {
-      const match = /{[\S\s]*}/.exec(content);
-      if (match) {
-        mapping = JSON.parse(match[0]) as Record<string, string>;
-      }
-    }
-
-    if (Object.keys(mapping).length > 0) {
-      logger.log(
-        `Successfully mapped columns using AI: ${JSON.stringify(mapping)}`
+    try {
+      const res = await client.chat.completions.create(
+        {
+          model: GROQ_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+        },
+        { signal: controller.signal }
       );
 
-      // Remap records
-      return records.map((record) => {
-        const newRecord: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(record)) {
-          const mappedKey = mapping[key];
-          if (mappedKey && expectedColumns.includes(mappedKey)) {
-            newRecord[mappedKey] = value;
-          } else {
-            // Retain original if not mapped to a known expected column
-            newRecord[key] = value;
-          }
-        }
-        return newRecord;
-      });
-    }
-  } catch (error) {
-    logger.error('Failed to map columns using AI', error);
-  }
+      clearTimeout(timeoutId);
 
-  return records;
+      const content = res.choices[0]?.message?.content;
+
+      let mapping: Record<string, string> = {};
+      if (typeof content === 'string') {
+        const match = /{[\S\s]*}/.exec(content);
+        if (match) {
+          mapping = JSON.parse(match[0]) as Record<string, string>;
+        }
+      }
+
+      if (Object.keys(mapping).length > 0) {
+        logger.log(
+          `Successfully mapped columns using AI: ${JSON.stringify(mapping)}`
+        );
+
+        // Remap records
+        return records.map((record) => {
+          const newRecord: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(record)) {
+            const mappedKey = mapping[key];
+            if (mappedKey && expectedColumns.includes(mappedKey)) {
+              newRecord[mappedKey] = value;
+            } else {
+              // Retain original if not mapped to a known expected column
+              newRecord[key] = value;
+            }
+          }
+          return newRecord;
+        });
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.error('AI column mapping timed out after 30 seconds');
+      } else {
+        logger.error('Failed to map columns using AI', error);
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    return records;
+  } catch (error) {
+    logger.error('Unexpected error in AI column mapping', error);
+    return records;
+  }
 }
