@@ -29,17 +29,20 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
-// Allowed origins for CORS (configure via FRONTEND_URL env var)
-const getAllowedOrigins = (): string[] => {
-  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-  return [frontendUrl, 'http://localhost:3000', 'http://localhost:3001'];
-};
-
 @WebSocketGateway({
   namespace: 'chat',
   cors: {
     origin: (origin, callback) => {
-      const allowed = getAllowedOrigins();
+      // Get origins from ConfigService at runtime for validated config
+      // Supports comma-separated FRONTEND_URLS for multiple production origins
+      const frontendUrls =
+        process.env.FRONTEND_URLS ??
+        process.env.FRONTEND_URL ??
+        'http://localhost:3000';
+      const allowed = frontendUrls.split(',').map((url) => url.trim());
+      // Always allow localhost for development
+      allowed.push('http://localhost:3000', 'http://localhost:3001');
+
       // Allow requests with no origin (e.g., mobile apps, Postman)
       if (!origin || allowed.includes(origin)) {
         // eslint-disable-next-line unicorn/no-null -- Socket.IO CORS callback type requires null

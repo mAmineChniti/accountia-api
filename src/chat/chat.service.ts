@@ -656,54 +656,18 @@ export class ChatService {
       `- Overdue Invoices: ${context.overdueInvoices}`,
     ];
 
-    // Group amounts by currency from recentInvoices
-    const currencyGroups = new Map<
-      string,
-      { due: number; paid: number; upcoming: number }
-    >();
-    for (const inv of context.recentInvoices) {
-      const currency = inv.currency || 'TND';
-      if (!currencyGroups.has(currency)) {
-        currencyGroups.set(currency, { due: 0, paid: 0, upcoming: 0 });
-      }
-      const group = currencyGroups.get(currency)!;
-      if (
-        inv.status === InvoiceStatus.ISSUED ||
-        inv.status === InvoiceStatus.PARTIAL ||
-        inv.status === InvoiceStatus.OVERDUE
-      ) {
-        group.due += inv.totalAmount || 0;
-      }
-      if (inv.status === InvoiceStatus.PAID) {
-        group.paid += inv.totalAmount || 0;
-      }
+    // Use overall totals from context (computed from all receipts, not capped sample)
+    // Note: Per-currency totals would require additional precomputation in fetchIndividualContext
+    if (context.totalAmountDue > 0) {
+      parts.push(`- Total Amount Due: ${context.totalAmountDue.toFixed(2)}`);
     }
-    for (const inv of context.upcomingInvoices) {
-      const currency = inv.currency || 'TND';
-      if (!currencyGroups.has(currency)) {
-        currencyGroups.set(currency, { due: 0, paid: 0, upcoming: 0 });
-      }
-      const group = currencyGroups.get(currency)!;
-      group.upcoming += inv.totalAmount || 0;
+    if (context.totalAmountPaid > 0) {
+      parts.push(`- Total Amount Paid: ${context.totalAmountPaid.toFixed(2)}`);
     }
-
-    // Output amounts by currency
-    for (const [currency, amounts] of currencyGroups) {
-      if (amounts.due > 0) {
-        parts.push(
-          `- Total Amount Due (${currency}): ${amounts.due.toFixed(2)}`
-        );
-      }
-      if (amounts.paid > 0) {
-        parts.push(
-          `- Total Amount Paid (${currency}): ${amounts.paid.toFixed(2)}`
-        );
-      }
-      if (amounts.upcoming > 0) {
-        parts.push(
-          `- Due in Next 14 Days (${currency}): ${amounts.upcoming.toFixed(2)}`
-        );
-      }
+    if (context.upcomingDueAmount > 0) {
+      parts.push(
+        `- Due in Next 14 Days: ${context.upcomingDueAmount.toFixed(2)}`
+      );
     }
 
     if (context.recentInvoices.length > 0) {
@@ -936,5 +900,23 @@ ABSOLUTE RULES:
 
       callbacks.onError(new Error(message));
     }
+  }
+
+  /**
+   * Invalidate business context cache
+   * Call this when invoice/payment data changes for a business
+   */
+  invalidateBusinessContext(businessId: string): void {
+    void this.cacheService.del(`chat:business_context:${businessId}`);
+    this.logger.debug(`Invalidated business context cache for ${businessId}`);
+  }
+
+  /**
+   * Invalidate individual context cache
+   * Call this when receipt/payment data changes for a user
+   */
+  invalidateIndividualContext(userId: string): void {
+    void this.cacheService.del(`chat:individual_context:${userId}`);
+    this.logger.debug(`Invalidated individual context cache for ${userId}`);
   }
 }
