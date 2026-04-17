@@ -337,7 +337,8 @@ export class ChatService {
     const cached = await this.cacheService.get<BusinessContext>(cacheKey);
     if (cached) {
       this.logger.debug(`Business context cache hit for ${businessId}`);
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     // Fetch business details
@@ -528,7 +529,8 @@ export class ChatService {
     const cached = await this.cacheService.get<IndividualContext>(cacheKey);
     if (cached) {
       this.logger.debug(`Individual context cache hit for ${userId}`);
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     // Normalize email for matching

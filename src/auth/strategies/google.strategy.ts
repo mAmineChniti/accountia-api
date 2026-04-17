@@ -20,6 +20,14 @@ export type GoogleAuthUser = {
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(private readonly configService: ConfigService) {
+    // Handle insecure TLS for local testing with self-signed certs
+    const allowInsecureTls = configService.get<string>(
+      'GOOGLE_OAUTH_ALLOW_INSECURE_TLS'
+    );
+    if (allowInsecureTls === 'true') {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    }
+
     const clientID = configService.get<string>('GOOGLE_CLIENT_ID');
     const clientSecret = configService.get<string>('GOOGLE_CLIENT_SECRET');
     const callbackURL = configService.get<string>('GOOGLE_CALLBACK_URL');

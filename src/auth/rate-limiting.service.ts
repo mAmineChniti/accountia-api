@@ -20,31 +20,31 @@ export class RateLimitingService {
     const key = `rate_limit:login:${ip}:${identifier}`;
     const now = Date.now();
 
-    // Get all attempts within the window
+    // Get all attempts
     const attempts = await this.redis.lrange(key, 0, -1);
-    const windowStart = now - this.loginWindowSeconds * 1000;
+    if (attempts.length === 0) {
+      return { allowed: true };
+    }
 
-    // Filter to recent attempts and parse timestamps
-    const recentAttempts = attempts
-      .map((ts) => Number.parseInt(ts, 10))
-      .filter((ts) => ts > windowStart);
+    const allTimestamps = attempts.map((ts) => Number.parseInt(ts, 10));
+    const lastAttempt = Math.max(...allTimestamps);
+    const blockedUntil = lastAttempt + this.blockDurationSeconds * 1000;
 
-    if (recentAttempts.length >= this.maxLoginAttempts) {
-      const lastAttempt = Math.max(...recentAttempts);
-      const blockedUntil = lastAttempt + this.blockDurationSeconds * 1000;
+    // Check if still within block duration from last attempt
+    if (now < blockedUntil) {
+      const windowStart = now - this.loginWindowSeconds * 1000;
+      const recentAttempts = allTimestamps.filter((ts) => ts > windowStart);
 
-      if (now < blockedUntil) {
+      if (recentAttempts.length >= this.maxLoginAttempts) {
         return {
           allowed: false,
           blockedUntil: new Date(blockedUntil),
         };
       }
-
-      // Block expired, clear the list
-      await this.redis.del(key);
-      return { allowed: true };
     }
 
+    // Block expired, clear the list
+    await this.redis.del(key);
     return { allowed: true };
   }
 
@@ -52,13 +52,13 @@ export class RateLimitingService {
     const key = `rate_limit:login:${ip}:${identifier}`;
     const now = Date.now();
 
-    // Add new attempt and trim old ones
-    await this.redis.lpush(key, now.toString());
-    await this.redis.ltrim(key, 0, this.maxLoginAttempts - 1);
-    await this.redis.expire(
-      key,
-      this.loginWindowSeconds + this.blockDurationSeconds
-    );
+    // Use pipeline for atomic batch operation
+    await this.redis
+      .pipeline()
+      .lpush(key, now.toString())
+      .ltrim(key, 0, this.maxLoginAttempts - 1)
+      .expire(key, this.loginWindowSeconds + this.blockDurationSeconds)
+      .exec();
   }
 
   async clearLoginAttempts(identifier: string, ip: string): Promise<void> {
@@ -134,9 +134,10 @@ export class RateLimitingService {
       if (attempts.count === 0) {
         await this.redis.del(key);
       } else {
-        // Preserve TTL
+        // Preserve TTL, but if key has no TTL or doesn't exist, use default window
         const ttl = await this.redis.ttl(key);
-        await this.redis.setex(key, Math.max(ttl, 1), JSON.stringify(attempts));
+        const effectiveTtl = ttl > 0 ? ttl : this.emailWindowSeconds;
+        await this.redis.setex(key, effectiveTtl, JSON.stringify(attempts));
       }
     }
   }
@@ -163,8 +164,12 @@ export class RateLimitingService {
     const key = `rate_limit:oauth:${ip}`;
     const now = Date.now();
 
-    await this.redis.lpush(key, now.toString());
-    await this.redis.ltrim(key, 0, this.maxOAuthStateRequests - 1);
-    await this.redis.expire(key, this.oauthStateWindowSeconds);
+    // Use pipeline for atomic batch operation
+    await this.redis
+      .pipeline()
+      .lpush(key, now.toString())
+      .ltrim(key, 0, this.maxOAuthStateRequests - 1)
+      .expire(key, this.oauthStateWindowSeconds)
+      .exec();
   }
 }

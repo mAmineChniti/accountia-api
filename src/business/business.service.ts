@@ -1045,7 +1045,8 @@ export class BusinessService {
     const cached =
       await this.cacheService.get<BusinessStatisticsResponseDto>(cacheKey);
     if (cached) {
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     const business = await this.businessModel.findById(businessId);

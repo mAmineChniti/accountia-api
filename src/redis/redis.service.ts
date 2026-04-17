@@ -10,9 +10,13 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async set(key: string, value: string, ttl?: number): Promise<void> {
-    await (ttl
-      ? this.redis.setex(key, ttl, value)
-      : this.redis.set(key, value));
+    if (ttl === undefined) {
+      await this.redis.set(key, value);
+    } else if (ttl > 0) {
+      await this.redis.setex(key, ttl, value);
+    } else {
+      throw new Error('TTL must be a positive integer or undefined');
+    }
   }
 
   async del(key: string): Promise<void> {
@@ -37,10 +41,30 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async getKeys(pattern: string): Promise<string[]> {
-    return this.redis.keys(pattern);
+    // Use SCAN instead of KEYS to avoid blocking Redis
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      keys.push(...result[1]);
+    } while (cursor !== '0');
+    return keys;
   }
 
-  async flushAll(): Promise<void> {
+  async flushAll(force = false): Promise<void> {
+    // Safety check: only allow in non-production or with explicit force flag
+    if (!force && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'flushAll is not allowed in production. Use force=true to override.'
+      );
+    }
     await this.redis.flushall();
   }
 
