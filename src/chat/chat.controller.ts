@@ -29,7 +29,7 @@ export class ChatController {
       properties: {
         path: { type: 'string' },
         namespace: { type: 'string' },
-        transport: { type: 'string' },
+        transport: { type: 'array', items: { type: 'string' } },
         events: { type: 'object' },
       },
     },
@@ -37,13 +37,13 @@ export class ChatController {
   getStatus(): {
     path: string;
     namespace: string;
-    transport: string;
+    transport: string[];
     events: Record<string, string>;
   } {
     return {
       path: '/socket.io/',
       namespace: '/chat',
-      transport: 'websocket,polling',
+      transport: ['websocket', 'polling'],
       events: {
         connect: 'Send JWT token in auth.token (Socket.IO handshake)',
         chat_message: 'Send: { query, businessId?, history?[], messageId? }',

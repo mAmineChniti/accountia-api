@@ -10,6 +10,7 @@ import {
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { Product } from '@/products/schemas/product.schema';
+import { CacheService } from '@/redis/cache.service';
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -43,12 +44,16 @@ const WINDOW_SIZE = 3;
 const MIN_DATA_POINTS = 6;
 const TRAINING_EPOCHS = 100;
 const LEARNING_RATE = 0.01;
+const CACHE_TTL_SECONDS = 3600; // 1 hour cache for predictions
 
 @Injectable()
 export class TensorflowPredictionService {
   private readonly logger = new Logger(TensorflowPredictionService.name);
 
-  constructor(@InjectConnection() private readonly connection: Connection) {}
+  constructor(
+    @InjectConnection() private readonly connection: Connection,
+    private readonly cacheService: CacheService
+  ) {}
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -58,12 +63,23 @@ export class TensorflowPredictionService {
    *
    * Historical data comes from actual DB records.
    * Predicted data extends the timeline into the future (never mixed).
+   * Results are cached for 1 hour to reduce computation overhead.
    */
   async forecastBusinessMetrics(
     businessId: string,
     databaseName: string,
     horizonMonths: number
   ): Promise<BusinessForecastResult> {
+    const cacheKey = `tf:forecast:${businessId}:${databaseName}:${horizonMonths}`;
+
+    // Try to get from cache first
+    const cached =
+      await this.cacheService.get<BusinessForecastResult>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Forecast cache hit for business ${businessId}`);
+      return cached;
+    }
+
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
 
     // ── 1. Fetch real invoices (ONLY PAID/PARTIAL = real revenue) ─────────────
@@ -135,7 +151,7 @@ export class TensorflowPredictionService {
       this.forecastMetric(unitsSoldMonthly, horizonMonths),
     ]);
 
-    return {
+    const result: BusinessForecastResult = {
       revenue: { historical: revenueMonthly, predicted: revenuePredicted },
       cogs: { historical: cogsMonthly, predicted: cogsPredicted },
       grossProfit: {
@@ -147,6 +163,12 @@ export class TensorflowPredictionService {
         predicted: salesVolumePredicted,
       },
     };
+
+    // Cache the result
+    await this.cacheService.set(cacheKey, result, CACHE_TTL_SECONDS);
+    this.logger.debug(`Forecast cached for business ${businessId}`);
+
+    return result;
   }
 
   // ─── Data Processing ────────────────────────────────────────────────────────

@@ -57,6 +57,7 @@ import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { Product } from '@/products/schemas/product.schema';
 import { ObjectId } from 'mongodb';
 import { TensorflowPredictionService } from '@/business/services/tensorflow-prediction.service';
+import { CacheService } from '@/redis/cache.service';
 
 const toNumberOrZero = (value: unknown): number =>
   typeof value === 'number' ? value : 0;
@@ -112,7 +113,8 @@ export class BusinessService {
     private auditEmitter: AuditEmitter,
     private notificationsService: NotificationsService,
     private tensorflowPredictionService: TensorflowPredictionService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly cacheService: CacheService
   ) {
     const stripeSecretKey = (
       this.configService.get<string>('STRIPE_SECRET_KEY') ??
@@ -1038,6 +1040,14 @@ export class BusinessService {
   ): Promise<BusinessStatisticsResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole, false);
 
+    // Check cache first (cache for 5 minutes)
+    const cacheKey = `business:statistics:${businessId}:${predictionHorizonDays}`;
+    const cached =
+      await this.cacheService.get<BusinessStatisticsResponseDto>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const business = await this.businessModel.findById(businessId);
     if (!business) {
       throw new NotFoundException('Business not found');
@@ -1330,7 +1340,7 @@ export class BusinessService {
     const periodStart = revenueMonthly[0]?.date ?? '';
     const periodEnd = revenueMonthly.at(-1)?.date ?? '';
 
-    return {
+    const result = {
       message: 'Business statistics retrieved successfully',
       businessId: business._id.toString(),
       period: { start: periodStart, end: periodEnd },
@@ -1367,6 +1377,10 @@ export class BusinessService {
         salesTrend,
       },
     };
+
+    // Cache for 5 minutes
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   async getClientPodium(

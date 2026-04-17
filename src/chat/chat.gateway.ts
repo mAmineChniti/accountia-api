@@ -12,6 +12,7 @@ import { Logger } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { WebSocketStateService } from '@/redis/websocket-state.service';
 
 interface ChatMessage {
   query: string;
@@ -62,7 +63,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly wsStateService: WebSocketStateService
   ) {}
 
   handleConnection(client: AuthenticatedSocket) {
@@ -104,6 +106,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: AuthenticatedSocket) {
     this.logger.debug(`Client disconnected: ${client.user?.id ?? 'unknown'}`);
+    // Remove connection from Redis
+    void this.wsStateService.recordDisconnection(client.id);
   }
 
   @SubscribeMessage('chat_message')
@@ -183,6 +187,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('ping')
   handlePing(@ConnectedSocket() client: Socket): void {
+    // Update last ping time in Redis to keep connection alive
+    void this.wsStateService.recordPing(client.id);
     client.emit('pong', { timestamp: Date.now() });
   }
 }
