@@ -55,6 +55,30 @@ export class CacheService {
   }
 
   /**
+   * Safe delete - fire and forget with error logging
+   * Use this when you don't want cache failures to affect the main operation
+   */
+  async delSafe(key: string): Promise<void> {
+    try {
+      await this.del(key);
+    } catch {
+      // Silently ignore cache errors - main operation should succeed
+    }
+  }
+
+  /**
+   * Safe pattern delete - fire and forget with error logging
+   * Use this when you don't want cache failures to affect the main operation
+   */
+  async delPatternSafe(pattern: string): Promise<void> {
+    try {
+      await this.delPattern(pattern);
+    } catch {
+      // Silently ignore cache errors - main operation should succeed
+    }
+  }
+
+  /**
    * Delete multiple keys by pattern using SCAN + UNLINK (non-blocking)
    */
   async delPattern(pattern: string): Promise<void> {
@@ -86,6 +110,7 @@ export class CacheService {
 
   /**
    * Get or set cache - executes factory function only if cache miss
+   * Note: undefined results from factory are not cached to avoid recomputation loops
    */
   async getOrSet<T>(
     key: string,
@@ -98,7 +123,10 @@ export class CacheService {
     }
 
     const data = await factory();
-    await this.set(key, data, ttlSeconds);
+    // Do not cache undefined values to prevent recomputation loops
+    if (data !== undefined) {
+      await this.set(key, data, ttlSeconds);
+    }
     return data;
   }
 

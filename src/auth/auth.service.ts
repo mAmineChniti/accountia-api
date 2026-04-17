@@ -1123,23 +1123,29 @@ export class AuthService {
       const originalEmail = user.email;
       const originalEmailConfirmed = user.emailConfirmed;
 
+      // Use MongoDB transaction for atomic email update
+      const session = await this.connection.startSession();
       try {
-        // Persist the email change and token atomically
-        const updatedUser = await this.userModel.findByIdAndUpdate(
-          userId,
-          {
-            email: updateData.email,
-            emailToken: updateData.emailToken,
-            emailConfirmed: false,
-          },
-          { returnDocument: 'after' }
-        );
+        const updatedUser = await session.withTransaction(async () => {
+          // Persist the email change and token atomically within transaction
+          const userResult = await this.userModel.findByIdAndUpdate(
+            userId,
+            {
+              email: updateData.email,
+              emailToken: updateData.emailToken,
+              emailConfirmed: false,
+            },
+            { returnDocument: 'after', session }
+          );
 
-        if (!updatedUser) {
-          throw new BadRequestException('Failed to update user email');
-        }
+          if (!userResult) {
+            throw new BadRequestException('Failed to update user email');
+          }
 
-        // Now send the confirmation email
+          return userResult;
+        });
+
+        // Send email outside transaction (non-transactional operation)
         try {
           await this.emailService.sendConfirmationEmail(
             updateData.email,
@@ -1162,23 +1168,46 @@ export class AuthService {
             'Failed to send confirmation email. Email change was reverted. Please try again later.'
           );
         }
+
+        // Remove email-related fields from updateData since we handled them
+        delete updateData.email;
+        delete updateData.emailToken;
+        delete updateData.emailConfirmed;
+
+        // If no other updates, return success
+        if (Object.keys(updateData).length === 0) {
+          const publicUser: PrivateUserDto = {
+            username: updatedUser.username,
+            email: updatedUser.email,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
+            birthdate: updatedUser.birthdate,
+            dateJoined: updatedUser.createdAt,
+            profilePicture: updatedUser.profilePicture,
+            emailConfirmed: updatedUser.emailConfirmed,
+            role: updatedUser.role,
+            twoFactorEnabled: updatedUser.twoFactorEnabled,
+          };
+
+          return {
+            message: 'Profile updated successfully',
+            user: publicUser,
+          };
+        }
       } catch (error) {
-        if (error instanceof InternalServerErrorException) {
+        if (error instanceof HttpException) {
           throw error;
         }
         this.logger.error('Failed to update user email', error);
         throw new InternalServerErrorException(
           'Failed to update email. Please try again later.'
         );
+      } finally {
+        await session.endSession();
       }
-
-      // Remove email-related fields from updateData since we handled them
-      delete updateData.email;
-      delete updateData.emailToken;
-      delete updateData.emailConfirmed;
     }
 
-    // Apply any remaining updates
+    // Apply any remaining updates (or all updates if no email change)
     if (Object.keys(updateData).length > 0) {
       try {
         const updatedUser = await this.userModel.findByIdAndUpdate(

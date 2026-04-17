@@ -476,6 +476,14 @@ export class BusinessService {
     Object.assign(business, updateBusinessDto);
     const updatedBusiness = await business.save();
 
+    // Invalidate cache after business update (fire-and-forget, non-blocking)
+    void this.cacheService.delPatternSafe(
+      `business:statistics:${businessId}:*`
+    );
+    void this.cacheService.delPatternSafe(
+      `tf:forecast:${businessId}:${business.databaseName}:*`
+    );
+
     return {
       message: 'Business updated successfully',
       business: {
@@ -746,6 +754,11 @@ export class BusinessService {
       );
     }
 
+    // Invalidate tenant context cache for the assigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${assignDto.userId}:${businessId}`
+    );
+
     return {
       message: 'User assigned to business successfully',
       businessUser: {
@@ -809,6 +822,11 @@ export class BusinessService {
         'Failed to sync tenant user unassignment'
       );
     }
+
+    // Invalidate tenant context cache for the unassigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${targetUserId}:${businessId}`
+    );
 
     return { message: 'User unassigned from business successfully' };
   }
@@ -983,6 +1001,9 @@ export class BusinessService {
     businessUser.role = changeRoleDto.role;
     const updatedBusinessUser = await businessUser.save();
 
+    // Invalidate tenant context cache for the role-changed user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
+
     return {
       message: 'Client role updated successfully',
       businessUser: {
@@ -1026,6 +1047,9 @@ export class BusinessService {
     if (result.deletedCount === 0) {
       throw new NotFoundException('User association not found');
     }
+
+    // Invalidate tenant context cache for the deleted user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
 
     return {
       message: 'User removed from business successfully',
