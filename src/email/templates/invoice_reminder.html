@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Payment Reminder - Accountia</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       * {
         box-sizing: border-box;
@@ -11,11 +15,18 @@
         padding: 0;
       }
       body {
-        font-family: 'Segoe UI', Arial, sans-serif;
+        font-family:
+          'Poppins',
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Arial,
+          sans-serif;
         line-height: 1.6;
-        color: #1a1a2e;
-        background-color: #f0f2f5;
+        color: #1f2937;
+        background-color: #fafaf9;
         padding: 40px 20px;
+        -webkit-font-smoothing: antialiased;
       }
       .wrapper {
         max-width: 600px;
@@ -26,19 +37,20 @@
         margin-bottom: 24px;
       }
       .brand-name {
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 700;
-        color: #8b0000;
-        letter-spacing: -0.5px;
+        color: #7c2d12;
+        letter-spacing: -0.02em;
+        font-family: 'Poppins', sans-serif;
       }
       .container {
         background-color: #ffffff;
-        border-radius: 12px;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
+        box-shadow: 1px 1px 16px -2px rgba(46, 16, 16, 0.12);
         overflow: hidden;
       }
       .header-bar {
-        background-color: #8b0000;
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
         padding: 32px 40px;
         text-align: center;
       }
@@ -46,46 +58,49 @@
         color: #ffffff;
         font-size: 22px;
         font-weight: 600;
-        letter-spacing: -0.3px;
+        letter-spacing: -0.01em;
+        font-family: 'Poppins', sans-serif;
       }
       .body {
         padding: 40px;
       }
       .body p {
         font-size: 15px;
-        color: #374151;
+        color: #4b5563;
         margin-bottom: 20px;
+        line-height: 1.7;
       }
       .invoice-box {
-        background-color: #fcf8f8;
-        border: 1px solid #fbdada;
+        background-color: #fef2f2;
+        border: 1px solid #fecaca;
         padding: 24px;
-        border-radius: 8px;
+        border-radius: 6px;
         margin-bottom: 32px;
       }
       .invoice-row {
         display: flex;
         justify-content: space-between;
-        margin-bottom: 8px;
+        margin-bottom: 12px;
       }
       .invoice-label {
-        color: #64748b;
+        color: #78716c;
         font-size: 13px;
         text-transform: uppercase;
         font-weight: 600;
+        letter-spacing: 0.02em;
       }
       .invoice-value {
-        color: #1e293b;
+        color: #1f2937;
         font-weight: 600;
         font-size: 15px;
       }
       .total-row {
-        border-top: 1px solid #fbdada;
+        border-top: 1px solid #fecaca;
         margin-top: 16px;
         padding-top: 12px;
       }
       .total-value {
-        color: #8b0000;
+        color: #dc2626;
         font-size: 20px;
         font-weight: 700;
       }
@@ -95,21 +110,22 @@
       }
       .button {
         display: inline-block;
-        background-color: #8b0000;
+        background: linear-gradient(135deg, #7c2d12 0%, #9a3412 100%);
         color: #ffffff !important;
         padding: 14px 36px;
         text-decoration: none;
-        border-radius: 8px;
+        border-radius: 6px;
         font-weight: 600;
         font-size: 15px;
-        letter-spacing: 0.2px;
+        box-shadow: 1px 1px 16px -2px rgba(46, 16, 16, 0.18);
+        font-family: 'Poppins', sans-serif;
       }
       .footer {
         text-align: center;
         padding: 24px 40px;
-        border-top: 1px solid #f1f5f9;
+        border-top: 1px solid #e7e5e4;
         font-size: 12px;
-        color: #94a3b8;
+        color: #78716c;
         line-height: 1.8;
       }
       .urgent-tag {
@@ -119,7 +135,7 @@
         padding: 2px 8px;
         border-radius: 4px;
         font-size: 10px;
-        font-weight: 800;
+        font-weight: 700;
         text-transform: uppercase;
         margin-bottom: 8px;
       }
@@ -130,16 +146,13 @@
       <div class="brand">
         <span class="brand-name">Accountia</span>
       </div>
-
       <div class="container">
         <div class="header-bar">
           <h1>{{.Title}}</h1>
         </div>
-
         <div class="body">
           <p>Hello {{.ClientName}},</p>
           <p>{{.Message}}</p>
-
           <div class="invoice-box">
             <div class="invoice-row">
               <span class="invoice-label">Invoice Number</span>
@@ -158,19 +171,16 @@
               <span class="invoice-value total-value">{{.Amount}}</span>
             </div>
           </div>
-
           <div class="cta-wrapper">
             <a href="{{.InvoicesUrl}}" class="button">{{.ButtonLabel}}</a>
           </div>
-
           <p>
             If you have already sent payment, please disregard this message. For
             any questions, please contact <strong>{{.BusinessName}}</strong>.
           </p>
         </div>
-
         <div class="footer">
-          <p>&copy; {{.Year}} Accountia Professional. All rights reserved.</p>
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
           <p>
             This is an automated reminder — please do not reply to this email.
           </p>

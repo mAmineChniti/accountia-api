@@ -12,6 +12,7 @@ import { ChatModule } from '@/chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
+import { RedisModule } from '@/redis/redis.module';
 
 @Module({
   imports: [
@@ -26,23 +27,23 @@ import { InvoicesModule } from '@/invoices/invoices.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
-        OPENROUTER_API_KEY: Joi.string().required(),
-        OPENROUTER_MODEL: Joi.string().default('google/gemini-2.5-flash'),
-        OPENROUTER_MAX_COMPLETION_TOKENS: Joi.number()
+        GROQ_API_KEY: Joi.string().required(),
+        GROQ_MAX_COMPLETION_TOKENS: Joi.number()
           .integer()
           .min(64)
           .max(16_000)
           .default(1200),
-        OPENROUTER_TIMEOUT_MS: Joi.number()
+        GROQ_TIMEOUT_MS: Joi.number()
           .integer()
           .min(1000)
           .max(120_000)
           .default(30_000),
-        STRIPE_SECRET_KEY: Joi.string().optional(),
-        STRIPE_WEBHOOK_SECRET: Joi.string().optional(),
-        STRIPE_FALLBACK_CURRENCY: Joi.string().optional(),
-        STRIPE_FX_RATES: Joi.string().optional(),
-        MOCK_INVOICE_PAYMENTS: Joi.boolean().optional(),
+        STRIPE_SECRET_KEY: Joi.string().required(),
+        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
+        STRIPE_FALLBACK_CURRENCY: Joi.string().required(),
+        STRIPE_FX_RATES: Joi.string().required(),
+        MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
+        REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
       }),
     }),
 
@@ -60,6 +61,7 @@ import { InvoicesModule } from '@/invoices/invoices.module';
     NotificationsModule,
     ChatModule,
     ProductsModule,
+    RedisModule,
     InvoicesModule,
   ],
   controllers: [],

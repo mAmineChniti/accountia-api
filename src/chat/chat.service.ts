@@ -6,11 +6,17 @@ import {
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
 import { Model, Connection } from 'mongoose';
+import OpenAI from 'openai';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { CacheService } from '@/redis/cache.service';
+
+// Groq API configuration - free tier, fast responses
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export interface AiResponse {
   response: string;
@@ -32,19 +38,46 @@ export interface BusinessContext {
   revenueGrowth?: number;
   averagePaymentDelay?: number;
   clientCount?: number;
+  topDebtors?: Array<{ name: string; overdueAmount: number }>;
+}
+
+export interface IndividualContext {
+  userId: string;
+  totalReceivedInvoices: number;
+  pendingInvoices: number;
+  paidInvoices: number;
+  overdueInvoices: number;
+  totalAmountDue: number;
+  totalAmountPaid: number;
+  upcomingDueAmount: number;
+  upcomingDueCount: number;
+  recentInvoices: Array<{
+    invoiceNumber: string;
+    issuerName: string;
+    totalAmount: number;
+    currency: string;
+    status: InvoiceStatus;
+    dueDate: Date;
+  }>;
+  upcomingInvoices: Array<{
+    invoiceNumber: string;
+    issuerName: string;
+    totalAmount: number;
+    currency: string;
+    dueDate: Date;
+    daysUntilDue: number;
+  }>;
 }
 
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private readonly openRouterApiKey?: string;
+  private readonly client: OpenAI | undefined;
   private readonly chatEnabled: boolean;
-  private readonly openRouterModel: string;
-  private readonly openRouterMaxCompletionTokens: number;
-  private readonly openRouterTimeoutMs: number;
+  private readonly maxCompletionTokens: number;
+  private readonly timeoutMs: number;
   private static readonly MAX_HISTORY_MESSAGES = 20;
   private static readonly MAX_MESSAGE_CHARS = 2000;
-  private openRouterClientPromise?: Promise<unknown>;
 
   constructor(
     @InjectModel(Business.name) private businessModel: Model<Business>,
@@ -52,136 +85,82 @@ export class ChatService {
     private businessUserModel: Model<BusinessUser>,
     @InjectModel(Invoice.name)
     private invoiceModel: Model<Invoice>,
-    @InjectConnection() private connection: Connection
+    @InjectModel(InvoiceReceipt.name)
+    private invoiceReceiptModel: Model<InvoiceReceipt>,
+    @InjectConnection() private connection: Connection,
+    private readonly cacheService: CacheService
   ) {
-    this.openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    this.openRouterModel =
-      process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
-    this.openRouterMaxCompletionTokens = this.resolveMaxCompletionTokens(
-      process.env.OPENROUTER_MAX_COMPLETION_TOKENS
+    const apiKey = process.env.GROQ_API_KEY;
+    this.chatEnabled = Boolean(apiKey);
+    this.maxCompletionTokens = this.resolveMaxCompletionTokens(
+      process.env.GROQ_MAX_COMPLETION_TOKENS
     );
-    this.openRouterTimeoutMs = this.resolveOpenRouterTimeoutMs(
-      process.env.OPENROUTER_TIMEOUT_MS
-    );
-    this.chatEnabled = Boolean(this.openRouterApiKey);
+    this.timeoutMs = this.resolveTimeoutMs(process.env.GROQ_TIMEOUT_MS);
 
     if (!this.chatEnabled) {
       this.logger.warn(
-        'OPENROUTER_API_KEY environment variable is not set. Chat service is disabled.'
+        'GROQ_API_KEY environment variable is not set. Chat service is disabled.'
       );
+      this.client = undefined;
       return;
     }
 
+    // Initialize OpenAI client with Groq's base URL
+    this.client = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+    });
+
     this.logger.log(
-      `ChatService initialized with OpenRouter model: ${this.openRouterModel} (maxCompletionTokens=${this.openRouterMaxCompletionTokens})`
+      `ChatService initialized with Groq model: ${GROQ_MODEL} (maxCompletionTokens=${this.maxCompletionTokens})`
     );
   }
 
   private resolveMaxCompletionTokens(rawValue?: string): number {
     const fallback = 1200;
-    if (!rawValue) {
-      return fallback;
-    }
-
+    if (!rawValue) return fallback;
     const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return fallback;
-    }
-
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.max(64, Math.min(Math.floor(parsed), 16_000));
   }
 
-  private resolveOpenRouterTimeoutMs(rawValue?: string): number {
+  private resolveTimeoutMs(rawValue?: string): number {
     const fallback = 30_000;
-    if (!rawValue) {
-      return fallback;
-    }
-
+    if (!rawValue) return fallback;
     const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return fallback;
-    }
-
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.max(1000, Math.min(Math.floor(parsed), 120_000));
   }
 
   private async withTimeout<T>(
     promise: Promise<T>,
-    timeoutMs: number,
     operationName: string
   ): Promise<T> {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
-        reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
+        reject(
+          new Error(`${operationName} timed out after ${this.timeoutMs}ms`)
+        );
+      }, this.timeoutMs);
     });
 
     try {
       return await Promise.race([promise, timeoutPromise]);
     } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
-  private async getOpenRouterClient(): Promise<{
-    chat: {
-      send(request: {
-        chatRequest: {
-          model: string;
-          messages: Array<{
-            role: 'system' | 'user' | 'assistant';
-            content: string;
-          }>;
-          maxCompletionTokens: number;
-          temperature: number;
-          stream: false;
-        };
-      }): Promise<{
-        choices?: Array<{ message?: { content?: unknown } }>;
-      }>;
-    };
-  }> {
-    this.openRouterClientPromise ??= import('@openrouter/sdk').then(
-      ({ OpenRouter }) =>
-        new OpenRouter({
-          apiKey: this.openRouterApiKey,
-          httpReferer: process.env.APP_URL,
-          appTitle: process.env.APP_NAME ?? 'accountia-api',
-        })
-    );
-
-    return this.openRouterClientPromise as Promise<{
-      chat: {
-        send(request: {
-          chatRequest: {
-            model: string;
-            messages: Array<{
-              role: 'system' | 'user' | 'assistant';
-              content: string;
-            }>;
-            maxCompletionTokens: number;
-            temperature: number;
-            stream: false;
-          };
-        }): Promise<{
-          choices?: Array<{ message?: { content?: unknown } }>;
-        }>;
-      };
-    }>;
-  }
-
-  private async generateWithOpenRouter(params: {
+  private async generateWithGroq(params: {
     systemPrompt: string;
     businessContext?: string;
     query: string;
     history: Array<{ role: string; content: string }>;
   }): Promise<string> {
-    if (!this.chatEnabled || !this.openRouterApiKey) {
-      throw new Error('OPENROUTER_API_KEY is not configured');
+    if (!this.chatEnabled || !this.client) {
+      throw new Error('GROQ_API_KEY is not configured');
     }
 
     const systemContent = params.businessContext
@@ -211,56 +190,112 @@ export class ChatService {
       { role: 'user', content: safeQuery },
     ];
 
-    const openRouterClient = await this.getOpenRouterClient();
-    let response: Awaited<ReturnType<(typeof openRouterClient.chat)['send']>>;
     try {
-      response = await this.withTimeout(
-        openRouterClient.chat.send({
-          chatRequest: {
-            model: this.openRouterModel,
-            messages,
-            maxCompletionTokens: this.openRouterMaxCompletionTokens,
-            temperature: 0.4,
-            stream: false,
-          },
+      const res = await this.withTimeout(
+        this.client.chat.completions.create({
+          model: GROQ_MODEL,
+          messages,
+          max_tokens: this.maxCompletionTokens,
+          temperature: 0.7,
+          top_p: 0.95,
         }),
-        this.openRouterTimeoutMs,
-        'OpenRouter chat request'
+        'Groq chat request'
       );
+
+      const content = res.choices[0]?.message?.content;
+      if (typeof content === 'string' && content.trim().length > 0) {
+        return content;
+      }
+
+      throw new Error('Groq response did not include message content');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`OpenRouter request failed: ${message}`);
-      if (error instanceof Error) {
-        throw error;
-      }
+      this.logger.error(`Groq request failed: ${message}`);
+      if (error instanceof Error) throw error;
       throw new Error(message);
     }
+  }
 
-    const content = (
-      response as {
-        choices?: Array<{
-          message?: {
-            content?: string | Array<{ type?: string; text?: string }>;
-          };
-        }>;
-      }
-    )?.choices?.[0]?.message?.content;
-
-    if (typeof content === 'string' && content.trim().length > 0) {
-      return content;
+  private async streamWithGroq(params: {
+    systemPrompt: string;
+    businessContext?: string;
+    query: string;
+    history: Array<{ role: string; content: string }>;
+    onChunk: (chunk: string) => void;
+  }): Promise<string> {
+    if (!this.chatEnabled || !this.client) {
+      throw new Error('GROQ_API_KEY is not configured');
     }
 
-    if (Array.isArray(content)) {
-      const text = content
-        .map((part) => (typeof part.text === 'string' ? part.text : ''))
-        .join('')
-        .trim();
-      if (text.length > 0) {
-        return text;
-      }
-    }
+    const systemContent = params.businessContext
+      ? `${params.systemPrompt}\n\n${params.businessContext}`
+      : params.systemPrompt;
 
-    throw new Error('OpenRouter response did not include message content');
+    const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
+    const safeHistory = params.history
+      .slice(-ChatService.MAX_HISTORY_MESSAGES)
+      .map((entry) => ({
+        role: entry.role,
+        content: entry.content.slice(0, ChatService.MAX_MESSAGE_CHARS),
+      }));
+
+    const messages: Array<{
+      role: 'system' | 'user' | 'assistant';
+      content: string;
+    }> = [
+      { role: 'system', content: systemContent },
+      ...safeHistory.map((entry) => ({
+        role:
+          entry.role === 'assistant' || entry.role === 'model'
+            ? ('assistant' as const)
+            : ('user' as const),
+        content: entry.content,
+      })),
+      { role: 'user', content: safeQuery },
+    ];
+
+    // Create AbortController for request-level timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const stream = await this.client.chat.completions.create(
+        {
+          model: GROQ_MODEL,
+          messages,
+          max_tokens: this.maxCompletionTokens,
+          temperature: 0.7,
+          top_p: 0.95,
+          stream: true,
+        },
+        { signal: controller.signal }
+      );
+
+      let fullContent = '';
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          fullContent += content;
+          params.onChunk(content);
+        }
+      }
+
+      if (fullContent.trim().length === 0) {
+        throw new Error(
+          'Groq streaming response did not include message content'
+        );
+      }
+
+      return fullContent;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Groq streaming request failed: ${message}`);
+      if (error instanceof Error) throw error;
+      throw new Error(message);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**
@@ -291,10 +326,21 @@ export class ChatService {
 
   /**
    * Fetch business statistics from the database
+   * Cached for 60 seconds to reduce database load
    */
   private async fetchBusinessContext(
     businessId: string
   ): Promise<BusinessContext> {
+    const cacheKey = `chat:business_context:${businessId}`;
+
+    // Try to get from cache first
+    const cached = await this.cacheService.get<BusinessContext>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Business context cache hit for ${businessId}`);
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
+    }
+
     // Fetch business details
     const business = await this.businessModel.findById(businessId);
     if (!business) {
@@ -331,12 +377,13 @@ export class ChatService {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    // Calculate overdue invoices (not paid and issued more than 30 days ago)
+    // Calculate overdue invoices (past dueDate and not fully paid)
     const overdueInvoices = invoices.filter(
       (inv) =>
         (inv.status === InvoiceStatus.ISSUED ||
+          inv.status === InvoiceStatus.PARTIAL ||
           inv.status === InvoiceStatus.OVERDUE) &&
-        new Date(inv.issuedDate) < thirtyDaysAgo
+        new Date(inv.dueDate) < now
     ).length;
 
     // Calculate overdue amount
@@ -344,8 +391,9 @@ export class ChatService {
       .filter(
         (inv) =>
           (inv.status === InvoiceStatus.ISSUED ||
+            inv.status === InvoiceStatus.PARTIAL ||
             inv.status === InvoiceStatus.OVERDUE) &&
-          new Date(inv.issuedDate) < thirtyDaysAgo
+          new Date(inv.dueDate) < now
       )
       .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
@@ -413,7 +461,40 @@ export class ChatService {
         ? paidWithDelay.reduce((a, b) => a + b, 0) / paidWithDelay.length
         : 0;
 
-    return {
+    // Get top debtors (clients with highest overdue amounts)
+    const debtorMap = new Map<
+      string,
+      { name: string; overdueAmount: number }
+    >();
+    for (const inv of invoices) {
+      if (
+        (inv.status === InvoiceStatus.ISSUED ||
+          inv.status === InvoiceStatus.PARTIAL ||
+          inv.status === InvoiceStatus.OVERDUE) &&
+        new Date(inv.dueDate) < now
+      ) {
+        const key =
+          inv.recipient?.platformId ??
+          inv.recipient?.email ??
+          inv._id?.toString() ??
+          'Unknown';
+        const name =
+          inv.recipient?.displayName ??
+          inv.recipient?.email ??
+          `Invoice ${inv._id?.toString() ?? 'Unknown'}`;
+        const existing = debtorMap.get(key);
+        if (existing) {
+          existing.overdueAmount += inv.totalAmount || 0;
+        } else {
+          debtorMap.set(key, { name, overdueAmount: inv.totalAmount || 0 });
+        }
+      }
+    }
+    const topDebtors = [...debtorMap.values()]
+      .toSorted((a, b) => b.overdueAmount - a.overdueAmount)
+      .slice(0, 5);
+
+    const result: BusinessContext = {
       businessId,
       businessName: business.name,
       totalInvoices,
@@ -426,109 +507,247 @@ export class ChatService {
       revenueGrowth: Number(revenueGrowth.toFixed(2)),
       averagePaymentDelay: Number(averagePaymentDelay.toFixed(1)),
       clientCount,
+      topDebtors,
     };
+
+    // Cache for 60 seconds
+    await this.cacheService.set(cacheKey, result, 60);
+    return result;
   }
 
   /**
-   * Generate system prompt based on user role
+   * Fetch individual user context from invoice receipts (invoices received by user)
+   * Cached for 60 seconds to reduce database load
    */
-  private getSystemPrompt(role: string): string {
-    const prompts: Record<string, string> = {
-      PLATFORM_OWNER: `You are a strategic advisor and platform administrator for Accountia, a SaaS invoicing platform for Tunisian SMEs.
+  private async fetchIndividualContext(
+    userId: string,
+    email: string
+  ): Promise<IndividualContext> {
+    const cacheKey = `chat:individual_context:${userId}`;
 
-YOUR EXPERTISE:
-- Platform administration and user management
-- Overall platform analytics and reporting
-- Strategic business decisions
-- System health and performance monitoring
+    // Try to get from cache first
+    const cached = await this.cacheService.get<IndividualContext>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Individual context cache hit for ${userId}`);
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
+    }
 
-RULES:
-- Always respond in French
-- Be professional and strategic
-- Only reference data provided in context
-- Provide actionable insights`,
+    // Normalize email for matching
+    const normalizedEmail = email.toLowerCase().trim();
 
-      PLATFORM_ADMIN: `You are a platform support specialist for Accountia.
+    // Find all receipts where user is recipient (by userId or email)
+    const receipts = await this.invoiceReceiptModel
+      .find({
+        $or: [{ recipientUserId: userId }, { recipientEmail: normalizedEmail }],
+      })
+      .sort({ issuedDate: -1 })
+      .lean()
+      .exec();
 
-YOUR ROLE:
-- Help businesses with platform features
-- Provide technical guidance
-- Answer questions about invoice management
-- Support onboarding
+    const totalReceivedInvoices = receipts.length;
 
-RULES:
-- Always respond in French
-- Be helpful and clear
-- Guide users through features
-- Provide relevant links when helpful`,
+    // Count by status
+    const pendingInvoices = receipts.filter(
+      (r) =>
+        r.invoiceStatus === InvoiceStatus.ISSUED ||
+        r.invoiceStatus === InvoiceStatus.PARTIAL
+    ).length;
 
-      BUSINESS_OWNER: `Tu es un conseiller financier expert (CFO virtuel) pour Accountia Business, spécialisé dans la gestion des PME tunisiennes.
+    const paidInvoices = receipts.filter(
+      (r) => r.invoiceStatus === InvoiceStatus.PAID
+    ).length;
 
-TON EXPERTISE :
-- Analyse de données financières en temps réel (revenus, factures en retard)
-- Prévision (forecasting) des revenus sur 3 mois
-- Détection d'anomalies (chute de CA, ratio impayés élevé)
-- Fiscalité tunisienne : TVA (19% standard, 7% réduit, 0% exonéré), IS (25%)
-- Stratégie de croissance et optimisation de cash-flow
+    // Get upcoming due invoices (next 14 days, not paid)
+    const now = new Date();
+    const fourteenDaysFromNow = new Date(
+      now.getTime() + 14 * 24 * 60 * 60 * 1000
+    );
 
-RÈGLES ABSOLUES :
-- Analyse UNIQUEMENT les données de 'context' fournies
-- Ne cite JAMAIS un chiffre qui n'est pas présent ou dérivable mathématiquement du contexte
-- Si les données manquent, dis-le poliment au lieu d'inventer
-- Réponds TOUJOURS en français, de façon professionnelle, claire et structurée
-- Utilise Markdown pour une lisibilité maximale
+    const overdueInvoices = receipts.filter(
+      (r) =>
+        r.invoiceStatus === InvoiceStatus.OVERDUE ||
+        ((r.invoiceStatus === InvoiceStatus.ISSUED ||
+          r.invoiceStatus === InvoiceStatus.PARTIAL) &&
+          new Date(r.dueDate) < now)
+    ).length;
 
-LIENS DISPONIBLES :
-- Mon dashboard : /dashboard/business
-- Mes clients : /dashboard/business/clients
-- Analyser mes finances : /dashboard/business/financials
-- Relances automatiques : /dashboard/business/automations`,
+    // Calculate amounts
+    const totalAmountDue = receipts
+      .filter(
+        (r) =>
+          r.invoiceStatus === InvoiceStatus.ISSUED ||
+          r.invoiceStatus === InvoiceStatus.PARTIAL ||
+          r.invoiceStatus === InvoiceStatus.OVERDUE
+      )
+      .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
 
-      BUSINESS_ADMIN: `Tu es un assistant pour les administrateurs business dans Accountia.
+    const totalAmountPaid = receipts
+      .filter((r) => r.invoiceStatus === InvoiceStatus.PAID)
+      .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
 
-TON RÔLE :
-- Aider à gérer les factures et clients
-- Expliquer les fonctionnalités de gestion
-- Fournir des conseils opérationnels
+    // Get 5 most recent invoices
+    const recentInvoices = receipts.slice(0, 5).map((r) => ({
+      invoiceNumber: r.invoiceNumber,
+      issuerName: r.issuerBusinessName,
+      totalAmount: r.totalAmount,
+      currency: r.currency,
+      status: r.invoiceStatus,
+      dueDate: r.dueDate,
+    }));
 
-RÈGLES :
-- Réponds TOUJOURS en français
-- Sois clair et professionnel
-- Guide les utilisateurs à travers les processus
-- Fournis des liens pertinents`,
+    const upcomingInvoices = receipts
+      .filter(
+        (r) =>
+          (r.invoiceStatus === InvoiceStatus.ISSUED ||
+            r.invoiceStatus === InvoiceStatus.PARTIAL) &&
+          new Date(r.dueDate) >= now &&
+          new Date(r.dueDate) <= fourteenDaysFromNow
+      )
+      .map((r) => ({
+        invoiceNumber: r.invoiceNumber,
+        issuerName: r.issuerBusinessName,
+        totalAmount: r.totalAmount,
+        currency: r.currency,
+        dueDate: r.dueDate,
+        daysUntilDue: Math.ceil(
+          (new Date(r.dueDate).getTime() - now.getTime()) /
+            (24 * 60 * 60 * 1000)
+        ),
+      }))
+      .toSorted((a, b) => a.daysUntilDue - b.daysUntilDue)
+      .slice(0, 5);
 
-      CLIENT: `Tu es un assistant support simple et bienveillant pour Accountia, une plateforme SaaS de gestion de factures pour PME tunisiennes.
+    const upcomingDueAmount = upcomingInvoices.reduce(
+      (sum, inv) => sum + (inv.totalAmount || 0),
+      0
+    );
 
-TON RÔLE :
-- Aider les clients à naviguer sur la plateforme
-- Expliquer comment consulter et payer leurs factures reçues
-- Les guider pour créer leur propre business si intéressés
-- Répondre de façon claire, simple et rassurante
-
-RÈGLES ABSOLUES :
-- Tu ne connais JAMAIS les données réelles de l'utilisateur (montants, noms, numéros de factures)
-- Si la liste de factures est vide, explique que les factures apparaîtront automatiquement
-- Ne jamais inventer de montants ou de numéros de factures
-- Réponds TOUJOURS en français
-
-LIENS DISPONIBLES :
-- Mes factures : /invoices
-- Créer un business : /invoices`,
-
-      default: `Tu es un assistant helpful pour Accountia.
-
-TON RÔLE :
-- Aider les utilisateurs
-- Répondre aux questions
-- Fournir des conseils
-
-RÈGLES :
-- Réponds TOUJOURS en français
-- Sois clair et concis
-- Ne sois jamais agressif`,
+    const result: IndividualContext = {
+      userId,
+      totalReceivedInvoices,
+      pendingInvoices,
+      paidInvoices,
+      overdueInvoices,
+      totalAmountDue: Number(totalAmountDue.toFixed(2)),
+      totalAmountPaid: Number(totalAmountPaid.toFixed(2)),
+      upcomingDueAmount: Number(upcomingDueAmount.toFixed(2)),
+      upcomingDueCount: upcomingInvoices.length,
+      recentInvoices,
+      upcomingInvoices,
     };
 
-    return prompts[role] || prompts.default;
+    // Cache for 60 seconds
+    await this.cacheService.set(cacheKey, result, 60);
+    return result;
+  }
+
+  /**
+   * Format individual context as a string for the prompt
+   */
+  private formatIndividualContext(context?: IndividualContext): string {
+    if (!context) return '';
+
+    const parts: string[] = [
+      'RECEIVED INVOICES CONTEXT:',
+      `- Total Received Invoices: ${context.totalReceivedInvoices}`,
+      `- Paid Invoices: ${context.paidInvoices}`,
+      `- Pending Invoices: ${context.pendingInvoices}`,
+      `- Overdue Invoices: ${context.overdueInvoices}`,
+    ];
+
+    // Use overall totals from context (computed from all receipts, not capped sample)
+    // Note: Per-currency totals would require additional precomputation in fetchIndividualContext
+    if (context.totalAmountDue > 0) {
+      parts.push(`- Total Amount Due: ${context.totalAmountDue.toFixed(2)}`);
+    }
+    if (context.totalAmountPaid > 0) {
+      parts.push(`- Total Amount Paid: ${context.totalAmountPaid.toFixed(2)}`);
+    }
+    if (context.upcomingDueAmount > 0) {
+      parts.push(
+        `- Due in Next 14 Days: ${context.upcomingDueAmount.toFixed(2)}`
+      );
+    }
+
+    if (context.recentInvoices.length > 0) {
+      parts.push('\nRecent Invoices:');
+      for (const inv of context.recentInvoices) {
+        parts.push(
+          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${inv.dueDate.toISOString().split('T')[0]})`
+        );
+      }
+    }
+
+    if (context.upcomingInvoices.length > 0) {
+      parts.push('\nUpcoming Due (Next 14 Days):');
+      for (const inv of context.upcomingInvoices) {
+        parts.push(
+          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (in ${inv.daysUntilDue} days)`
+        );
+      }
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Generate system prompt based on mode (business or individual)
+   * Groq will respond in the same language as the user's query
+   */
+  private getSystemPrompt(mode: 'business' | 'individual'): string {
+    if (mode === 'business') {
+      return `You are an expert financial advisor (virtual CFO) for Accountia Business.
+
+YOUR PURPOSE:
+Help business owners understand their financial situation and make better decisions to improve cash flow, reduce overdue payments, and grow their business.
+
+HOW TO HELP:
+- Analyze the financial context provided and identify key issues or opportunities
+- Calculate important metrics (collection rate, overdue ratio, average invoice value)
+- Compare current performance to previous periods when data allows
+- Identify which clients owe the most and may need follow-up
+- Suggest specific actions to improve cash flow
+- Answer questions about Tunisian business taxation when relevant: VAT (19% standard, 7% reduced, 0% exempt), Corporate Tax (25%)
+
+RESPONSE STYLE:
+- Be direct, practical, and actionable
+- Use bullet points and clear headings
+- Highlight the most important numbers and what they mean
+- Offer 2-3 specific recommendations the user can act on today
+
+ABSOLUTE RULES:
+- ONLY use data from the context section - never invent numbers
+- If the user asks about something not in the context, say you don't have that information
+- Respond in the SAME LANGUAGE as the user's query
+- Keep responses focused on finances and business operations`;
+    }
+
+    // Individual mode
+    return `You are a financial assistant for Accountia helping individuals manage their invoices.
+
+YOUR PURPOSE:
+Help users understand their invoice obligations, track what they owe, and stay on top of upcoming payments to avoid late fees.
+
+HOW TO HELP:
+- Summarize their current invoice situation (total due, what's overdue, what's coming up)
+- Highlight urgent items needing immediate attention
+- Calculate upcoming payment obligations in the next 14 days
+- Explain invoice statuses and what they mean
+- Suggest which invoices to prioritize paying first
+- Help them understand payment options
+
+RESPONSE STYLE:
+- Be clear, friendly, and non-judgmental about payment situations
+- Use bullet points to organize invoice information
+- Clearly separate: overdue items (urgent), upcoming due (plan ahead), and already paid
+- Offer practical advice on managing payments
+
+ABSOLUTE RULES:
+- ONLY use data from the context section - never invent invoice amounts or details
+- If asking about a specific invoice not in the context, say you don't see it
+- Respond in the SAME LANGUAGE as the user's query
+- Keep responses focused on their invoice and payment management`;
   }
 
   /**
@@ -537,192 +756,167 @@ RÈGLES :
   private formatBusinessContext(context?: BusinessContext): string {
     if (!context) return '';
 
-    const parts: string[] = ['CONTEXTE MÉTIER :'];
+    const parts: string[] = ['BUSINESS FINANCIAL CONTEXT:'];
 
     if (context.businessName) {
       parts.push(`- Business: ${context.businessName}`);
     }
 
     if (context.totalRevenue !== undefined) {
-      parts.push(`- Chiffre d'affaires total: ${context.totalRevenue} TND`);
+      parts.push(`- Total Revenue: ${context.totalRevenue} TND`);
     }
 
     if (context.monthlyRevenue !== undefined) {
-      parts.push(`- Revenu mensuel: ${context.monthlyRevenue} TND`);
+      parts.push(`- Monthly Revenue: ${context.monthlyRevenue} TND`);
     }
 
     if (context.revenueGrowth !== undefined) {
-      parts.push(`- Croissance: ${context.revenueGrowth}%`);
+      parts.push(`- Revenue Growth: ${context.revenueGrowth}%`);
     }
 
     if (context.totalInvoices !== undefined) {
-      parts.push(`- Factures totales: ${context.totalInvoices}`);
+      parts.push(`- Total Invoices: ${context.totalInvoices}`);
     }
 
     if (context.paidInvoices !== undefined) {
-      parts.push(`- Factures payées: ${context.paidInvoices}`);
+      parts.push(`- Paid Invoices: ${context.paidInvoices}`);
     }
 
     if (context.pendingInvoices !== undefined) {
-      parts.push(`- Factures en attente: ${context.pendingInvoices}`);
+      parts.push(`- Pending Invoices: ${context.pendingInvoices}`);
     }
 
     if (context.overdueInvoices !== undefined) {
-      parts.push(`- Factures en retard: ${context.overdueInvoices}`);
+      parts.push(`- Overdue Invoices: ${context.overdueInvoices}`);
     }
 
     if (context.overdueAmount !== undefined) {
-      parts.push(`- Montant en retard: ${context.overdueAmount} TND`);
+      parts.push(`- Overdue Amount: ${context.overdueAmount} TND`);
     }
 
     if (context.clientCount !== undefined) {
-      parts.push(`- Nombre de clients: ${context.clientCount}`);
+      parts.push(`- Client Count: ${context.clientCount}`);
     }
 
     if (context.averagePaymentDelay !== undefined) {
       parts.push(
-        `- Délai de paiement moyen: ${context.averagePaymentDelay} jours`
+        `- Average Payment Delay: ${context.averagePaymentDelay} days`
       );
+    }
+
+    if (context.topDebtors && context.topDebtors.length > 0) {
+      parts.push('\nTop Debtors (overdue amounts):');
+      for (const debtor of context.topDebtors) {
+        parts.push(`- ${debtor.name}: ${debtor.overdueAmount.toFixed(2)} TND`);
+      }
     }
 
     return parts.join('\n');
   }
 
   /**
-   * Get AI response from Gemini with business context
+   * Stream AI response from Groq with business or individual context
+   * Used by WebSocket gateway for real-time chat responses
    */
-  async getAiResponse(
+  async streamAiResponse(
     userId: string,
-    role: string,
     query: string,
-    businessId: string,
-    history: Array<{ role: string; content: string }> = []
-  ): Promise<AiResponse> {
+    businessId: string | undefined,
+    userEmail: string,
+    history: Array<{ role: string; content: string }> = [],
+    callbacks: {
+      onChunk: (chunk: string) => void;
+      onComplete: (fullResponse: string) => void;
+      onError: (error: Error) => void;
+    }
+  ): Promise<void> {
     try {
-      // Verify user has access to this business
-      await this.verifyBusinessAccess(businessId, userId);
+      let contextStr: string;
+      let mode: 'business' | 'individual';
 
-      // Fetch business context from database
-      const businessContext = await this.fetchBusinessContext(businessId);
-
-      const systemPrompt = this.getSystemPrompt(role);
-      const businessContextStr = this.formatBusinessContext(businessContext);
-
-      const response = await this.generateWithOpenRouter({
-        systemPrompt,
-        businessContext: businessContextStr,
-        query,
-        history,
-      });
-
-      // Parse response - attempt to extract JSON if present
-      let parsedResponse: AiResponse;
-
-      try {
-        // Try to find JSON in the response
-        const jsonMatch = /{[\S\s]*}/.exec(response);
-        parsedResponse = jsonMatch
-          ? (JSON.parse(jsonMatch[0]) as AiResponse)
-          : {
-              response,
-              choices: [],
-              link: undefined,
-              type: 'text',
-            };
-      } catch {
-        // If JSON parsing fails, just use the response as text
-        parsedResponse = {
-          response,
-          choices: [],
-          link: undefined,
-          type: 'text',
-        };
+      if (businessId) {
+        // Business mode: verify access and fetch business context
+        await this.verifyBusinessAccess(businessId, userId);
+        const businessContext = await this.fetchBusinessContext(businessId);
+        contextStr = this.formatBusinessContext(businessContext);
+        mode = 'business';
+      } else {
+        // Individual mode: fetch user's received invoices
+        const individualContext = await this.fetchIndividualContext(
+          userId,
+          userEmail
+        );
+        contextStr = this.formatIndividualContext(individualContext);
+        mode = 'individual';
       }
 
-      return parsedResponse;
+      const systemPrompt = this.getSystemPrompt(mode);
+
+      // Stream the response
+      const fullResponse = await this.streamWithGroq({
+        systemPrompt,
+        businessContext: contextStr,
+        query,
+        history,
+        onChunk: callbacks.onChunk,
+      });
+
+      callbacks.onComplete(fullResponse);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Streaming chat error: ${err.message}`, err.stack);
+
+      // Handle specific error types
       const message = err.message || 'Unknown AI service error';
-      this.logger.error(`Chat error: ${message}`, err);
 
-      const sdkError = err as {
-        errorDetails?: Array<{ reason?: string; message?: string }>;
-        status?: number;
-        apiMessage?: string;
-        statusCode?: number;
-        body?: string;
-      };
-      const parsedErrorBody = (() => {
-        if (!sdkError.body || typeof sdkError.body !== 'string') {
-          return;
-        }
-        try {
-          return JSON.parse(sdkError.body) as {
-            error?: { message?: string };
-          };
-        } catch {
-          return;
-        }
-      })();
-      const details = sdkError.errorDetails ?? [];
-      const hasInvalidApiKeyReason = details.some(
-        (detail) => detail.reason === 'API_KEY_INVALID'
-      );
-      const httpStatus = sdkError.statusCode ?? sdkError.status;
-      const hasOpenRouterAuthError = httpStatus === 401;
-      const hasOpenRouterCreditError = httpStatus === 402;
-      const hasExpiredKeyMessage =
-        message.toLowerCase().includes('api key expired') ||
-        details.some((detail) =>
-          (detail.message ?? '').toLowerCase().includes('api key expired')
-        );
-      const isApiKeyError =
-        hasInvalidApiKeyReason ||
-        hasExpiredKeyMessage ||
-        hasOpenRouterAuthError ||
-        message.toLowerCase().includes('api_key_invalid');
-
-      // Re-throw authorization and not found errors
+      // Handle HTTP exceptions first (before API key detection)
       if (
         err instanceof ForbiddenException ||
         err instanceof NotFoundException
       ) {
-        throw err;
+        callbacks.onError(err);
+        return;
       }
+
+      const groqError = err as {
+        status?: number;
+        code?: string;
+        message?: string;
+        type?: string;
+      };
+      const httpStatus = groqError.status;
+      const isApiKeyError =
+        httpStatus === 401 ||
+        message.toLowerCase().includes('invalid api key') ||
+        message.toLowerCase().includes('authentication') ||
+        groqError.code === 'invalid_api_key';
 
       if (isApiKeyError) {
-        this.logger.error(
-          'OpenRouter API key is invalid or expired. Renew OPENROUTER_API_KEY in .env and restart the backend.'
+        callbacks.onError(
+          new Error('AI service is not configured. Please check GROQ_API_KEY.')
         );
-        return {
-          response:
-            'Le service IA est indisponible: la clé API OpenRouter est invalide ou expirée. Mettez à jour OPENROUTER_API_KEY puis redémarrez le serveur.',
-          choices: [],
-          link: undefined,
-          type: 'text',
-        };
+        return;
       }
 
-      if (hasOpenRouterCreditError) {
-        this.logger.error(
-          `OpenRouter credits or billing issue: ${parsedErrorBody?.error?.message ?? sdkError.apiMessage ?? message}`
-        );
-        return {
-          response:
-            'Le service IA est indisponible: crédits OpenRouter insuffisants. Réduisez OPENROUTER_MAX_COMPLETION_TOKENS ou ajoutez des crédits OpenRouter.',
-          choices: [],
-          link: undefined,
-          type: 'text',
-        };
-      }
-
-      return {
-        response:
-          'Désolé, je rencontre une petite difficulté technique. Réessayez dans un instant.',
-        choices: [],
-        link: undefined,
-        type: 'text',
-      };
+      callbacks.onError(new Error(message));
     }
+  }
+
+  /**
+   * Invalidate business context cache
+   * Call this when invoice/payment data changes for a business
+   */
+  invalidateBusinessContext(businessId: string): void {
+    void this.cacheService.del(`chat:business_context:${businessId}`);
+    this.logger.debug(`Invalidated business context cache for ${businessId}`);
+  }
+
+  /**
+   * Invalidate individual context cache
+   * Call this when receipt/payment data changes for a user
+   */
+  invalidateIndividualContext(userId: string): void {
+    void this.cacheService.del(`chat:individual_context:${userId}`);
+    this.logger.debug(`Invalidated individual context cache for ${userId}`);
   }
 }

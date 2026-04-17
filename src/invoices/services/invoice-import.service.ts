@@ -11,6 +11,7 @@ import {
   CreateInvoiceRecipientDto,
 } from '@/invoices/dto/invoice.dto';
 import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
+import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
 
 /**
  * Service for bulk importing invoices from CSV or Excel files
@@ -58,7 +59,7 @@ export class InvoiceImportService {
 
     try {
       // Determine file type and parse
-      const records = this.parseFile(file);
+      let records = this.parseFile(file);
 
       if (records.length === 0) {
         throw new BadRequestException(
@@ -67,6 +68,25 @@ export class InvoiceImportService {
       }
 
       this.logger.debug(`Parsed ${records.length} records from file`);
+
+      const expectedColumns = [
+        'invoiceNumber',
+        'recipientType',
+        'recipientPlatformId',
+        'recipientEmail',
+        'recipientDisplayName',
+        'productIds',
+        'productNames',
+        'quantities',
+        'unitPrices',
+        'issuedDate',
+        'dueDate',
+        'description',
+        'paymentTerms',
+        'currency',
+        'lineItemsJson',
+      ];
+      records = await mapColumnsUsingAi(records, expectedColumns);
 
       // Validate records
       const validationErrors = this.validateRecords(records);

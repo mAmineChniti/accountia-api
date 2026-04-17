@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Application Received - Accountia</title>
+    <title>Invoice Sent Confirmation - Accountia</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
       rel="stylesheet"
@@ -50,7 +50,7 @@
         overflow: hidden;
       }
       .header-bar {
-        background: linear-gradient(135deg, #7c2d12 0%, #9a3412 100%);
+        background: linear-gradient(135deg, #16a34a 0%, #059669 100%);
         padding: 32px 40px;
         text-align: center;
       }
@@ -71,29 +71,31 @@
         line-height: 1.7;
       }
       .info-box {
-        background-color: #eff6ff;
-        border-left: 4px solid #2563eb;
-        padding: 16px 20px;
+        background: #f0fdf4;
+        border-left: 4px solid #16a34a;
         border-radius: 0 6px 6px 0;
-        font-size: 14px;
-        color: #1e40af;
+        padding: 20px 24px;
         margin: 24px 0;
       }
-      .section-title {
-        font-size: 15px;
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .info-row:last-child {
+        margin-bottom: 0;
+      }
+      .info-label {
+        color: #78716c;
+        font-size: 13px;
+        text-transform: uppercase;
         font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .info-value {
         color: #1f2937;
-        margin: 24px 0 12px;
-        letter-spacing: 0.01em;
-      }
-      ol,
-      ul {
-        padding-left: 24px;
-        color: #4b5563;
-        font-size: 14px;
-      }
-      li {
-        margin-bottom: 8px;
+        font-weight: 600;
+        font-size: 15px;
       }
       .footer {
         text-align: center;
@@ -107,42 +109,42 @@
   </head>
   <body>
     <div class="wrapper">
-      <div class="brand">
-        <span class="brand-name">Accountia</span>
-      </div>
+      <div class="brand"><span class="brand-name">Accountia</span></div>
       <div class="container">
-        <div class="header-bar">
-          <h1>Business Application Received</h1>
-        </div>
+        <div class="header-bar"><h1>✓ Invoice Sent Successfully</h1></div>
         <div class="body">
           <p>
-            Thank you for submitting your business application for
-            <strong>{{.BusinessName}}</strong>. We have received your request
-            and it is currently under review by our platform administrators.
+            Your invoice has been successfully sent to your client. Here's a
+            summary:
           </p>
           <div class="info-box">
-            Your application is in the queue. We will carefully evaluate your
-            submission and notify you of our decision within
-            <strong>2&ndash;3 business days</strong>.
+            <div class="info-row">
+              <span class="info-label">Invoice</span
+              ><span class="info-value">{{.InvoiceNumber}}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Client</span
+              ><span class="info-value">{{.ClientName}}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Email</span
+              ><span class="info-value">{{.ClientEmail}}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Amount</span
+              ><span class="info-value" style="color: #16a34a; font-size: 18px"
+                >{{.Amount}} {{.Currency}}</span
+              >
+            </div>
           </div>
-          <p class="section-title">Review Process</p>
-          <ol>
-            <li>Application verification</li>
-            <li>Business information validation</li>
-            <li>Platform compliance check</li>
-            <li>Final approval decision</li>
-          </ol>
-          <p style="margin-top: 24px">
-            If you have any questions in the meantime, please do not hesitate to
-            contact our support team.
+          <p style="font-size: 13px; color: #6b7280">
+            The client will receive an email with the invoice details and a link
+            to view it on their dashboard.
           </p>
         </div>
         <div class="footer">
-          <p>Best regards &mdash; The Accountia Team</p>
           <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
-          <p>
-            This is an automated message — please do not reply to this email.
-          </p>
+          <p>This is an automated confirmation &mdash; please do not reply.</p>
         </div>
       </div>
     </div>
