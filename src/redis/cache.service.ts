@@ -1,0 +1,169 @@
+import { Injectable, Inject } from '@nestjs/common';
+import Redis from 'ioredis';
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+@Injectable()
+export class CacheService {
+  private readonly DEFAULT_TTL = 300; // 5 minutes
+
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+
+  /**
+   * Get cached data by key
+   */
+  async get<T>(key: string): Promise<T | undefined> {
+    const data = await this.redis.get(`cache:${key}`);
+    if (!data) return undefined;
+
+    try {
+      const parsed: unknown = JSON.parse(data);
+      const entry = parsed as CacheEntry<T>;
+      if (entry.expiresAt && Date.now() > entry.expiresAt) {
+        await this.redis.del(`cache:${key}`);
+        return undefined;
+      }
+      return entry.data;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Set cached data with optional TTL (in seconds)
+   */
+  async set<T>(
+    key: string,
+    data: T,
+    ttlSeconds: number = this.DEFAULT_TTL
+  ): Promise<void> {
+    const entry: CacheEntry<T> = {
+      data,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    };
+    await this.redis.setex(`cache:${key}`, ttlSeconds, JSON.stringify(entry));
+  }
+
+  /**
+   * Delete cached data by key
+   */
+  async del(key: string): Promise<void> {
+    await this.redis.del(`cache:${key}`);
+  }
+
+  /**
+   * Safe delete - fire and forget with error logging
+   * Use this when you don't want cache failures to affect the main operation
+   */
+  async delSafe(key: string): Promise<void> {
+    try {
+      await this.del(key);
+    } catch {
+      // Silently ignore cache errors - main operation should succeed
+    }
+  }
+
+  /**
+   * Safe pattern delete - fire and forget with error logging
+   * Use this when you don't want cache failures to affect the main operation
+   */
+  async delPatternSafe(pattern: string): Promise<void> {
+    try {
+      await this.delPattern(pattern);
+    } catch {
+      // Silently ignore cache errors - main operation should succeed
+    }
+  }
+
+  /**
+   * Delete multiple keys by pattern using SCAN + UNLINK (non-blocking)
+   */
+  async delPattern(pattern: string): Promise<void> {
+    const fullPattern = `cache:${pattern}`;
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        fullPattern,
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      const keys = result[1];
+      if (keys.length > 0) {
+        await this.redis.unlink(...keys);
+      }
+    } while (cursor !== '0');
+  }
+
+  /**
+   * Check if key exists
+   */
+  async exists(key: string): Promise<boolean> {
+    const result = await this.redis.exists(`cache:${key}`);
+    return result === 1;
+  }
+
+  /**
+   * Get or set cache - executes factory function only if cache miss
+   * Note: undefined results from factory are not cached to avoid recomputation loops
+   */
+  async getOrSet<T>(
+    key: string,
+    factory: () => Promise<T>,
+    ttlSeconds: number = this.DEFAULT_TTL
+  ): Promise<T> {
+    const cached = await this.get<T>(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const data = await factory();
+    // Do not cache undefined values to prevent recomputation loops
+    if (data !== undefined) {
+      await this.set(key, data, ttlSeconds);
+    }
+    return data;
+  }
+
+  /**
+   * Increment counter (useful for rate limiting or statistics)
+   */
+  async increment(
+    key: string,
+    ttlSeconds: number = this.DEFAULT_TTL
+  ): Promise<number> {
+    const fullKey = `cache:counter:${key}`;
+    const multi = await this.redis
+      .multi()
+      .incr(fullKey)
+      .expire(fullKey, ttlSeconds)
+      .exec();
+    return (multi?.[0]?.[1] as number) ?? 0;
+  }
+
+  /**
+   * Clear all cache entries using SCAN + UNLINK (non-blocking)
+   */
+  async flush(): Promise<void> {
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        'cache:*',
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      const keys = result[1];
+      if (keys.length > 0) {
+        await this.redis.unlink(...keys);
+      }
+    } while (cursor !== '0');
+  }
+}

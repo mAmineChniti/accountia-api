@@ -3,171 +3,198 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Invite</title>
+    <title>Business Invitation - Accountia</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      body {
-        font-family:
-          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-          'Helvetica Neue', Arial, sans-serif;
-        line-height: 1.6;
-        color: #333;
-        background-color: #f5f5f5;
+      * {
+        box-sizing: border-box;
         margin: 0;
         padding: 0;
       }
-      .container {
+      body {
+        font-family:
+          'Poppins',
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Arial,
+          sans-serif;
+        line-height: 1.6;
+        color: #1f2937;
+        background-color: #fafaf9;
+        padding: 40px 20px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrapper {
         max-width: 600px;
         margin: 0 auto;
-        background-color: #ffffff;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
-      .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 30px;
+      .brand {
+        text-align: center;
+        margin-bottom: 24px;
+      }
+      .brand-name {
+        font-size: 28px;
+        font-weight: 700;
+        color: #7c2d12;
+        letter-spacing: -0.02em;
+        font-family: 'Poppins', sans-serif;
+      }
+      .container {
+        background-color: #ffffff;
+        border-radius: 6px;
+        box-shadow: 1px 1px 16px -2px rgba(46, 16, 16, 0.12);
+        overflow: hidden;
+      }
+      .header-bar {
+        background: linear-gradient(135deg, #7c2d12 0%, #9a3412 100%);
+        padding: 32px 40px;
         text-align: center;
       }
-      .header h1 {
-        margin: 0;
-        font-size: 28px;
+      .header-bar h1 {
+        color: #ffffff;
+        font-size: 24px;
         font-weight: 600;
+        margin: 0;
+        font-family: 'Poppins', sans-serif;
       }
-      .content {
-        padding: 40px 30px;
+      .header-bar p {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 14px;
+        margin-top: 4px;
+      }
+      .body {
+        padding: 40px;
+      }
+      .body p {
+        font-size: 15px;
+        color: #4b5563;
+        margin-bottom: 16px;
+        line-height: 1.7;
       }
       .greeting {
         font-size: 18px;
         font-weight: 600;
         margin-bottom: 20px;
-        color: #333;
-      }
-      .message {
-        margin-bottom: 30px;
-        font-size: 14px;
-        line-height: 1.8;
-        color: #555;
+        color: #1f2937;
       }
       .highlight {
-        background-color: #f0f4ff;
+        background-color: #fef3c7;
+        border-left: 4px solid #d97706;
         padding: 20px;
-        border-left: 4px solid #667eea;
-        margin: 25px 0;
-        border-radius: 4px;
+        margin: 24px 0;
+        border-radius: 0 6px 6px 0;
       }
       .highlight strong {
-        color: #667eea;
+        color: #92400e;
       }
-      .cta-button {
+      .cta-wrapper {
+        text-align: center;
+        margin: 32px 0;
+      }
+      .button {
         display: inline-block;
-        background-color: #667eea;
-        color: white;
+        background: linear-gradient(135deg, #7c2d12 0%, #9a3412 100%);
+        color: #ffffff !important;
         padding: 14px 32px;
         text-decoration: none;
         border-radius: 6px;
         font-weight: 600;
         font-size: 15px;
-        margin-top: 20px;
-        transition: background-color 0.3s ease;
-      }
-      .cta-button:hover {
-        background-color: #764ba2;
-      }
-      .button-container {
-        text-align: center;
-        margin: 30px 0;
-      }
-      .footer {
-        background-color: #f8f9fa;
-        padding: 20px 30px;
-        text-align: center;
-        font-size: 12px;
-        color: #888;
-        border-top: 1px solid #eee;
+        box-shadow: 1px 1px 16px -2px rgba(46, 16, 16, 0.18);
+        font-family: 'Poppins', sans-serif;
       }
       .role-badge {
         display: inline-block;
         padding: 6px 12px;
-        background-color: #e8eef9;
-        color: #667eea;
+        background-color: #f5f5f4;
+        color: #7c2d12;
         border-radius: 4px;
         font-weight: 600;
         font-size: 13px;
         margin: 0 4px;
+        border: 1px solid #e7e5e4;
       }
       .divider {
         height: 1px;
-        background-color: #eee;
+        background-color: #e7e5e4;
         margin: 30px 0;
       }
       .info-row {
         margin: 15px 0;
         font-size: 14px;
+        color: #4b5563;
       }
       .label {
-        color: #999;
+        color: #78716c;
         font-weight: 600;
+      }
+      .footer {
+        text-align: center;
+        padding: 24px 40px;
+        border-top: 1px solid #e7e5e4;
+        font-size: 12px;
+        color: #78716c;
+        line-height: 1.8;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <h1>{{.BusinessName}}</h1>
-        <p>You've been invited to join</p>
+    <div class="wrapper">
+      <div class="brand">
+        <span class="brand-name">Accountia</span>
       </div>
-
-      <div class="content">
-        <p class="greeting">Hi there,</p>
-        <p class="message">
-          <strong>{{.InviterName}}</strong> has invited you to join
-          <strong>{{.BusinessName}}</strong> as a
-          <span class="role-badge">{{.BusinessRole}}</span>.
-        </p>
-        <div class="highlight">
+      <div class="container">
+        <div class="header-bar">
+          <h1>{{.BusinessName}}</h1>
+          <p>You've been invited to join</p>
+        </div>
+        <div class="body">
+          <p class="greeting">Hi there,</p>
           <p>
-            <strong>Click below to register or log in</strong> with this email
-            address, and you'll automatically gain access to {{.BusinessName}}!
+            <strong>{{.InviterName}}</strong> has invited you to join
+            <strong>{{.BusinessName}}</strong> as a
+            <span class="role-badge">{{.BusinessRole}}</span>.
+          </p>
+          <div class="highlight">
+            <p>
+              <strong>Click below to register or log in</strong> with this email
+              address, and you'll automatically gain access to
+              {{.BusinessName}}!
+            </p>
+          </div>
+          <div class="cta-wrapper">
+            <a href="{{.RegisterLink}}" class="button">Get Started</a>
+          </div>
+          <p>
+            Your access will be set up automatically when you register or log in
+            with <strong>{{.InvitedEmail}}</strong>.
+          </p>
+          <div class="divider"></div>
+          <div class="info-row">
+            <span class="label">Business:</span> {{.BusinessName}}
+          </div>
+          <div class="info-row">
+            <span class="label">Your Role:</span> {{.BusinessRole}}
+          </div>
+          <div class="info-row">
+            <span class="label">Invited by:</span> {{.InviterName}}
+          </div>
+          <p style="margin-top: 30px; color: #78716c; font-size: 13px">
+            If you have any questions or didn't expect this invitation, please
+            contact {{.InviterName}} or reach out to support@accountia.com.
           </p>
         </div>
-
-        <div class="button-container">
-          <a href="{{.RegisterLink}}" class="cta-button">Get Started</a>
+        <div class="footer">
+          <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
+          <p>
+            This is an automated message, please do not reply directly to this
+            email.
+          </p>
         </div>
-
-        <p class="message">
-          Your access will be set up automatically when you register or log in
-          with <strong>{{.InvitedEmail}}</strong>.
-        </p>
-
-        <div class="divider"></div>
-
-        <div class="info-row">
-          <span class="label">Business:</span> {{.BusinessName}}
-        </div>
-        <div class="info-row">
-          <span class="label">Your Role:</span> {{.BusinessRole}}
-        </div>
-        <div class="info-row">
-          <span class="label">Invited by:</span> {{.InviterName}}
-        </div>
-
-        <p
-          class="message"
-          style="margin-top: 30px; color: #888; font-size: 13px"
-        >
-          If you have any questions or didn't expect this invitation, please
-          contact {{.InviterName}} or reach out to support@accountia.com.
-        </p>
-      </div>
-
-      <div class="footer">
-        <p>&copy; {{.Year}} Accountia. All rights reserved.</p>
-        <p>
-          This is an automated message, please do not reply directly to this
-          email.
-        </p>
       </div>
     </div>
   </body>

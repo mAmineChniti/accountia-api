@@ -235,9 +235,9 @@ export class AuthController {
     @Req() req: Request
   ): Promise<{ enabled: boolean }> {
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
-    this.authService.check2FAVerificationLimit(user.email, ip);
+    await this.authService.check2FAVerificationLimit(user.email, ip);
     const enabled = await this.authService.verifyTwoFactor(user.id, dto.code);
-    this.authService.record2FAAttempt(user.email, ip, enabled);
+    await this.authService.record2FAAttempt(user.email, ip, enabled);
     return { enabled };
   }
 

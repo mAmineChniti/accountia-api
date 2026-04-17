@@ -57,6 +57,7 @@ import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { Product } from '@/products/schemas/product.schema';
 import { ObjectId } from 'mongodb';
 import { TensorflowPredictionService } from '@/business/services/tensorflow-prediction.service';
+import { CacheService } from '@/redis/cache.service';
 
 const toNumberOrZero = (value: unknown): number =>
   typeof value === 'number' ? value : 0;
@@ -112,7 +113,8 @@ export class BusinessService {
     private auditEmitter: AuditEmitter,
     private notificationsService: NotificationsService,
     private tensorflowPredictionService: TensorflowPredictionService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly cacheService: CacheService
   ) {
     const stripeSecretKey = (
       this.configService.get<string>('STRIPE_SECRET_KEY') ??
@@ -474,6 +476,14 @@ export class BusinessService {
     Object.assign(business, updateBusinessDto);
     const updatedBusiness = await business.save();
 
+    // Invalidate cache after business update (fire-and-forget, non-blocking)
+    void this.cacheService.delPatternSafe(
+      `business:statistics:${businessId}:*`
+    );
+    void this.cacheService.delPatternSafe(
+      `tf:forecast:${businessId}:${business.databaseName}:*`
+    );
+
     return {
       message: 'Business updated successfully',
       business: {
@@ -744,6 +754,11 @@ export class BusinessService {
       );
     }
 
+    // Invalidate tenant context cache for the assigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${assignDto.userId}:${businessId}`
+    );
+
     return {
       message: 'User assigned to business successfully',
       businessUser: {
@@ -807,6 +822,11 @@ export class BusinessService {
         'Failed to sync tenant user unassignment'
       );
     }
+
+    // Invalidate tenant context cache for the unassigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${targetUserId}:${businessId}`
+    );
 
     return { message: 'User unassigned from business successfully' };
   }
@@ -981,6 +1001,9 @@ export class BusinessService {
     businessUser.role = changeRoleDto.role;
     const updatedBusinessUser = await businessUser.save();
 
+    // Invalidate tenant context cache for the role-changed user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
+
     return {
       message: 'Client role updated successfully',
       businessUser: {
@@ -1025,6 +1048,9 @@ export class BusinessService {
       throw new NotFoundException('User association not found');
     }
 
+    // Invalidate tenant context cache for the deleted user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
+
     return {
       message: 'User removed from business successfully',
     };
@@ -1037,6 +1063,15 @@ export class BusinessService {
     predictionHorizonDays = 90
   ): Promise<BusinessStatisticsResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole, false);
+
+    // Check cache first (cache for 5 minutes)
+    const cacheKey = `business:statistics:${businessId}:${predictionHorizonDays}`;
+    const cached =
+      await this.cacheService.get<BusinessStatisticsResponseDto>(cacheKey);
+    if (cached) {
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
+    }
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
@@ -1330,7 +1365,7 @@ export class BusinessService {
     const periodStart = revenueMonthly[0]?.date ?? '';
     const periodEnd = revenueMonthly.at(-1)?.date ?? '';
 
-    return {
+    const result = {
       message: 'Business statistics retrieved successfully',
       businessId: business._id.toString(),
       period: { start: periodStart, end: periodEnd },
@@ -1367,6 +1402,10 @@ export class BusinessService {
         salesTrend,
       },
     };
+
+    // Cache for 5 minutes
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   async getClientPodium(

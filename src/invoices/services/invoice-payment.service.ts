@@ -63,7 +63,7 @@ export class InvoicePaymentService {
     this.stripeFallbackCurrency = (
       this.configService.get<string>('STRIPE_FALLBACK_CURRENCY') ??
       process.env.STRIPE_FALLBACK_CURRENCY ??
-      'usd'
+      'tnd'
     )
       .trim()
       .toLowerCase();
@@ -225,16 +225,6 @@ export class InvoicePaymentService {
       );
     }
 
-    const appHost = this.configService.get<string>('APP_HOST') ?? 'localhost';
-    const appPort = this.configService.get<string>('PORT') ?? '4789';
-    const backendBaseUrl =
-      this.configService.get<string>('BACKEND_PUBLIC_URL') ??
-      `http://${appHost}:${appPort}/api`;
-    const returnUrl =
-      `${backendBaseUrl}/invoices/payments/return` +
-      `?receipt_id=${encodeURIComponent(receiptId)}` +
-      '&session_id={CHECKOUT_SESSION_ID}';
-
     const baseMetadata: Record<string, string> = {
       invoiceId: invoice.id,
       receiptId,
@@ -249,15 +239,16 @@ export class InvoicePaymentService {
     const createCheckoutSession = async (
       currency: string,
       amount: number,
-      _metadata: Record<string, string>
+      metadata: Record<string, string>
     ) => {
       const requestOptions = undefined; // Quick override to bypass connect onboarding issues during testing
       const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
 
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded_page' as never,
+          ui_mode: 'embedded' as never,
           mode: 'payment',
+          redirect_on_completion: 'never',
           ...(paymentMethodConfigurationId
             ? {
                 payment_method_configuration: paymentMethodConfigurationId,
@@ -266,7 +257,7 @@ export class InvoicePaymentService {
                 payment_method_types: ['card'],
               }),
           customer_email: user.email,
-          return_url: returnUrl,
+          metadata,
           line_items: [
             {
               quantity: 1,
