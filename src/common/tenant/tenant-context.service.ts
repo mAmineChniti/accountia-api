@@ -34,7 +34,8 @@ export class TenantContextService {
     // Try to get from cache first
     const cached = await this.cacheService.get<TenantContext>(cacheKey);
     if (cached) {
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     const business = await this.businessModel

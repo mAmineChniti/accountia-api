@@ -13,6 +13,8 @@ interface ConnectionState {
 export class WebSocketStateService {
   private readonly KEY_PREFIX = 'ws:connections';
   private readonly USER_INDEX_PREFIX = 'ws:user';
+  private readonly GLOBAL_SOCKETS_SET = 'ws:global:sockets';
+  private readonly GLOBAL_USERS_SET = 'ws:global:users';
   private readonly TTL_SECONDS = 300; // 5 minutes (refreshed on each ping)
 
   constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
@@ -53,6 +55,7 @@ export class WebSocketStateService {
 
   /**
    * Update last ping time to keep connection alive
+   * Uses conditional SET with XX flag to avoid resurrecting deleted keys
    */
   async recordPing(socketId: string): Promise<void> {
     const key = `${this.KEY_PREFIX}:${socketId}`;
@@ -63,7 +66,14 @@ export class WebSocketStateService {
     const state = JSON.parse(data) as ConnectionState;
     state.lastPingAt = new Date().toISOString();
 
-    await this.redis.setex(key, this.TTL_SECONDS, JSON.stringify(state));
+    // Use SET with XX flag - only update if key exists (no resurrection)
+    await this.redis.set(
+      key,
+      JSON.stringify(state),
+      'EX',
+      this.TTL_SECONDS,
+      'XX'
+    );
 
     // Also refresh user index TTL
     await this.redis.expire(
@@ -115,11 +125,23 @@ export class WebSocketStateService {
   }
 
   /**
-   * Get total number of active connections
+   * Get total number of active connections using SCAN (non-blocking)
    */
   async getTotalConnections(): Promise<number> {
-    const keys = await this.redis.keys(`${this.KEY_PREFIX}:*`);
-    return keys.length;
+    let count = 0;
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        `${this.KEY_PREFIX}:*`,
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      count += result[1].length;
+    } while (cursor !== '0');
+    return count;
   }
 
   /**
@@ -154,13 +176,20 @@ export class WebSocketStateService {
 
   /**
    * Get pending notifications for a socket
+   * Uses MULTI/EXEC for atomic read-and-clear
    */
   async getNotifications<T>(
     socketId: string
   ): Promise<Array<{ event: string; payload: T; timestamp: number }>> {
     const key = `${this.KEY_PREFIX}:${socketId}:notifications`;
-    const data = await this.redis.lrange(key, 0, -1);
-    await this.redis.del(key); // Clear after reading
+
+    // Atomic read-and-clear using MULTI/EXEC
+    const multi = this.redis.multi();
+    multi.lrange(key, 0, -1);
+    multi.del(key);
+    const results = await multi.exec();
+
+    const data: string[] = (results?.[0]?.[1] as string[]) ?? [];
 
     return data.map(
       (item: string) =>
@@ -169,15 +198,26 @@ export class WebSocketStateService {
   }
 
   /**
-   * Get online users count
+   * Get online users count using SCAN (non-blocking)
+   * Counts users with at least one active connection
    */
   async getOnlineUsersCount(): Promise<number> {
-    const keys = await this.redis.keys(`${this.USER_INDEX_PREFIX}:*`);
     let count = 0;
-    for (const key of keys) {
-      const members = await this.redis.scard(key);
-      if (members > 0) count++;
-    }
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        `${this.USER_INDEX_PREFIX}:*`,
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      for (const key of result[1]) {
+        const members = await this.redis.scard(key);
+        if (members > 0) count++;
+      }
+    } while (cursor !== '0');
     return count;
   }
 }

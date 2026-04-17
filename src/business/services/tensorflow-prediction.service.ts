@@ -77,7 +77,8 @@ export class TensorflowPredictionService {
       await this.cacheService.get<BusinessForecastResult>(cacheKey);
     if (cached) {
       this.logger.debug(`Forecast cache hit for business ${businessId}`);
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });

@@ -96,6 +96,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         role: payload.role,
       };
 
+      // Record connection in Redis for tracking
+      void this.wsStateService.recordConnection(client.id, client.user.id, {
+        email: client.user.email,
+        role: client.user.role,
+        ip: client.handshake.address,
+      });
+
       this.logger.debug(`Client connected: ${client.user.id}`);
       client.emit('connected', { status: 'connected', userId: client.user.id });
     } catch {
@@ -149,8 +156,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         history,
         {
           onChunk: (chunk: string) => {
-            // Use volatile for real-time chunks - drops if client can't keep up
-            client.volatile.emit('message_chunk', {
+            // Use reliable emit for chunks so clients don't lose data
+            // (client can still reconcile with fullResponse from message_complete)
+            client.emit('message_chunk', {
               messageId,
               chunk,
             });

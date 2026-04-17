@@ -99,7 +99,8 @@ export class ProductsService {
     const cached =
       await this.cacheService.get<StockInsightsResponseDto>(cacheKey);
     if (cached) {
-      return cached;
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
     }
 
     const productModel = this.getProductModel(databaseName);

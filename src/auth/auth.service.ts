@@ -1148,9 +1148,11 @@ export class AuthService {
         } catch (emailError) {
           // Rollback: restore original email and confirmation status
           await this.userModel.findByIdAndUpdate(userId, {
-            email: originalEmail,
-            emailToken: undefined,
-            emailConfirmed: originalEmailConfirmed,
+            $set: {
+              email: originalEmail,
+              emailConfirmed: originalEmailConfirmed,
+            },
+            $unset: { emailToken: '' },
           });
           this.logger.error(
             'Failed to send confirmation email, rolled back email change',

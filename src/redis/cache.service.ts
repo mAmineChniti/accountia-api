@@ -55,13 +55,25 @@ export class CacheService {
   }
 
   /**
-   * Delete multiple keys by pattern
+   * Delete multiple keys by pattern using SCAN + UNLINK (non-blocking)
    */
   async delPattern(pattern: string): Promise<void> {
-    const keys = await this.redis.keys(`cache:${pattern}`);
-    if (keys.length > 0) {
-      await this.redis.del(...keys);
-    }
+    const fullPattern = `cache:${pattern}`;
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        fullPattern,
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      const keys = result[1];
+      if (keys.length > 0) {
+        await this.redis.unlink(...keys);
+      }
+    } while (cursor !== '0');
   }
 
   /**
@@ -107,12 +119,23 @@ export class CacheService {
   }
 
   /**
-   * Clear all cache entries
+   * Clear all cache entries using SCAN + UNLINK (non-blocking)
    */
   async flush(): Promise<void> {
-    const keys = await this.redis.keys('cache:*');
-    if (keys.length > 0) {
-      await this.redis.del(...keys);
-    }
+    let cursor = '0';
+    do {
+      const result = await this.redis.scan(
+        cursor,
+        'MATCH',
+        'cache:*',
+        'COUNT',
+        100
+      );
+      cursor = result[0];
+      const keys = result[1];
+      if (keys.length > 0) {
+        await this.redis.unlink(...keys);
+      }
+    } while (cursor !== '0');
   }
 }
