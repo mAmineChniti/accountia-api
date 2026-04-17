@@ -50,6 +50,10 @@ export class WebSocketStateService {
     // Expire the index key at the same time
     pipeline.expire(`${this.USER_INDEX_PREFIX}:${userId}`, this.TTL_SECONDS);
 
+    // Add to global sets for O(1) counting
+    pipeline.sadd(this.GLOBAL_SOCKETS_SET, socketId);
+    pipeline.sadd(this.GLOBAL_USERS_SET, userId);
+
     await pipeline.exec();
   }
 
@@ -95,6 +99,9 @@ export class WebSocketStateService {
       const pipeline = this.redis.pipeline();
       pipeline.del(key);
       pipeline.srem(`${this.USER_INDEX_PREFIX}:${state.userId}`, socketId);
+      // Remove from global sets for O(1) counting
+      pipeline.srem(this.GLOBAL_SOCKETS_SET, socketId);
+      pipeline.srem(this.GLOBAL_USERS_SET, state.userId);
       await pipeline.exec();
     }
   }
@@ -125,23 +132,10 @@ export class WebSocketStateService {
   }
 
   /**
-   * Get total number of active connections using SCAN (non-blocking)
+   * Get total number of active connections using global set (O(1))
    */
   async getTotalConnections(): Promise<number> {
-    let count = 0;
-    let cursor = '0';
-    do {
-      const result = await this.redis.scan(
-        cursor,
-        'MATCH',
-        `${this.KEY_PREFIX}:*`,
-        'COUNT',
-        100
-      );
-      cursor = result[0];
-      count += result[1].length;
-    } while (cursor !== '0');
-    return count;
+    return this.redis.scard(this.GLOBAL_SOCKETS_SET);
   }
 
   /**
@@ -198,26 +192,10 @@ export class WebSocketStateService {
   }
 
   /**
-   * Get online users count using SCAN (non-blocking)
-   * Counts users with at least one active connection
+   * Get online users count using global set (O(1))
+   * Counts unique users with at least one active connection
    */
   async getOnlineUsersCount(): Promise<number> {
-    let count = 0;
-    let cursor = '0';
-    do {
-      const result = await this.redis.scan(
-        cursor,
-        'MATCH',
-        `${this.USER_INDEX_PREFIX}:*`,
-        'COUNT',
-        100
-      );
-      cursor = result[0];
-      for (const key of result[1]) {
-        const members = await this.redis.scard(key);
-        if (members > 0) count++;
-      }
-    } while (cursor !== '0');
-    return count;
+    return this.redis.scard(this.GLOBAL_USERS_SET);
   }
 }
