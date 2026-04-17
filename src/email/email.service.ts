@@ -494,10 +494,9 @@ export class EmailService {
         type: EmailType.SYSTEM,
       });
     } catch (error) {
-      this.logger.error(
-        'Failed to send invoice sent confirmation email:',
-        error
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Invoice sent confirmation email failed: ${msg}`);
+      throw error; // Propagate so callers can handle delivery failures
     }
   }
 

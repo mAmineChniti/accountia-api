@@ -139,7 +139,7 @@ export class AuthService {
     await this.cleanupExpiredOAuthEntries();
 
     // Rate-limit OAuth state creation per IP
-    const rateLimit = this.rateLimitingService.checkOAuthStateRequests(
+    const rateLimit = await this.rateLimitingService.checkOAuthStateRequests(
       params.ip
     );
     if (!rateLimit.allowed) {
@@ -148,7 +148,7 @@ export class AuthService {
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
-    this.rateLimitingService.recordOAuthStateRequest(params.ip);
+    await this.rateLimitingService.recordOAuthStateRequest(params.ip);
 
     const lang = this.normalizeLang(params.lang);
 
@@ -245,8 +245,8 @@ export class AuthService {
     }
   }
 
-  check2FAVerificationLimit(email: string, ip: string): void {
-    const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
+  async check2FAVerificationLimit(email: string, ip: string): Promise<void> {
+    const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       email,
       ip
     );
@@ -258,12 +258,14 @@ export class AuthService {
     }
   }
 
-  record2FAAttempt(email: string, ip: string, codeValid: boolean): void {
-    if (codeValid) {
-      this.rateLimitingService.clearLoginAttempts(email, ip);
-    } else {
-      this.rateLimitingService.recordFailedLogin(email, ip);
-    }
+  async record2FAAttempt(
+    email: string,
+    ip: string,
+    codeValid: boolean
+  ): Promise<void> {
+    await (codeValid
+      ? this.rateLimitingService.clearLoginAttempts(email, ip)
+      : this.rateLimitingService.recordFailedLogin(email, ip));
   }
 
   async setupTwoFactor(
@@ -323,7 +325,7 @@ export class AuthService {
     if (!user.twoFactorEnabled)
       throw new BadRequestException('2FA is not enabled');
 
-    this.check2FAVerificationLimit(context.email, context.ip);
+    await this.check2FAVerificationLimit(context.email, context.ip);
 
     const result = await verify({
       secret: user.twoFactorSecret!,
@@ -331,11 +333,11 @@ export class AuthService {
     });
     // Use constant-time comparison to prevent timing attacks
     if (result.valid !== true) {
-      this.record2FAAttempt(context.email, context.ip, false);
+      await this.record2FAAttempt(context.email, context.ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
 
-    this.record2FAAttempt(context.email, context.ip, true);
+    await this.record2FAAttempt(context.email, context.ip, true);
 
     user.twoFactorEnabled = false;
     user.twoFactorSecret = undefined;
@@ -370,18 +372,18 @@ export class AuthService {
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret)
       throw new UnauthorizedException('2FA not enabled');
 
-    this.check2FAVerificationLimit(user.email, ip);
+    await this.check2FAVerificationLimit(user.email, ip);
 
     const result = await verify({ secret: user.twoFactorSecret, token: code });
     // Use constant-time comparison to prevent timing attacks
     const isValid = result.valid === true;
 
     if (!isValid) {
-      this.record2FAAttempt(user.email, ip, false);
+      await this.record2FAAttempt(user.email, ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
 
-    this.record2FAAttempt(user.email, ip, true);
+    await this.record2FAAttempt(user.email, ip, true);
     const tokens = this.generateTokens(user);
     await this.userModel.updateOne(
       { _id: user._id },
@@ -593,7 +595,7 @@ export class AuthService {
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     const { email, password } = loginDto;
     const normalizedEmail = email.toLowerCase().trim();
-    const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
+    const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       normalizedEmail,
       ip
     );
@@ -605,7 +607,7 @@ export class AuthService {
     }
     const user = await this.userModel.findOne({ email: normalizedEmail });
     if (!user) {
-      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
       await this.auditEmitter.emitAction({
         action: AuditAction.FAILED_LOGIN,
         userId: undefined,
@@ -634,7 +636,7 @@ export class AuthService {
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
-      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
       await this.auditEmitter.emitAction({
         action: AuditAction.FAILED_LOGIN,
         userId: user._id.toString(),
@@ -650,7 +652,7 @@ export class AuthService {
       return { tempToken, twoFactorRequired: true };
     }
     await this.resetFailedAttempts(user);
-    this.rateLimitingService.clearLoginAttempts(normalizedEmail, ip);
+    await this.rateLimitingService.clearLoginAttempts(normalizedEmail, ip);
     const tokens = this.generateTokens(user);
     await this.userModel.updateOne(
       { _id: user._id },
@@ -886,7 +888,7 @@ export class AuthService {
       throw new ConflictException('Email is already confirmed');
     }
 
-    const rateLimitResult = this.rateLimitingService.checkEmailAttempts(
+    const rateLimitResult = await this.rateLimitingService.checkEmailAttempts(
       user._id.toString()
     );
     if (!rateLimitResult.allowed) {
@@ -898,7 +900,7 @@ export class AuthService {
     }
 
     // Record attempt immediately after check passes (reduces race condition window)
-    this.rateLimitingService.recordEmailAttempt(user._id.toString());
+    await this.rateLimitingService.recordEmailAttempt(user._id.toString());
 
     const newEmailToken = this.generateEmailToken();
     const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -912,6 +914,8 @@ export class AuthService {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
       return { message: 'Confirmation email sent successfully' };
     } catch (error) {
+      // Refund the rate limit attempt since email failed
+      await this.rateLimitingService.refundEmailAttempt(user._id.toString());
       this.logger.error('Failed to send confirmation email', error);
       throw new InternalServerErrorException(
         'Failed to send confirmation email. Please try again later.'
@@ -1113,57 +1117,129 @@ export class AuthService {
       throw new BadRequestException('No update fields provided');
     }
 
-    // If email is being updated, send confirmation email BEFORE persisting changes
+    // If email is being updated, persist token first, then send confirmation email
     if (updateData.email && updateData.emailToken) {
+      // Store original email for potential rollback
+      const originalEmail = user.email;
+      const originalEmailConfirmed = user.emailConfirmed;
+
       try {
-        await this.emailService.sendConfirmationEmail(
-          updateData.email,
-          updateData.emailToken
+        // Persist the email change and token atomically
+        const updatedUser = await this.userModel.findByIdAndUpdate(
+          userId,
+          {
+            email: updateData.email,
+            emailToken: updateData.emailToken,
+            emailConfirmed: false,
+          },
+          { returnDocument: 'after' }
         );
+
+        if (!updatedUser) {
+          throw new BadRequestException('Failed to update user email');
+        }
+
+        // Now send the confirmation email
+        try {
+          await this.emailService.sendConfirmationEmail(
+            updateData.email,
+            updateData.emailToken
+          );
+        } catch (emailError) {
+          // Rollback: restore original email and confirmation status
+          await this.userModel.findByIdAndUpdate(userId, {
+            email: originalEmail,
+            emailToken: undefined,
+            emailConfirmed: originalEmailConfirmed,
+          });
+          this.logger.error(
+            'Failed to send confirmation email, rolled back email change',
+            emailError
+          );
+          throw new InternalServerErrorException(
+            'Failed to send confirmation email. Email change was reverted. Please try again later.'
+          );
+        }
       } catch (error) {
-        this.logger.error('Failed to send confirmation email', error);
+        if (error instanceof InternalServerErrorException) {
+          throw error;
+        }
+        this.logger.error('Failed to update user email', error);
         throw new InternalServerErrorException(
-          'Failed to send confirmation email. Email change was not saved. Please try again later.'
+          'Failed to update email. Please try again later.'
+        );
+      }
+
+      // Remove email-related fields from updateData since we handled them
+      delete updateData.email;
+      delete updateData.emailToken;
+      delete updateData.emailConfirmed;
+    }
+
+    // Apply any remaining updates
+    if (Object.keys(updateData).length > 0) {
+      try {
+        const updatedUser = await this.userModel.findByIdAndUpdate(
+          userId,
+          updateData,
+          { returnDocument: 'after' }
+        );
+
+        if (!updatedUser) {
+          throw new BadRequestException('Failed to update user');
+        }
+
+        const publicUser: PrivateUserDto = {
+          username: updatedUser.username,
+          email: updatedUser.email,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          birthdate: updatedUser.birthdate,
+          dateJoined: updatedUser.createdAt,
+          profilePicture: updatedUser.profilePicture,
+          emailConfirmed: updatedUser.emailConfirmed,
+          role: updatedUser.role,
+          twoFactorEnabled: updatedUser.twoFactorEnabled,
+        };
+
+        return {
+          message: 'Profile updated successfully',
+          user: publicUser,
+        };
+      } catch (error) {
+        if (error instanceof HttpException) {
+          throw error;
+        }
+        throw new BadRequestException(
+          'An error occurred while updating your profile'
         );
       }
     }
 
-    try {
-      const updatedUser = await this.userModel.findByIdAndUpdate(
-        userId,
-        updateData,
-        { returnDocument: 'after' }
-      );
-
-      if (!updatedUser) {
-        throw new BadRequestException('Failed to update user');
-      }
-
-      const publicUser: PrivateUserDto = {
-        username: updatedUser.username,
-        email: updatedUser.email,
-        firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName,
-        birthdate: updatedUser.birthdate,
-        dateJoined: updatedUser.createdAt,
-        profilePicture: updatedUser.profilePicture,
-        emailConfirmed: updatedUser.emailConfirmed,
-        role: updatedUser.role,
-        twoFactorEnabled: updatedUser.twoFactorEnabled,
-      };
-
-      return {
-        message: 'Profile updated successfully',
-        user: publicUser,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new BadRequestException(
-        'An error occurred while updating your profile'
-      );
+    // If only email was updated and no other fields, fetch the updated user
+    const finalUser = await this.userModel.findById(userId);
+    if (!finalUser) {
+      throw new BadRequestException('Failed to retrieve updated user');
     }
+
+    const publicUser: PrivateUserDto = {
+      username: finalUser.username,
+      email: finalUser.email,
+      firstName: finalUser.firstName,
+      lastName: finalUser.lastName,
+      birthdate: finalUser.birthdate,
+      dateJoined: finalUser.createdAt,
+      profilePicture: finalUser.profilePicture,
+      emailConfirmed: finalUser.emailConfirmed,
+      role: finalUser.role,
+      twoFactorEnabled: finalUser.twoFactorEnabled,
+    };
+
+    return {
+      message:
+        'Profile updated successfully. Please check your new email for confirmation.',
+      user: publicUser,
+    };
   }
 
   async deleteUser(userId: string): Promise<MessageResponseDto> {

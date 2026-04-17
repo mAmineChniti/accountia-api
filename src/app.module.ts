@@ -12,6 +12,7 @@ import { ChatModule } from '@/chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
+import { RedisModule } from '@/redis/redis.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { InvoicesModule } from '@/invoices/invoices.module';
         STRIPE_FALLBACK_CURRENCY: Joi.string().required(),
         STRIPE_FX_RATES: Joi.string().required(),
         MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
+        REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
       }),
     }),
 
@@ -59,6 +61,7 @@ import { InvoicesModule } from '@/invoices/invoices.module';
     NotificationsModule,
     ChatModule,
     ProductsModule,
+    RedisModule,
     InvoicesModule,
   ],
   controllers: [],

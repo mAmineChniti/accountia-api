@@ -20,10 +20,14 @@ import {
   StockInsightsResponseDto,
 } from './dto/stock-insights.dto';
 import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
+import { CacheService } from '@/redis/cache.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(@InjectConnection() private connection: Connection) {}
+  constructor(
+    @InjectConnection() private connection: Connection,
+    private readonly cacheService: CacheService
+  ) {}
 
   private static readonly MIN_LOOKBACK_DAYS = 7;
   private static readonly MAX_LOOKBACK_DAYS = 180;
@@ -89,6 +93,14 @@ export class ProductsService {
       ProductsService.MIN_PLANNING_DAYS,
       ProductsService.MAX_PLANNING_DAYS
     );
+
+    // Cache key includes all parameters
+    const cacheKey = `products:stock_insights:${businessId}:${effectiveLookbackDays}:${effectivePlanningDays}`;
+    const cached =
+      await this.cacheService.get<StockInsightsResponseDto>(cacheKey);
+    if (cached) {
+      return cached;
+    }
 
     const productModel = this.getProductModel(databaseName);
     const invoiceModel = this.getInvoiceModel(databaseName);
@@ -276,7 +288,7 @@ export class ProductsService {
       ),
     };
 
-    return {
+    const result = {
       businessId,
       generatedAt: now,
       lookbackDays: effectiveLookbackDays,
@@ -284,6 +296,10 @@ export class ProductsService {
       summary,
       items,
     };
+
+    // Cache for 5 minutes (stock levels change frequently)
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   /**

@@ -13,6 +13,7 @@ import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { CacheService } from '@/redis/cache.service';
 
 // Groq API configuration - free tier, fast responses
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
@@ -86,7 +87,8 @@ export class ChatService {
     private invoiceModel: Model<Invoice>,
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
-    @InjectConnection() private connection: Connection
+    @InjectConnection() private connection: Connection,
+    private readonly cacheService: CacheService
   ) {
     const apiKey = process.env.GROQ_API_KEY;
     this.chatEnabled = Boolean(apiKey);
@@ -324,10 +326,20 @@ export class ChatService {
 
   /**
    * Fetch business statistics from the database
+   * Cached for 60 seconds to reduce database load
    */
   private async fetchBusinessContext(
     businessId: string
   ): Promise<BusinessContext> {
+    const cacheKey = `chat:business_context:${businessId}`;
+
+    // Try to get from cache first
+    const cached = await this.cacheService.get<BusinessContext>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Business context cache hit for ${businessId}`);
+      return cached;
+    }
+
     // Fetch business details
     const business = await this.businessModel.findById(businessId);
     if (!business) {
@@ -461,9 +473,14 @@ export class ChatService {
         new Date(inv.dueDate) < now
       ) {
         const key =
-          inv.recipient?.platformId ?? inv.recipient?.email ?? 'Unknown';
+          inv.recipient?.platformId ??
+          inv.recipient?.email ??
+          inv._id?.toString() ??
+          'Unknown';
         const name =
-          inv.recipient?.displayName ?? inv.recipient?.email ?? 'Unknown';
+          inv.recipient?.displayName ??
+          inv.recipient?.email ??
+          `Invoice ${inv._id?.toString() ?? 'Unknown'}`;
         const existing = debtorMap.get(key);
         if (existing) {
           existing.overdueAmount += inv.totalAmount || 0;
@@ -476,7 +493,7 @@ export class ChatService {
       .toSorted((a, b) => b.overdueAmount - a.overdueAmount)
       .slice(0, 5);
 
-    return {
+    const result: BusinessContext = {
       businessId,
       businessName: business.name,
       totalInvoices,
@@ -491,15 +508,29 @@ export class ChatService {
       clientCount,
       topDebtors,
     };
+
+    // Cache for 60 seconds
+    await this.cacheService.set(cacheKey, result, 60);
+    return result;
   }
 
   /**
    * Fetch individual user context from invoice receipts (invoices received by user)
+   * Cached for 60 seconds to reduce database load
    */
   private async fetchIndividualContext(
     userId: string,
     email: string
   ): Promise<IndividualContext> {
+    const cacheKey = `chat:individual_context:${userId}`;
+
+    // Try to get from cache first
+    const cached = await this.cacheService.get<IndividualContext>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Individual context cache hit for ${userId}`);
+      return cached;
+    }
+
     // Normalize email for matching
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -590,7 +621,7 @@ export class ChatService {
       0
     );
 
-    return {
+    const result: IndividualContext = {
       userId,
       totalReceivedInvoices,
       pendingInvoices,
@@ -603,6 +634,10 @@ export class ChatService {
       recentInvoices,
       upcomingInvoices,
     };
+
+    // Cache for 60 seconds
+    await this.cacheService.set(cacheKey, result, 60);
+    return result;
   }
 
   /**
@@ -619,18 +654,54 @@ export class ChatService {
       `- Overdue Invoices: ${context.overdueInvoices}`,
     ];
 
-    if (context.totalAmountDue > 0) {
-      parts.push(`- Total Amount Due: ${context.totalAmountDue} TND`);
+    // Group amounts by currency from recentInvoices
+    const currencyGroups = new Map<
+      string,
+      { due: number; paid: number; upcoming: number }
+    >();
+    for (const inv of context.recentInvoices) {
+      const currency = inv.currency || 'TND';
+      if (!currencyGroups.has(currency)) {
+        currencyGroups.set(currency, { due: 0, paid: 0, upcoming: 0 });
+      }
+      const group = currencyGroups.get(currency)!;
+      if (
+        inv.status === InvoiceStatus.ISSUED ||
+        inv.status === InvoiceStatus.PARTIAL ||
+        inv.status === InvoiceStatus.OVERDUE
+      ) {
+        group.due += inv.totalAmount || 0;
+      }
+      if (inv.status === InvoiceStatus.PAID) {
+        group.paid += inv.totalAmount || 0;
+      }
+    }
+    for (const inv of context.upcomingInvoices) {
+      const currency = inv.currency || 'TND';
+      if (!currencyGroups.has(currency)) {
+        currencyGroups.set(currency, { due: 0, paid: 0, upcoming: 0 });
+      }
+      const group = currencyGroups.get(currency)!;
+      group.upcoming += inv.totalAmount || 0;
     }
 
-    if (context.totalAmountPaid > 0) {
-      parts.push(`- Total Amount Paid: ${context.totalAmountPaid} TND`);
-    }
-
-    if (context.upcomingDueCount > 0) {
-      parts.push(
-        `- Due in Next 14 Days: ${context.upcomingDueCount} invoices (${context.upcomingDueAmount} TND)`
-      );
+    // Output amounts by currency
+    for (const [currency, amounts] of currencyGroups) {
+      if (amounts.due > 0) {
+        parts.push(
+          `- Total Amount Due (${currency}): ${amounts.due.toFixed(2)}`
+        );
+      }
+      if (amounts.paid > 0) {
+        parts.push(
+          `- Total Amount Paid (${currency}): ${amounts.paid.toFixed(2)}`
+        );
+      }
+      if (amounts.upcoming > 0) {
+        parts.push(
+          `- Due in Next 14 Days (${currency}): ${amounts.upcoming.toFixed(2)}`
+        );
+      }
     }
 
     if (context.recentInvoices.length > 0) {
@@ -827,10 +898,20 @@ ABSOLUTE RULES:
       callbacks.onComplete(fullResponse);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      this.logger.error(`Streaming chat error: ${err.message}`, err);
+      this.logger.error(`Streaming chat error: ${err.message}`, err.stack);
 
       // Handle specific error types
       const message = err.message || 'Unknown AI service error';
+
+      // Handle HTTP exceptions first (before API key detection)
+      if (
+        err instanceof ForbiddenException ||
+        err instanceof NotFoundException
+      ) {
+        callbacks.onError(err);
+        return;
+      }
+
       const groqError = err as {
         status?: number;
         code?: string;
@@ -848,14 +929,6 @@ ABSOLUTE RULES:
         callbacks.onError(
           new Error('AI service is not configured. Please check GROQ_API_KEY.')
         );
-        return;
-      }
-
-      if (
-        err instanceof ForbiddenException ||
-        err instanceof NotFoundException
-      ) {
-        callbacks.onError(err);
         return;
       }
 
