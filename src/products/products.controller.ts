@@ -37,6 +37,7 @@ import {
   ProductListResponseDto,
 } from './dto/product-response.dto';
 import { StockInsightsResponseDto } from './dto/stock-insights.dto';
+import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -291,6 +292,58 @@ export class ProductsController {
       businessId || tenant.businessId,
       tenant.databaseName
     );
+  }
+
+  @Post('bulk-delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk delete products',
+    description:
+      'Delete multiple products by their IDs. Only products belonging to your business will be deleted. businessId is REQUIRED as a query parameter.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    type: String,
+    required: true,
+    description: 'Business identifier required for tenant resolution',
+  })
+  @ApiBody({
+    description: 'Array of product IDs to delete',
+    type: BulkDeleteProductsDto,
+  })
+  @ApiOkResponse({
+    description: 'Bulk delete completed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            deleted: { type: 'number' },
+            notFound: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  async bulkDelete(
+    @Body() dto: BulkDeleteProductsDto,
+    @CurrentTenant() tenant: TenantContext
+  ): Promise<{
+    success: boolean;
+    data: { deleted: number; notFound: string[] };
+  }> {
+    const result = await this.productsService.deleteMany(
+      dto.ids,
+      tenant.businessId,
+      tenant.databaseName
+    );
+    return {
+      success: true,
+      data: result,
+    };
   }
 
   @Post('import')

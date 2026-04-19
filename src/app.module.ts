@@ -13,6 +13,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
 import { RedisModule } from '@/redis/redis.module';
+import { AccountantModule } from '@/accountant/accountant.module';
 
 @Module({
   imports: [
@@ -44,6 +45,9 @@ import { RedisModule } from '@/redis/redis.module';
         STRIPE_FX_RATES: Joi.string().required(),
         MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
         REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
+        // AI Accountant Service (optional - will warn if not configured)
+        AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
+        AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),
       }),
     }),
 
@@ -63,6 +67,7 @@ import { RedisModule } from '@/redis/redis.module';
     ProductsModule,
     RedisModule,
     InvoicesModule,
+    AccountantModule,
   ],
   controllers: [],
   providers: [],
