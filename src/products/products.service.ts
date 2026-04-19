@@ -441,6 +441,48 @@ export class ProductsService {
   }
 
   /**
+   * Delete multiple products by IDs (bulk delete)
+   */
+  async deleteMany(
+    ids: string[],
+    businessId: string,
+    databaseName: string
+  ): Promise<{ deleted: number; notFound: string[] }> {
+    const productModel = this.getProductModel(databaseName);
+
+    const deleted: string[] = [];
+    const notFound: string[] = [];
+
+    // Build ObjectId-aware business filter (consistent with other methods)
+    const businessFilter: Record<string, unknown> = { businessId };
+    if (Types.ObjectId.isValid(businessId)) {
+      businessFilter.$or = [
+        { businessId },
+        { businessId: new Types.ObjectId(businessId) },
+      ];
+      delete businessFilter.businessId;
+    }
+
+    for (const id of ids) {
+      const result = await productModel.deleteOne({
+        _id: id,
+        ...businessFilter,
+      });
+
+      if (result.deletedCount === 0) {
+        notFound.push(id);
+      } else {
+        deleted.push(id);
+      }
+    }
+
+    return {
+      deleted: deleted.length,
+      notFound,
+    };
+  }
+
+  /**
    * Get products by IDs for a business (bulk fetch from tenant database)
    */
   async findByIdsForBusiness(
