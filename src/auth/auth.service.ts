@@ -9,7 +9,8 @@ import {
   HttpException,
   HttpStatus,
   InternalServerErrorException,
-  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
@@ -42,7 +43,10 @@ import { RoleResponseDto } from '@/auth/dto/role.dto';
 import { BanResponseDto } from '@/auth/dto/ban-user.dto';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { BusinessInvite } from '@/business/schemas/business-invite.schema';
-import type { BusinessService } from '@/business/business.service';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
+import { BusinessService } from '@/business/business.service';
+import { Business } from '@/business/schemas/business.schema';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 
 interface TokenPayload {
   sub?: string;
@@ -119,18 +123,23 @@ export class AuthService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(BusinessInvite.name)
     private businessInviteModel: Model<BusinessInvite>,
+    @InjectModel(BusinessUser.name)
+    private businessUserModel: Model<BusinessUser>,
+    @InjectModel(Business.name) private businessModel: Model<Business>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private rateLimitingService: RateLimitingService,
     private auditEmitter: AuditEmitter,
-    @Optional() private businessService?: BusinessService
+    private tenantConnectionService: TenantConnectionService,
+    @Inject(forwardRef(() => BusinessService))
+    private businessService: BusinessService
   ) {}
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
 
     // Rate-limit OAuth state creation per IP
-    const rateLimit = this.rateLimitingService.checkOAuthStateRequests(
+    const rateLimit = await this.rateLimitingService.checkOAuthStateRequests(
       params.ip
     );
     if (!rateLimit.allowed) {
@@ -139,7 +148,7 @@ export class AuthService {
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
-    this.rateLimitingService.recordOAuthStateRequest(params.ip);
+    await this.rateLimitingService.recordOAuthStateRequest(params.ip);
 
     const lang = this.normalizeLang(params.lang);
 
@@ -236,8 +245,8 @@ export class AuthService {
     }
   }
 
-  check2FAVerificationLimit(email: string, ip: string): void {
-    const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
+  async check2FAVerificationLimit(email: string, ip: string): Promise<void> {
+    const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       email,
       ip
     );
@@ -249,12 +258,14 @@ export class AuthService {
     }
   }
 
-  record2FAAttempt(email: string, ip: string, codeValid: boolean): void {
-    if (codeValid) {
-      this.rateLimitingService.clearLoginAttempts(email, ip);
-    } else {
-      this.rateLimitingService.recordFailedLogin(email, ip);
-    }
+  async record2FAAttempt(
+    email: string,
+    ip: string,
+    codeValid: boolean
+  ): Promise<void> {
+    await (codeValid
+      ? this.rateLimitingService.clearLoginAttempts(email, ip)
+      : this.rateLimitingService.recordFailedLogin(email, ip));
   }
 
   async setupTwoFactor(
@@ -314,7 +325,7 @@ export class AuthService {
     if (!user.twoFactorEnabled)
       throw new BadRequestException('2FA is not enabled');
 
-    this.check2FAVerificationLimit(context.email, context.ip);
+    await this.check2FAVerificationLimit(context.email, context.ip);
 
     const result = await verify({
       secret: user.twoFactorSecret!,
@@ -322,11 +333,11 @@ export class AuthService {
     });
     // Use constant-time comparison to prevent timing attacks
     if (result.valid !== true) {
-      this.record2FAAttempt(context.email, context.ip, false);
+      await this.record2FAAttempt(context.email, context.ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
 
-    this.record2FAAttempt(context.email, context.ip, true);
+    await this.record2FAAttempt(context.email, context.ip, true);
 
     user.twoFactorEnabled = false;
     user.twoFactorSecret = undefined;
@@ -361,18 +372,18 @@ export class AuthService {
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret)
       throw new UnauthorizedException('2FA not enabled');
 
-    this.check2FAVerificationLimit(user.email, ip);
+    await this.check2FAVerificationLimit(user.email, ip);
 
     const result = await verify({ secret: user.twoFactorSecret, token: code });
     // Use constant-time comparison to prevent timing attacks
     const isValid = result.valid === true;
 
     if (!isValid) {
-      this.record2FAAttempt(user.email, ip, false);
+      await this.record2FAAttempt(user.email, ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
     }
 
-    this.record2FAAttempt(user.email, ip, true);
+    await this.record2FAAttempt(user.email, ip, true);
     const tokens = this.generateTokens(user);
     await this.userModel.updateOne(
       { _id: user._id },
@@ -503,37 +514,19 @@ export class AuthService {
 
       // If invited, auto-process invites; otherwise send confirmation email
       if (isInvited) {
-        // Process invites immediately
-        if (this.businessService) {
-          try {
-            await this.businessService.processInvitesForNewUser(
-              user._id.toString(),
-              normalizedEmail
-            );
-            invitesProcessed = true;
-          } catch (error) {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            this.logger.error(
-              'Failed to process business invites during registration',
-              error instanceof Error ? error.stack : errorMessage
-            );
-            await this.auditEmitter.emitAction({
-              action: AuditAction.OTHER,
-              userId: user._id.toString(),
-              userEmail: user.email,
-              userRole: user.role || 'CLIENT',
-              details: {
-                reason: 'invite_processing_failed_during_registration',
-                invitedToBusinesses: pendingInvites.length,
-                error: errorMessage,
-              },
-            });
-            // Continue even if invite processing fails
-          }
-        } else {
-          this.logger.warn(
-            'Business service unavailable; invite processing deferred during registration'
+        // Process invites immediately - fail registration if processing fails
+        try {
+          await this.businessService.processInvitesForNewUser(
+            user._id.toString(),
+            normalizedEmail
+          );
+          invitesProcessed = true;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(
+            'Failed to process business invites during registration',
+            error instanceof Error ? error.stack : errorMessage
           );
           await this.auditEmitter.emitAction({
             action: AuditAction.OTHER,
@@ -541,17 +534,24 @@ export class AuthService {
             userEmail: user.email,
             userRole: user.role || 'CLIENT',
             details: {
-              reason: 'invite_processing_service_unavailable',
+              reason: 'invite_processing_failed_during_registration',
               invitedToBusinesses: pendingInvites.length,
+              error: errorMessage,
             },
           });
+          // Delete the user since invite processing failed
+          await this.userModel.findByIdAndDelete(user._id);
+          throw new InternalServerErrorException(
+            'Failed to process business invitation. Please try again later.'
+          );
         }
       } else {
-        // Send confirmation email
-        await this.emailService.sendConfirmationEmail(
-          normalizedEmail,
-          user.emailToken!
-        );
+        // Send confirmation email (fire-and-forget)
+        void this.emailService
+          .sendConfirmationEmail(normalizedEmail, user.emailToken!)
+          .catch((error) => {
+            this.logger.error('Failed to send confirmation email', error);
+          });
       }
 
       await this.auditEmitter.emitAction({
@@ -595,7 +595,7 @@ export class AuthService {
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     const { email, password } = loginDto;
     const normalizedEmail = email.toLowerCase().trim();
-    const rateLimitResult = this.rateLimitingService.checkLoginAttempts(
+    const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       normalizedEmail,
       ip
     );
@@ -607,7 +607,7 @@ export class AuthService {
     }
     const user = await this.userModel.findOne({ email: normalizedEmail });
     if (!user) {
-      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
       await this.auditEmitter.emitAction({
         action: AuditAction.FAILED_LOGIN,
         userId: undefined,
@@ -636,7 +636,7 @@ export class AuthService {
     const isPasswordValid = await compare(password, user.passwordHash);
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
-      this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
+      await this.rateLimitingService.recordFailedLogin(normalizedEmail, ip);
       await this.auditEmitter.emitAction({
         action: AuditAction.FAILED_LOGIN,
         userId: user._id.toString(),
@@ -652,7 +652,7 @@ export class AuthService {
       return { tempToken, twoFactorRequired: true };
     }
     await this.resetFailedAttempts(user);
-    this.rateLimitingService.clearLoginAttempts(normalizedEmail, ip);
+    await this.rateLimitingService.clearLoginAttempts(normalizedEmail, ip);
     const tokens = this.generateTokens(user);
     await this.userModel.updateOne(
       { _id: user._id },
@@ -888,7 +888,7 @@ export class AuthService {
       throw new ConflictException('Email is already confirmed');
     }
 
-    const rateLimitResult = this.rateLimitingService.checkEmailAttempts(
+    const rateLimitResult = await this.rateLimitingService.checkEmailAttempts(
       user._id.toString()
     );
     if (!rateLimitResult.allowed) {
@@ -898,6 +898,9 @@ export class AuthService {
         HttpStatus.TOO_MANY_REQUESTS
       );
     }
+
+    // Record attempt immediately after check passes (reduces race condition window)
+    await this.rateLimitingService.recordEmailAttempt(user._id.toString());
 
     const newEmailToken = this.generateEmailToken();
     const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -909,10 +912,14 @@ export class AuthService {
 
     try {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
-      this.rateLimitingService.recordEmailAttempt(user._id.toString());
       return { message: 'Confirmation email sent successfully' };
-    } catch {
-      throw new BadRequestException('Unable to resend confirmation email');
+    } catch (error) {
+      // Refund the rate limit attempt since email failed
+      await this.rateLimitingService.refundEmailAttempt(user._id.toString());
+      this.logger.error('Failed to send confirmation email', error);
+      throw new InternalServerErrorException(
+        'Failed to send confirmation email. Please try again later.'
+      );
     }
   }
 
@@ -1110,53 +1117,160 @@ export class AuthService {
       throw new BadRequestException('No update fields provided');
     }
 
-    try {
-      const updatedUser = await this.userModel.findByIdAndUpdate(
-        userId,
-        updateData,
-        { returnDocument: 'after' }
-      );
+    // If email is being updated, persist token first, then send confirmation email
+    if (updateData.email && updateData.emailToken) {
+      // Store original email for potential rollback
+      const originalEmail = user.email;
+      const originalEmailConfirmed = user.emailConfirmed;
 
-      if (!updatedUser) {
-        throw new BadRequestException('Failed to update user');
-      }
+      // Use MongoDB transaction for atomic email update
+      const session = await this.connection.startSession();
+      try {
+        const updatedUser = await session.withTransaction(async () => {
+          // Persist the email change and token atomically within transaction
+          const userResult = await this.userModel.findByIdAndUpdate(
+            userId,
+            {
+              email: updateData.email,
+              emailToken: updateData.emailToken,
+              emailConfirmed: false,
+            },
+            { returnDocument: 'after', session }
+          );
 
-      if (updateData.email && updateData.emailToken) {
+          if (!userResult) {
+            throw new BadRequestException('Failed to update user email');
+          }
+
+          return userResult;
+        });
+
+        // Send email outside transaction (non-transactional operation)
         try {
           await this.emailService.sendConfirmationEmail(
             updateData.email,
             updateData.emailToken
           );
-        } catch {
-          // Silently handle email failure
+        } catch (emailError) {
+          // Rollback: restore original email and confirmation status
+          await this.userModel.findByIdAndUpdate(userId, {
+            $set: {
+              email: originalEmail,
+              emailConfirmed: originalEmailConfirmed,
+            },
+            $unset: { emailToken: '' },
+          });
+          this.logger.error(
+            'Failed to send confirmation email, rolled back email change',
+            emailError
+          );
+          throw new InternalServerErrorException(
+            'Failed to send confirmation email. Email change was reverted. Please try again later.'
+          );
         }
-      }
 
-      const publicUser: PrivateUserDto = {
-        username: updatedUser.username,
-        email: updatedUser.email,
-        firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName,
-        birthdate: updatedUser.birthdate,
-        dateJoined: updatedUser.createdAt,
-        profilePicture: updatedUser.profilePicture,
-        emailConfirmed: updatedUser.emailConfirmed,
-        role: updatedUser.role,
-        twoFactorEnabled: updatedUser.twoFactorEnabled,
-      };
+        // Remove email-related fields from updateData since we handled them
+        delete updateData.email;
+        delete updateData.emailToken;
+        delete updateData.emailConfirmed;
 
-      return {
-        message: 'Profile updated successfully',
-        user: publicUser,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
+        // If no other updates, return success
+        if (Object.keys(updateData).length === 0) {
+          const publicUser: PrivateUserDto = {
+            username: updatedUser.username,
+            email: updatedUser.email,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
+            birthdate: updatedUser.birthdate,
+            dateJoined: updatedUser.createdAt,
+            profilePicture: updatedUser.profilePicture,
+            emailConfirmed: updatedUser.emailConfirmed,
+            role: updatedUser.role,
+            twoFactorEnabled: updatedUser.twoFactorEnabled,
+          };
+
+          return {
+            message: 'Profile updated successfully',
+            user: publicUser,
+          };
+        }
+      } catch (error) {
+        if (error instanceof HttpException) {
+          throw error;
+        }
+        this.logger.error('Failed to update user email', error);
+        throw new InternalServerErrorException(
+          'Failed to update email. Please try again later.'
+        );
+      } finally {
+        await session.endSession();
       }
-      throw new BadRequestException(
-        'An error occurred while updating your profile'
-      );
     }
+
+    // Apply any remaining updates (or all updates if no email change)
+    if (Object.keys(updateData).length > 0) {
+      try {
+        const updatedUser = await this.userModel.findByIdAndUpdate(
+          userId,
+          updateData,
+          { returnDocument: 'after' }
+        );
+
+        if (!updatedUser) {
+          throw new BadRequestException('Failed to update user');
+        }
+
+        const publicUser: PrivateUserDto = {
+          username: updatedUser.username,
+          email: updatedUser.email,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          birthdate: updatedUser.birthdate,
+          dateJoined: updatedUser.createdAt,
+          profilePicture: updatedUser.profilePicture,
+          emailConfirmed: updatedUser.emailConfirmed,
+          role: updatedUser.role,
+          twoFactorEnabled: updatedUser.twoFactorEnabled,
+        };
+
+        return {
+          message: 'Profile updated successfully',
+          user: publicUser,
+        };
+      } catch (error) {
+        if (error instanceof HttpException) {
+          throw error;
+        }
+        throw new BadRequestException(
+          'An error occurred while updating your profile'
+        );
+      }
+    }
+
+    // If only email was updated and no other fields, fetch the updated user
+    const finalUser = await this.userModel.findById(userId);
+    if (!finalUser) {
+      throw new BadRequestException('Failed to retrieve updated user');
+    }
+
+    const publicUser: PrivateUserDto = {
+      username: finalUser.username,
+      email: finalUser.email,
+      firstName: finalUser.firstName,
+      lastName: finalUser.lastName,
+      birthdate: finalUser.birthdate,
+      dateJoined: finalUser.createdAt,
+      profilePicture: finalUser.profilePicture,
+      emailConfirmed: finalUser.emailConfirmed,
+      role: finalUser.role,
+      twoFactorEnabled: finalUser.twoFactorEnabled,
+    };
+
+    return {
+      message:
+        'Profile updated successfully. Please check your new email for confirmation.',
+      user: publicUser,
+    };
   }
 
   async deleteUser(userId: string): Promise<MessageResponseDto> {
@@ -1175,13 +1289,44 @@ export class AuthService {
     }
 
     try {
+      // Get all business associations before deleting
+      const businessUsers = await this.businessUserModel.find({ userId });
+      const businessIds = businessUsers.map((bu) => bu.businessId);
+
+      // Remove user from tenant databases first
+      let tenantDatabasesCleaned = 0;
+      if (businessIds.length > 0) {
+        const businesses = await this.businessModel.find({
+          _id: { $in: businessIds },
+        });
+        for (const business of businesses) {
+          if (business.databaseName) {
+            await this.tenantConnectionService.deactivateTenantUser(
+              business.databaseName,
+              userId,
+              userId
+            );
+            tenantDatabasesCleaned++;
+          }
+        }
+      }
+
+      // Delete user from platform business_users collection
+      const businessUserDeleteResult = await this.businessUserModel.deleteMany({
+        userId,
+      });
+
       await this.userModel.findByIdAndDelete(userId);
       await this.auditEmitter.emitAction({
         action: AuditAction.USER_DELETED,
         userId: user._id.toString(),
         userEmail: user.email,
         userRole: user.role || 'USER',
-        details: { method: 'self_delete' },
+        details: {
+          method: 'self_delete',
+          businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
+          tenantDatabasesCleaned,
+        },
       });
       return { message: 'Account deleted successfully' };
     } catch (error) {
@@ -1222,6 +1367,33 @@ export class AuthService {
       );
     }
 
+    // Get all business associations before deleting
+    const businessUsers = await this.businessUserModel.find({ userId });
+    const businessIds = businessUsers.map((bu) => bu.businessId);
+
+    // Remove user from tenant databases first
+    let tenantDatabasesCleaned = 0;
+    if (businessIds.length > 0) {
+      const businesses = await this.businessModel.find({
+        _id: { $in: businessIds },
+      });
+      for (const business of businesses) {
+        if (business.databaseName) {
+          await this.tenantConnectionService.deactivateTenantUser(
+            business.databaseName,
+            userId,
+            adminId
+          );
+          tenantDatabasesCleaned++;
+        }
+      }
+    }
+
+    // Delete user from platform business_users collection
+    const businessUserDeleteResult = await this.businessUserModel.deleteMany({
+      userId,
+    });
+
     await this.userModel.deleteOne({ _id: userId });
     await this.auditEmitter.emitAction({
       action: AuditAction.USER_DELETED,
@@ -1229,7 +1401,11 @@ export class AuthService {
       userEmail: admin.email ?? 'Unknown',
       userRole: admin.role || 'ADMIN',
       target: userId,
-      details: { method: 'admin_deleted_user' },
+      details: {
+        method: 'admin_deleted_user',
+        businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
+        tenantDatabasesCleaned,
+      },
     });
     return { message: 'User deleted successfully' };
   }

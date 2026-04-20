@@ -21,6 +21,8 @@ import { VendorsModule } from '@/vendors/vendors.module';
 import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
 import { ClientPortalModule } from '@/client-portal/client-portal.module';
 import { CollectionsModule } from '@/collections/collections.module';
+import { RedisModule } from '@/redis/redis.module';
+import { AccountantModule } from '@/accountant/accountant.module';
 
 @Module({
   imports: [
@@ -35,18 +37,26 @@ import { CollectionsModule } from '@/collections/collections.module';
         SMTP_HOST: Joi.string().required(),
         SMTP_PORT: Joi.number().required(),
         FRONTEND_URL: Joi.string().uri().required(),
-        OPENROUTER_API_KEY: Joi.string().required(),
-        OPENROUTER_MODEL: Joi.string().default('google/gemini-2.5-flash'),
-        OPENROUTER_MAX_COMPLETION_TOKENS: Joi.number()
+        GROQ_API_KEY: Joi.string().required(),
+        GROQ_MAX_COMPLETION_TOKENS: Joi.number()
           .integer()
           .min(64)
           .max(16_000)
           .default(1200),
-        OPENROUTER_TIMEOUT_MS: Joi.number()
+        GROQ_TIMEOUT_MS: Joi.number()
           .integer()
           .min(1000)
           .max(120_000)
           .default(30_000),
+        STRIPE_SECRET_KEY: Joi.string().required(),
+        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
+        STRIPE_FALLBACK_CURRENCY: Joi.string().required(),
+        STRIPE_FX_RATES: Joi.string().required(),
+        MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
+        REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
+        // AI Accountant Service (optional - will warn if not configured)
+        AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
+        AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),
       }),
     }),
 
@@ -64,6 +74,7 @@ import { CollectionsModule } from '@/collections/collections.module';
     NotificationsModule,
     ChatModule,
     ProductsModule,
+    RedisModule,
     InvoicesModule,
     ReportsModule,
     CommentsModule,
@@ -74,6 +85,7 @@ import { CollectionsModule } from '@/collections/collections.module';
     PurchaseOrdersModule,
     ClientPortalModule,
     CollectionsModule,
+    AccountantModule,
   ],
   controllers: [],
   providers: [],

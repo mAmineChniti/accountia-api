@@ -1,181 +1,175 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
+import Redis from 'ioredis';
 
 @Injectable()
-export class RateLimitingService implements OnModuleInit, OnModuleDestroy {
-  private loginAttempts = new Map<string, Date[]>();
-  private emailAttempts = new Map<
-    string,
-    { count: number; lastAttempt: Date }
-  >();
-  private oauthStateRequests = new Map<string, Date[]>();
-  private cleanupInterval: NodeJS.Timeout;
-
+export class RateLimitingService {
   private readonly maxLoginAttempts = 5;
-  private readonly loginWindow = 10 * 60 * 1000;
-  private readonly blockDuration = 15 * 60 * 1000;
+  private readonly loginWindowSeconds = 10 * 60; // 10 minutes
+  private readonly blockDurationSeconds = 15 * 60; // 15 minutes
   private readonly maxEmailAttempts = 5;
-  private readonly emailWindow = 5 * 60 * 1000;
+  private readonly emailWindowSeconds = 5 * 60; // 5 minutes
   private readonly maxOAuthStateRequests = 10;
-  private readonly oauthStateWindow = 1 * 60 * 1000; // 1 minute
-  private readonly cleanupIntervalMs = 5 * 60 * 1000;
+  private readonly oauthStateWindowSeconds = 60; // 1 minute
 
-  onModuleInit() {
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupExpiredEntries();
-    }, this.cleanupIntervalMs);
-  }
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
 
-  onModuleDestroy() {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-    }
-  }
-
-  private cleanupExpiredEntries() {
-    const now = new Date();
-    const maxWindow = Math.max(
-      this.loginWindow,
-      this.blockDuration,
-      this.oauthStateWindow
-    );
-
-    for (const [key, attempts] of this.loginAttempts.entries()) {
-      const recentAttempts = attempts.filter(
-        (attempt) => now.getTime() - attempt.getTime() < maxWindow
-      );
-
-      if (recentAttempts.length === 0) {
-        this.loginAttempts.delete(key);
-      } else {
-        this.loginAttempts.set(key, recentAttempts);
-      }
-    }
-
-    for (const [userId, attempts] of this.emailAttempts.entries()) {
-      const timeSinceLastAttempt =
-        now.getTime() - attempts.lastAttempt.getTime();
-
-      if (timeSinceLastAttempt > this.emailWindow) {
-        this.emailAttempts.delete(userId);
-      }
-    }
-
-    for (const [ip, requests] of this.oauthStateRequests.entries()) {
-      const recentRequests = requests.filter(
-        (request) => now.getTime() - request.getTime() < this.oauthStateWindow
-      );
-
-      if (recentRequests.length === 0) {
-        this.oauthStateRequests.delete(ip);
-      } else {
-        this.oauthStateRequests.set(ip, recentRequests);
-      }
-    }
-  }
-
-  checkLoginAttempts(
+  async checkLoginAttempts(
     identifier: string,
     ip: string
-  ): { allowed: boolean; blockedUntil?: Date } {
-    const key = `${ip}:${identifier}`;
-    const now = new Date();
-    const attempts = this.loginAttempts.get(key) ?? [];
+  ): Promise<{ allowed: boolean; blockedUntil?: Date }> {
+    const key = `rate_limit:login:${ip}:${identifier}`;
+    const now = Date.now();
 
-    const maxWindow = Math.max(this.loginWindow, this.blockDuration);
-    const recentAttempts = attempts.filter(
-      (attempt) => now.getTime() - attempt.getTime() < maxWindow
-    );
-
-    if (recentAttempts.length >= this.maxLoginAttempts) {
-      const lastAttempt = attempts.at(-1);
-      if (
-        lastAttempt &&
-        now.getTime() - lastAttempt.getTime() < this.blockDuration
-      ) {
-        return {
-          allowed: false,
-          blockedUntil: new Date(lastAttempt.getTime() + this.blockDuration),
-        };
-      }
-      this.loginAttempts.delete(key);
+    // Get all attempts
+    const attempts = await this.redis.lrange(key, 0, -1);
+    if (attempts.length === 0) {
       return { allowed: true };
     }
 
-    this.loginAttempts.set(key, recentAttempts);
+    const allTimestamps = attempts.map((ts) => Number.parseInt(ts, 10));
+    const lastAttempt = Math.max(...allTimestamps);
+    const blockedUntil = lastAttempt + this.blockDurationSeconds * 1000;
+
+    // Check if still within block duration from last attempt
+    if (now < blockedUntil) {
+      const windowStart = now - this.loginWindowSeconds * 1000;
+      const recentAttempts = allTimestamps.filter((ts) => ts > windowStart);
+
+      if (recentAttempts.length >= this.maxLoginAttempts) {
+        return {
+          allowed: false,
+          blockedUntil: new Date(blockedUntil),
+        };
+      }
+    }
+
+    // Block expired, clear the list
+    await this.redis.del(key);
     return { allowed: true };
   }
 
-  recordFailedLogin(identifier: string, ip: string): void {
-    const key = `${ip}:${identifier}`;
-    const attempts = this.loginAttempts.get(key) ?? [];
-    attempts.push(new Date());
-    this.loginAttempts.set(key, attempts);
+  async recordFailedLogin(identifier: string, ip: string): Promise<void> {
+    const key = `rate_limit:login:${ip}:${identifier}`;
+    const now = Date.now();
+
+    // Use pipeline for atomic batch operation
+    await this.redis
+      .pipeline()
+      .lpush(key, now.toString())
+      .ltrim(key, 0, this.maxLoginAttempts - 1)
+      .expire(key, this.loginWindowSeconds + this.blockDurationSeconds)
+      .exec();
   }
 
-  clearLoginAttempts(identifier: string, ip: string): void {
-    const key = `${ip}:${identifier}`;
-    this.loginAttempts.delete(key);
+  async clearLoginAttempts(identifier: string, ip: string): Promise<void> {
+    const key = `rate_limit:login:${ip}:${identifier}`;
+    await this.redis.del(key);
   }
 
-  checkEmailAttempts(userId: string): { allowed: boolean; waitTime?: number } {
-    const now = new Date();
-    const attempts = this.emailAttempts.get(userId);
+  async checkEmailAttempts(
+    userId: string
+  ): Promise<{ allowed: boolean; waitTime?: number }> {
+    const key = `rate_limit:email:${userId}`;
+    const now = Date.now();
 
-    if (!attempts) {
+    const data = await this.redis.get(key);
+    if (!data) {
       return { allowed: true };
     }
 
-    const timeSinceLastAttempt = now.getTime() - attempts.lastAttempt.getTime();
+    const { count, lastAttempt } = JSON.parse(data) as {
+      count: number;
+      lastAttempt: number;
+    };
+    const timeSinceLastAttempt = now - lastAttempt;
 
     if (
-      attempts.count >= this.maxEmailAttempts &&
-      timeSinceLastAttempt < this.emailWindow
+      count >= this.maxEmailAttempts &&
+      timeSinceLastAttempt < this.emailWindowSeconds * 1000
     ) {
-      const waitTime = this.emailWindow - timeSinceLastAttempt;
+      const waitTime = this.emailWindowSeconds * 1000 - timeSinceLastAttempt;
       return { allowed: false, waitTime };
     }
 
-    if (timeSinceLastAttempt >= this.emailWindow) {
-      this.emailAttempts.delete(userId);
+    if (timeSinceLastAttempt >= this.emailWindowSeconds * 1000) {
+      // Window expired, reset counter
+      await this.redis.del(key);
       return { allowed: true };
     }
 
     return { allowed: true };
   }
 
-  recordEmailAttempt(userId: string): void {
-    const now = new Date();
-    const attempts = this.emailAttempts.get(userId) ?? {
-      count: 0,
-      lastAttempt: now,
-    };
+  async recordEmailAttempt(userId: string): Promise<void> {
+    const key = `rate_limit:email:${userId}`;
+    const now = Date.now();
+
+    const data = await this.redis.get(key);
+    const attempts = data
+      ? (JSON.parse(data) as { count: number; lastAttempt: number })
+      : { count: 0, lastAttempt: now };
 
     attempts.count += 1;
     attempts.lastAttempt = now;
 
-    this.emailAttempts.set(userId, attempts);
+    await this.redis.setex(
+      key,
+      this.emailWindowSeconds,
+      JSON.stringify(attempts)
+    );
   }
 
-  checkOAuthStateRequests(ip: string): { allowed: boolean } {
-    const now = new Date();
-    const requests = this.oauthStateRequests.get(ip) ?? [];
+  /**
+   * Decrement email attempt counter (refund) - used when email sending fails
+   */
+  async refundEmailAttempt(userId: string): Promise<void> {
+    const key = `rate_limit:email:${userId}`;
 
-    const recentRequests = requests.filter(
-      (request) => now.getTime() - request.getTime() < this.oauthStateWindow
-    );
+    const data = await this.redis.get(key);
+    if (!data) return;
 
-    if (recentRequests.length >= this.maxOAuthStateRequests) {
+    const attempts = JSON.parse(data) as { count: number; lastAttempt: number };
+    if (attempts.count > 0) {
+      attempts.count -= 1;
+      if (attempts.count === 0) {
+        await this.redis.del(key);
+      } else {
+        // Preserve TTL, but if key has no TTL or doesn't exist, use default window
+        const ttl = await this.redis.ttl(key);
+        const effectiveTtl = ttl > 0 ? ttl : this.emailWindowSeconds;
+        await this.redis.setex(key, effectiveTtl, JSON.stringify(attempts));
+      }
+    }
+  }
+
+  async checkOAuthStateRequests(ip: string): Promise<{ allowed: boolean }> {
+    const key = `rate_limit:oauth:${ip}`;
+    const now = Date.now();
+
+    const attempts = await this.redis.lrange(key, 0, -1);
+    const windowStart = now - this.oauthStateWindowSeconds * 1000;
+
+    const recentAttempts = attempts
+      .map((ts) => Number.parseInt(ts, 10))
+      .filter((ts) => ts > windowStart);
+
+    if (recentAttempts.length >= this.maxOAuthStateRequests) {
       return { allowed: false };
     }
 
-    this.oauthStateRequests.set(ip, recentRequests);
     return { allowed: true };
   }
 
-  recordOAuthStateRequest(ip: string): void {
-    const now = new Date();
-    const requests = this.oauthStateRequests.get(ip) ?? [];
-    requests.push(now);
-    this.oauthStateRequests.set(ip, requests);
+  async recordOAuthStateRequest(ip: string): Promise<void> {
+    const key = `rate_limit:oauth:${ip}`;
+    const now = Date.now();
+
+    // Use pipeline for atomic batch operation
+    await this.redis
+      .pipeline()
+      .lpush(key, now.toString())
+      .ltrim(key, 0, this.maxOAuthStateRequests - 1)
+      .expire(key, this.oauthStateWindowSeconds)
+      .exec();
   }
 }

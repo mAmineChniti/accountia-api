@@ -15,7 +15,8 @@ import {
   Res,
   HttpException,
   BadRequestException,
-  Optional,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -73,7 +74,8 @@ export class AuthController {
 
   constructor(
     private readonly authService: AuthService,
-    @Optional() private readonly businessService?: BusinessService
+    @Inject(forwardRef(() => BusinessService))
+    private readonly businessService: BusinessService
   ) {}
 
   @Get('google')
@@ -233,9 +235,9 @@ export class AuthController {
     @Req() req: Request
   ): Promise<{ enabled: boolean }> {
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
-    this.authService.check2FAVerificationLimit(user.email, ip);
+    await this.authService.check2FAVerificationLimit(user.email, ip);
     const enabled = await this.authService.verifyTwoFactor(user.id, dto.code);
-    this.authService.record2FAAttempt(user.email, ip, enabled);
+    await this.authService.record2FAAttempt(user.email, ip, enabled);
     return { enabled };
   }
 
@@ -371,7 +373,7 @@ export class AuthController {
     const result = await this.authService.confirmEmail(token);
 
     // Process business invites if email confirmation was successful
-    if (result.success && result.user && this.businessService) {
+    if (result.success && result.user) {
       this.businessService
         .processInvitesForNewUser(result.user._id.toString(), result.user.email)
         .catch((error) => {

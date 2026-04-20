@@ -1,15 +1,16 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 import { Connection, Model } from 'mongoose';
-import { ObjectId } from 'mongodb';
 import { randomBytes } from 'node:crypto';
-import { AuditService } from '@/audit/audit.service';
 import { AuditEmitter } from '@/audit/audit.emitter';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
 import { Business } from '@/business/schemas/business.schema';
@@ -36,6 +37,10 @@ import {
 import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
 import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
 import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
+import {
+  StripeOnboardingLinkDto,
+  StripeConnectStatusDto,
+} from '@/business/dto/stripe-onboarding.dto';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
@@ -48,9 +53,11 @@ import {
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
-
-const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { Product } from '@/products/schemas/product.schema';
+import { ObjectId } from 'mongodb';
+import { TensorflowPredictionService } from '@/business/services/tensorflow-prediction.service';
+import { CacheService } from '@/redis/cache.service';
 
 const toNumberOrZero = (value: unknown): number =>
   typeof value === 'number' ? value : 0;
@@ -86,37 +93,11 @@ const toInvoiceStatus = (
   return undefined;
 };
 
-const isMissingCollectionError = (error: unknown): boolean => {
-  if (!isObjectRecord(error)) {
-    return false;
-  }
-
-  const code = error.code;
-  const codeName = error.codeName;
-  const name = error.name;
-  const message = error.message;
-
-  const isNamespaceCode = code === 26;
-  const isNamespaceCodeName =
-    typeof codeName === 'string' &&
-    codeName.toUpperCase() === 'NAMESPACENOTFOUND';
-  const isNamespaceName =
-    typeof name === 'string' &&
-    name.toUpperCase().includes('NAMESPACENOTFOUND');
-  const isNamespaceMessage =
-    typeof message === 'string' &&
-    message.toUpperCase().includes('NAMESPACE NOT FOUND');
-
-  return (
-    isNamespaceCode ||
-    isNamespaceCodeName ||
-    isNamespaceName ||
-    isNamespaceMessage
-  );
-};
-
 @Injectable()
 export class BusinessService {
+  private readonly logger = new Logger(BusinessService.name);
+  private readonly stripeClient?: InstanceType<typeof Stripe>;
+
   constructor(
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(Business.name) private businessModel: Model<Business>,
@@ -129,10 +110,20 @@ export class BusinessService {
     @InjectModel(User.name) private userModel: Model<User>,
     private emailService: EmailService,
     private tenantConnectionService: TenantConnectionService,
-    private auditService: AuditService,
     private auditEmitter: AuditEmitter,
-    private notificationsService: NotificationsService
-  ) {}
+    private notificationsService: NotificationsService,
+    private tensorflowPredictionService: TensorflowPredictionService,
+    private readonly configService: ConfigService,
+    private readonly cacheService: CacheService
+  ) {
+    const stripeSecretKey = (
+      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      process.env.STRIPE_SECRET_KEY
+    )?.trim();
+    if (stripeSecretKey) {
+      this.stripeClient = new Stripe(stripeSecretKey);
+    }
+  }
 
   // Business Application Flow
   async submitBusinessApplication(
@@ -158,25 +149,29 @@ export class BusinessService {
 
     const savedApplication = await application.save();
 
-    // Send email notification about application submission
+    // Send email notification in background to avoid delaying API response.
     const applicant = await this.userModel
       .findById(userId)
       .catch((_error) => undefined as never);
     if (applicant) {
-      try {
-        await this.emailService.sendBusinessApplicationEmail(
+      await this.emailService
+        .sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
           savedApplication.businessName
-        );
-      } catch {
-        // Email service handles errors internally, but catch any unexpected issues
-      }
+        )
+        .catch((error) => {
+          this.logger.warn(
+            `Background business application email failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
     }
 
-    // Send real-time admin notification
-    try {
-      await this.notificationsService.createNotification({
+    // Send admin notification in background as well.
+    await this.notificationsService
+      .createNotification({
         type: NotificationType.NEW_BUSINESS_APPLICATION,
         message: `New business application: "${savedApplication.businessName}"`,
         payload: {
@@ -184,10 +179,14 @@ export class BusinessService {
           businessName: savedApplication.businessName,
           applicantId: userId,
         },
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `Background business application notification failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
       });
-    } catch {
-      // Notification service handles errors internally
-    }
 
     return {
       message:
@@ -301,25 +300,37 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessApprovalEmail(
+        await this.emailService
+          .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             approvedBusinessName
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((error) => {
+            this.logger.warn(
+              `Background business approval email failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          });
       }
 
-      await this.auditEmitter.emitAction({
-        action: AuditAction.APPROVE_BUSINESS,
-        userId: reviewer.id,
-        userEmail: reviewer.email ?? 'Unknown',
-        userRole: reviewer.role ?? 'ADMIN',
-        target: approvedBusinessName,
-        details: { applicationId },
-      });
+      await this.auditEmitter
+        .emitAction({
+          action: AuditAction.APPROVE_BUSINESS,
+          userId: reviewer.id,
+          userEmail: reviewer.email ?? 'Unknown',
+          userRole: reviewer.role ?? 'ADMIN',
+          target: approvedBusinessName,
+          details: { applicationId },
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Background approve audit emit failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
     } else {
       await application.save();
 
@@ -328,37 +339,38 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        try {
-          await this.emailService.sendBusinessRejectionEmail(
+        await this.emailService
+          .sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             application.businessName,
             reviewDto.reviewNotes ?? 'No specific reason provided'
-          );
-        } catch {
-          // Email service handles errors internally
-        }
+          )
+          .catch((error) => {
+            this.logger.warn(
+              `Background business rejection email failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          });
       }
 
-      try {
-        await this.auditEmitter.emitAction({
+      await this.auditEmitter
+        .emitAction({
           action: AuditAction.REJECT_BUSINESS,
           userId: reviewer.id,
           userEmail: reviewer.email ?? 'Unknown',
           userRole: reviewer.role ?? 'ADMIN',
           target: application.businessName,
           details: { applicationId, reason: reviewDto.reviewNotes },
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Background reject audit emit failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         });
-      } catch (error) {
-        const auditErrorMessage =
-          error instanceof Error ? error.message : String(error);
-        console.error('Failed to emit REJECT_BUSINESS audit event', {
-          reviewerId: reviewer.id,
-          reviewerEmail: reviewer.email ?? 'Unknown',
-          applicationId,
-          error: auditErrorMessage,
-        });
-      }
     }
 
     return {
@@ -464,6 +476,14 @@ export class BusinessService {
     Object.assign(business, updateBusinessDto);
     const updatedBusiness = await business.save();
 
+    // Invalidate cache after business update (fire-and-forget, non-blocking)
+    void this.cacheService.delPatternSafe(
+      `business:statistics:${businessId}:*`
+    );
+    void this.cacheService.delPatternSafe(
+      `tf:forecast:${businessId}:${business.databaseName}:*`
+    );
+
     return {
       message: 'Business updated successfully',
       business: {
@@ -548,7 +568,13 @@ export class BusinessService {
     let businessUsers = (await this.businessUserModel
       .find({
         userId,
-        role: { $in: [BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER] },
+        role: {
+          $in: [
+            BusinessUserRole.OWNER,
+            BusinessUserRole.ADMIN,
+            BusinessUserRole.MEMBER,
+          ],
+        },
       })
       .select('businessId role')
       .lean()) as Array<{ businessId: string; role: string }>;
@@ -637,6 +663,26 @@ export class BusinessService {
     };
   }
 
+  async getOtherBusinesses(): Promise<{
+    message: string;
+    businesses: Array<{ id: string; name: string; email: string }>;
+  }> {
+    const businesses = await this.businessModel
+      .find()
+      .select('name email')
+      .sort({ name: 1 })
+      .lean();
+
+    return {
+      message: 'Businesses retrieved successfully',
+      businesses: businesses.map((business) => ({
+        id: business._id.toString(),
+        name: business.name,
+        email: business.email,
+      })),
+    };
+  }
+
   async getTenantMetadata(tenantContext: TenantContext): Promise<{
     message: string;
     tenant: TenantContext;
@@ -710,6 +756,11 @@ export class BusinessService {
       );
     }
 
+    // Invalidate tenant context cache for the assigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${assignDto.userId}:${businessId}`
+    );
+
     return {
       message: 'User assigned to business successfully',
       businessUser: {
@@ -773,6 +824,11 @@ export class BusinessService {
         'Failed to sync tenant user unassignment'
       );
     }
+
+    // Invalidate tenant context cache for the unassigned user (fire-and-forget)
+    void this.cacheService.delSafe(
+      `tenant:context:${targetUserId}:${businessId}`
+    );
 
     return { message: 'User unassigned from business successfully' };
   }
@@ -857,12 +913,14 @@ export class BusinessService {
     // If ownership is required (for update/delete), owners and admins can proceed
     if (
       requireOwnership &&
-      ![BusinessUserRole.OWNER, BusinessUserRole.ADMIN].includes(
-        businessUser.role
-      )
+      ![
+        BusinessUserRole.OWNER,
+        BusinessUserRole.ADMIN,
+        BusinessUserRole.MEMBER,
+      ].includes(businessUser.role)
     ) {
       throw new ForbiddenException(
-        'Only business owners and administrators can modify business settings'
+        'Only business owners, administrators and members can access this business'
       );
     }
   }
@@ -945,6 +1003,9 @@ export class BusinessService {
     businessUser.role = changeRoleDto.role;
     const updatedBusinessUser = await businessUser.save();
 
+    // Invalidate tenant context cache for the role-changed user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
+
     return {
       message: 'Client role updated successfully',
       businessUser: {
@@ -989,6 +1050,9 @@ export class BusinessService {
       throw new NotFoundException('User association not found');
     }
 
+    // Invalidate tenant context cache for the deleted user (fire-and-forget)
+    void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
+
     return {
       message: 'User removed from business successfully',
     };
@@ -997,349 +1061,353 @@ export class BusinessService {
   async getBusinessStatistics(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
+    predictionHorizonDays = 90
   ): Promise<BusinessStatisticsResponseDto> {
-    // Check access
     await this.checkBusinessAccess(businessId, userId, userRole, false);
 
-    // Get business
+    // Check cache first (cache for 5 minutes)
+    const cacheKey = `business:statistics:${businessId}:${predictionHorizonDays}`;
+    const cached =
+      await this.cacheService.get<BusinessStatisticsResponseDto>(cacheKey);
+    if (cached) {
+      // Return clone to prevent mutation of cached data
+      return structuredClone(cached);
+    }
+
     const business = await this.businessModel.findById(businessId);
     if (!business) {
       throw new NotFoundException('Business not found');
     }
 
-    // Connect to tenant database to fetch statistics
     const tenantDb = this.connection.useDb(business.databaseName, {
       useCache: true,
     });
+    const invoicesCol = tenantDb.collection<Invoice>('invoices');
+    const productsCol = tenantDb.collection<Product>('products');
 
-    // Get products statistics
-    const productsCollection = tenantDb.collection('products');
-    const invoicesCollection = tenantDb.collection('invoices');
+    const horizonMonths = Math.max(1, Math.ceil(predictionHorizonDays / 30));
 
-    let productsStats = {
-      totalProducts: 0,
-      totalValue: 0,
-      lowStockProducts: 0,
-    };
-    let invoicesStats = {
-      totalInvoices: 0,
-      paidAmount: 0,
-      pendingAmount: 0,
-      overdueAmount: 0,
-      paidInvoices: 0,
-      pendingInvoices: 0,
-      overdueInvoices: 0,
-    };
-    let productProfitability: Array<{
-      productId: string;
-      productName: string;
-      unitPrice: number;
-      unitCost: number;
-      soldQuantity: number;
-      revenue: number;
-      totalCost: number;
-      grossProfit: number;
-      profitMarginPercent: number;
-    }> = [];
-
-    const paidStatus = toInvoiceStatus(InvoiceStatus.PAID);
-    const pendingStatus = toInvoiceStatus('PENDING');
-    const overdueStatus = toInvoiceStatus(InvoiceStatus.OVERDUE);
-
-    const paidLabelUpper = (paidStatus ?? 'paid').toUpperCase();
-    const pendingLabelUpper = (pendingStatus ?? 'pending').toUpperCase();
-    const overdueLabelUpper = (overdueStatus ?? 'overdue').toUpperCase();
-
-    const pendingStatusVariants = [
-      pendingLabelUpper,
-      InvoiceStatus.DRAFT,
-      InvoiceStatus.ISSUED,
-      InvoiceStatus.VIEWED,
-      InvoiceStatus.PARTIAL,
-    ];
-
-    try {
-      const [productsAggregation] = await productsCollection
-        .aggregate<{
-          totalProducts: number;
-          totalValue: number;
-          lowStockProducts: number;
-        }>([
-          {
-            $match: {
-              $or: [{ businessId: new ObjectId(businessId) }, { businessId }],
-            },
-          },
-          {
-            $group: {
-              _id: '_all',
-              totalProducts: { $sum: 1 },
-              totalValue: {
-                $sum: {
-                  $multiply: [
-                    { $ifNull: ['$unitPrice', 0] },
-                    { $ifNull: ['$quantity', 0] },
-                  ],
-                },
-              },
-              lowStockProducts: {
-                $sum: {
-                  $cond: [{ $lt: [{ $ifNull: ['$quantity', 0] }, 10] }, 1, 0],
-                },
-              },
-            },
-          },
-        ])
-        .toArray();
-
-      if (productsAggregation) {
-        productsStats = {
-          totalProducts: toNumberOrZero(productsAggregation.totalProducts),
-          totalValue: toNumberOrZero(productsAggregation.totalValue),
-          lowStockProducts: toNumberOrZero(
-            productsAggregation.lowStockProducts
-          ),
-        };
-      }
-
-      // First, get total count using query that works with both string and ObjectId types
-      // (existing data has mix of both due to historical storage variation)
-      const totalCount = await invoicesCollection.countDocuments({
-        $or: [
-          { issuerBusinessId: new ObjectId(businessId) },
-          { issuerBusinessId: businessId }, // Also match string version
-        ],
-      });
-
-      const [invoicesAggregation] = await invoicesCollection
-        .aggregate<{
-          totalInvoices: number;
-          paidAmount: number;
-          pendingAmount: number;
-          overdueAmount: number;
-          paidInvoices: number;
-          pendingInvoices: number;
-          overdueInvoices: number;
-        }>([
-          {
-            $match: {
-              $or: [
-                { issuerBusinessId: new ObjectId(businessId) },
-                { issuerBusinessId: businessId }, // Also match string version
-              ],
-            },
-          },
-          {
-            $addFields: {
-              normalizedStatus: {
-                $toUpper: { $ifNull: ['$status', ''] },
-              },
-              normalizedTotalAmount: {
-                $ifNull: ['$totalAmount', 0],
-              },
-            },
-          },
-          {
-            $group: {
-              _id: '_all',
-              totalInvoices: { $sum: 1 },
-              paidAmount: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$normalizedStatus', paidLabelUpper] },
-                    '$normalizedTotalAmount',
-                    0,
-                  ],
-                },
-              },
-              pendingAmount: {
-                $sum: {
-                  $cond: [
-                    {
-                      $in: ['$normalizedStatus', pendingStatusVariants],
-                    },
-                    '$normalizedTotalAmount',
-                    0,
-                  ],
-                },
-              },
-              overdueAmount: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$normalizedStatus', overdueLabelUpper] },
-                    '$normalizedTotalAmount',
-                    0,
-                  ],
-                },
-              },
-              paidInvoices: {
-                $sum: {
-                  $cond: [{ $eq: ['$normalizedStatus', paidLabelUpper] }, 1, 0],
-                },
-              },
-              pendingInvoices: {
-                $sum: {
-                  $cond: [
-                    {
-                      $in: ['$normalizedStatus', pendingStatusVariants],
-                    },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              overdueInvoices: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$normalizedStatus', overdueLabelUpper] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        ])
-        .toArray();
-
-      if (invoicesAggregation) {
-        invoicesStats = {
-          totalInvoices: toNumberOrZero(invoicesAggregation.totalInvoices),
-          paidAmount: toNumberOrZero(invoicesAggregation.paidAmount),
-          pendingAmount: toNumberOrZero(invoicesAggregation.pendingAmount),
-          overdueAmount: toNumberOrZero(invoicesAggregation.overdueAmount),
-          paidInvoices: toNumberOrZero(invoicesAggregation.paidInvoices),
-          pendingInvoices: toNumberOrZero(invoicesAggregation.pendingInvoices),
-          overdueInvoices: toNumberOrZero(invoicesAggregation.overdueInvoices),
-        };
-      } else {
-        // Fallback: if aggregation returns nothing (no matching group), use simple count
-        invoicesStats.totalInvoices = totalCount;
-      }
-
-      // Product profitability is computed only from PAID invoices.
-      const paidLineItems = await invoicesCollection
-        .aggregate<{
-          productId: string;
-          soldQuantity: number;
-          revenue: number;
-        }>([
-          {
-            $match: {
-              $or: [
-                { issuerBusinessId: new ObjectId(businessId) },
-                { issuerBusinessId: businessId },
-              ],
-            },
-          },
-          {
-            $addFields: {
-              normalizedStatus: {
-                $toUpper: { $ifNull: ['$status', ''] },
-              },
-            },
-          },
-          {
-            $match: {
-              normalizedStatus: paidLabelUpper,
-            },
-          },
-          {
-            $unwind: '$lineItems',
-          },
-          {
-            $group: {
-              _id: { $toString: '$lineItems.productId' },
-              soldQuantity: {
-                $sum: { $ifNull: ['$lineItems.quantity', 0] },
-              },
-              revenue: {
-                $sum: {
-                  $ifNull: [
-                    '$lineItems.amount',
-                    {
-                      $multiply: [
-                        { $ifNull: ['$lineItems.quantity', 0] },
-                        { $ifNull: ['$lineItems.unitPrice', 0] },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              productId: '$_id',
-              soldQuantity: 1,
-              revenue: 1,
-            },
-          },
-        ])
-        .toArray();
-
-      const salesByProductId = new Map(
-        paidLineItems.map((item) => [
-          item.productId,
-          {
-            soldQuantity: toNumberOrZero(item.soldQuantity),
-            revenue: toNumberOrZero(item.revenue),
-          },
-        ])
+    const forecasts =
+      await this.tensorflowPredictionService.forecastBusinessMetrics(
+        businessId,
+        business.databaseName,
+        horizonMonths
       );
 
-      const products = await productsCollection
-        .find({
-          $or: [{ businessId: new ObjectId(businessId) }, { businessId }],
-        })
-        .project({ _id: 1, name: 1, unitPrice: 1, cost: 1 })
-        .toArray();
+    const revenueMonthly = forecasts.revenue.historical;
+    const cogsMonthly = forecasts.cogs.historical;
 
-      productProfitability = products.map((product) => {
-        const productId = String(product._id);
-        const sales = salesByProductId.get(productId);
-        const soldQuantity = sales?.soldQuantity ?? 0;
-        const revenue = sales?.revenue ?? 0;
-        const unitPrice = toNumberOrZero(product.unitPrice);
-        const unitCost = toNumberOrZero(product.cost);
-        const totalCost = soldQuantity * unitCost;
-        const grossProfit = revenue - totalCost;
-        const profitMarginPercent =
-          revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+    type InvoiceAggResult = {
+      _id: null;
+      paidAmount: number;
+      partialAmount: number;
+      pendingAmount: number;
+      overdueAmount: number;
+      totalInvoices: number;
+      paidInvoices: number;
+      partialInvoices: number;
+      pendingInvoices: number;
+      overdueInvoices: number;
+    };
 
-        return {
-          productId,
-          productName:
-            typeof product.name === 'string' ? product.name : 'Unnamed Product',
-          unitPrice,
-          unitCost,
-          soldQuantity,
-          revenue,
-          totalCost,
-          grossProfit,
-          profitMarginPercent,
-        };
+    const invoicePipeline: Array<Record<string, unknown>> = [
+      {
+        $match: {
+          $or: [
+            { issuerBusinessId: new ObjectId(businessId) },
+            { issuerBusinessId: businessId },
+          ],
+        },
+      },
+      {
+        $group: {
+          // eslint-disable-next-line unicorn/no-null -- MongoDB requires null for grouping all docs
+          _id: null,
+          paidAmount: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PAID'] },
+                { $ifNull: ['$totalAmount', 0] },
+                0,
+              ],
+            },
+          },
+          partialAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PARTIAL'],
+                },
+                { $ifNull: ['$amountPaid', 0] },
+                0,
+              ],
+            },
+          },
+          pendingAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $in: [
+                    { $toUpper: { $ifNull: ['$status', ''] } },
+                    ['DRAFT', 'ISSUED', 'VIEWED'],
+                  ],
+                },
+                { $ifNull: ['$totalAmount', 0] },
+                0,
+              ],
+            },
+          },
+          overdueAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'OVERDUE'],
+                },
+                { $ifNull: ['$totalAmount', 0] },
+                0,
+              ],
+            },
+          },
+          totalInvoices: { $sum: 1 },
+          paidInvoices: {
+            $sum: {
+              $cond: [
+                { $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PAID'] },
+                1,
+                0,
+              ],
+            },
+          },
+          partialInvoices: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PARTIAL'],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          pendingInvoices: {
+            $sum: {
+              $cond: [
+                {
+                  $in: [
+                    { $toUpper: { $ifNull: ['$status', ''] } },
+                    ['DRAFT', 'ISSUED', 'VIEWED'],
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          overdueInvoices: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'OVERDUE'],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ];
+    const invoiceAgg = await invoicesCol
+      .aggregate<InvoiceAggResult>(invoicePipeline)
+      .toArray();
+    const inv = invoiceAgg[0];
+
+    type LineItemDetailResult = {
+      productId: string;
+      quantity: number;
+      revenue: number;
+    };
+
+    const lineItemPipeline: Array<Record<string, unknown>> = [
+      {
+        $match: {
+          $or: [
+            { issuerBusinessId: new ObjectId(businessId) },
+            { issuerBusinessId: businessId },
+          ],
+          status: { $in: ['PAID', 'PARTIAL'] },
+        },
+      },
+      { $unwind: { path: '$lineItems', preserveNullAndEmptyArrays: false } },
+      {
+        $group: {
+          _id: { productId: '$lineItems.productId' },
+          quantity: { $sum: { $ifNull: ['$lineItems.quantity', 0] } },
+          revenue: { $sum: { $ifNull: ['$lineItems.amount', 0] } },
+        },
+      },
+      {
+        $project: {
+          productId: '$_id.productId',
+          quantity: 1,
+          revenue: 1,
+          _id: 0,
+        },
+      },
+    ];
+
+    const lineItemAgg = await invoicesCol
+      .aggregate<LineItemDetailResult>(lineItemPipeline)
+      .toArray();
+
+    const salesMap = new Map<string, { quantity: number; revenue: number }>();
+    for (const item of lineItemAgg) {
+      salesMap.set(item.productId.toString(), {
+        quantity: item.quantity,
+        revenue: item.revenue,
       });
-
-      productProfitability.sort((a, b) => b.grossProfit - a.grossProfit);
-    } catch (error) {
-      if (!isMissingCollectionError(error)) {
-        throw error;
-      }
-      // Missing collections are treated as empty statistics.
     }
 
-    const finalResponse = {
+    const allProducts = await productsCol
+      // eslint-disable-next-line unicorn/no-array-callback-reference
+      .find({
+        $or: [
+          { businessId: new ObjectId(businessId) as unknown as string },
+          { businessId: businessId },
+        ],
+      } as Record<string, unknown>)
+      .toArray();
+
+    const totalProducts = allProducts.length;
+    const totalInventoryValue = allProducts.reduce(
+      (sum, p) => sum + (p.unitPrice ?? 0) * (p.quantity ?? 0),
+      0
+    );
+    const lowStockProducts = allProducts.filter(
+      (p) => (p.quantity ?? 0) < 10
+    ).length;
+
+    const profitabilityList = allProducts.map((p) => {
+      const sales = salesMap.get(p._id.toString()) ?? {
+        quantity: 0,
+        revenue: 0,
+      };
+      const cost = p.cost ?? 0;
+      const profit = sales.revenue - sales.quantity * cost;
+      const margin =
+        sales.revenue > 0
+          ? Math.round((profit / sales.revenue) * 10_000) / 100
+          : 0;
+
+      return {
+        productId: p._id.toString(),
+        productName: p.name ?? 'Unnamed Product',
+        unitPrice: p.unitPrice ?? 0,
+        unitCost: cost,
+        soldQuantity: sales.quantity,
+        revenue: Math.round(sales.revenue * 100) / 100,
+        totalCost: Math.round(sales.quantity * cost * 100) / 100,
+        grossProfit: Math.round(profit * 100) / 100,
+        profitMarginPercent: margin,
+      };
+    });
+
+    const topProducts = [...profitabilityList]
+      .toSorted((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    const underperformingProducts = [...profitabilityList]
+      .filter((p) => p.soldQuantity > 0)
+      .toSorted((a, b) => a.profitMarginPercent - b.profitMarginPercent)
+      .slice(0, 5);
+
+    const totalRevenue = revenueMonthly.reduce((s, p) => s + p.value, 0);
+    const totalCOGS = cogsMonthly.reduce((s, p) => s + p.value, 0);
+    const grossProfit = totalRevenue - totalCOGS;
+    const profitMarginPercent =
+      totalRevenue > 0
+        ? Math.round((grossProfit / totalRevenue) * 10_000) / 100
+        : 0;
+
+    let revenueGrowthRatePercent: number | undefined = undefined;
+    if (revenueMonthly.length >= 2) {
+      const mid = Math.floor(revenueMonthly.length / 2);
+      const firstHalf = revenueMonthly
+        .slice(0, mid)
+        .reduce((s, p) => s + p.value, 0);
+      const secondHalf = revenueMonthly
+        .slice(mid)
+        .reduce((s, p) => s + p.value, 0);
+      revenueGrowthRatePercent =
+        firstHalf > 0
+          ? Math.round(((secondHalf - firstHalf) / firstHalf) * 10_000) / 100
+          : undefined;
+    }
+
+    let salesTrend: 'growth' | 'decline' | 'stagnation' = 'stagnation';
+    if (revenueMonthly.length >= 3) {
+      const recent3 = revenueMonthly.slice(-3).map((p) => p.value);
+      const avgRecent = recent3.reduce((s, v) => s + v, 0) / 3;
+      const earlier3 = revenueMonthly.slice(-6, -3).map((p) => p.value);
+      if (earlier3.length > 0) {
+        const avgEarlier =
+          earlier3.reduce((s, v) => s + v, 0) / earlier3.length;
+        const change =
+          avgEarlier > 0 ? ((avgRecent - avgEarlier) / avgEarlier) * 100 : 0;
+
+        if (change > 5) {
+          salesTrend = 'growth';
+        } else if (change < -5) {
+          salesTrend = 'decline';
+        }
+      }
+    }
+
+    const periodStart = revenueMonthly[0]?.date ?? '';
+    const periodEnd = revenueMonthly.at(-1)?.date ?? '';
+
+    const result = {
+      message: 'Business statistics retrieved successfully',
       businessId: business._id.toString(),
-      businessName: business.name,
-      products: productsStats,
-      invoices: invoicesStats,
-      productProfitability,
-      lastUpdated: new Date(),
+      period: { start: periodStart, end: periodEnd },
+      kpis: {
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        totalCOGS: Math.round(totalCOGS * 100) / 100,
+        grossProfit: Math.round(grossProfit * 100) / 100,
+        netProfit: Math.round(grossProfit * 100) / 100,
+        profitMarginPercent,
+        revenueGrowthRatePercent,
+      },
+      revenueTimeSeries: forecasts,
+      invoiceStatistics: {
+        totalInvoices: toNumberOrZero(inv?.totalInvoices),
+        paidInvoices:
+          toNumberOrZero(inv?.paidInvoices) +
+          toNumberOrZero(inv?.partialInvoices),
+        pendingInvoices: toNumberOrZero(inv?.pendingInvoices),
+        overdueInvoices: toNumberOrZero(inv?.overdueInvoices),
+        paidAmount:
+          toNumberOrZero(inv?.paidAmount) + toNumberOrZero(inv?.partialAmount),
+        pendingAmount: toNumberOrZero(inv?.pendingAmount),
+        overdueAmount: toNumberOrZero(inv?.overdueAmount),
+      },
+      productStatistics: {
+        totalProducts,
+        totalInventoryValue: Math.round(totalInventoryValue * 100) / 100,
+        lowStockProducts,
+      },
+      salesAnalytics: {
+        salesVolume: forecasts.salesVolume,
+        topProducts,
+        underperformingProducts,
+        salesTrend,
+      },
     };
-    return finalResponse;
+
+    // Cache for 5 minutes
+    await this.cacheService.set(cacheKey, result, 300);
+    return result;
   }
 
   async getClientPodium(
@@ -1686,6 +1754,7 @@ export class BusinessService {
       inviterId,
       businessRole: inviteDto.businessRole,
       status: 'pending',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     });
 
     const savedInvite = await invite.save();
@@ -1744,6 +1813,8 @@ export class BusinessService {
         inviterId: savedInvite.inviterId,
         businessRole: savedInvite.businessRole,
         emailSent,
+        status: savedInvite.status,
+        expiresAt: savedInvite.expiresAt,
         createdAt: savedInvite.createdAt,
       },
     };
@@ -1830,6 +1901,8 @@ export class BusinessService {
         inviterId: invite.inviterId,
         businessRole: invite.businessRole,
         emailSent: invite.emailSent,
+        status: invite.status,
+        expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
       },
     };
@@ -1933,5 +2006,287 @@ export class BusinessService {
         );
       }
     }
+  }
+
+  // === Stripe Connect Integration ===
+
+  private ensureStripeEnabled(): InstanceType<typeof Stripe> {
+    if (!this.stripeClient) {
+      throw new Error(
+        'Stripe client not configured. Please set STRIPE_SECRET_KEY environment variable.'
+      );
+    }
+    return this.stripeClient;
+  }
+
+  async getStripeOnboardingLink(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<StripeOnboardingLinkDto> {
+    // Check business access
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // Ensure Stripe is configured
+    const stripe = this.ensureStripeEnabled();
+
+    // Get frontend URL
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ??
+      process.env.FRONTEND_URL ??
+      'http://localhost:3000';
+
+    let stripeConnectId = business.stripeConnectId;
+
+    try {
+      // Create Stripe Express account if not already connected
+      if (!stripeConnectId) {
+        const account = await stripe.accounts.create({
+          type: 'express',
+          country: 'US', // Default to US; can be made configurable per business
+        });
+        stripeConnectId = account.id;
+
+        // Save the new account ID to the business
+        await this.businessModel.updateOne(
+          { _id: businessId },
+          { stripeConnectId }
+        );
+      }
+
+      // Create the account link for onboarding
+      const accountLink = await stripe.accountLinks.create({
+        account: stripeConnectId,
+        type: 'account_onboarding',
+        refresh_url: `${frontendUrl}/business/${businessId}/stripe/refresh`,
+        return_url: `${frontendUrl}/business/${businessId}/stripe/callback`,
+      });
+
+      // Save the onboarding URL (temporary, expires after 24h)
+      await this.businessModel.updateOne(
+        { _id: businessId },
+        { stripeOnboardingUrl: accountLink.url }
+      );
+
+      return {
+        onboardingUrl: accountLink.url,
+        message:
+          'Please complete your Stripe account setup. You will be redirected back after completing onboarding.',
+      };
+    } catch (error) {
+      const stripeErrorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Stripe onboarding link generation failed for business ${businessId}: ${stripeErrorMessage}`
+      );
+
+      const normalized = stripeErrorMessage.toLowerCase();
+      if (
+        normalized.includes('signed up for connect') ||
+        normalized.includes('dashboard.stripe.com/connect')
+      ) {
+        throw new BadRequestException(
+          'Stripe Connect is not enabled on your Stripe platform account. Activate Connect at https://dashboard.stripe.com/connect, then retry.'
+        );
+      }
+
+      throw new InternalServerErrorException(
+        'Unable to generate Stripe onboarding link right now. Please try again later.'
+      );
+    }
+  }
+
+  async getStripeConnectStatus(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<StripeConnectStatusDto> {
+    // Check business access
+    await this.checkBusinessAccess(businessId, userId, userRole, false);
+
+    // Get business
+    const business = await this.businessModel.findById(businessId);
+    if (!business) {
+      throw new NotFoundException('Business not found');
+    }
+
+    // If no Stripe Connect ID, account is not connected
+    if (!business.stripeConnectId) {
+      return {
+        isConnected: false,
+        message:
+          'Stripe Connect account not yet connected. Complete the onboarding to start receiving payments.',
+      };
+    }
+
+    // Verify the account status with Stripe
+    try {
+      const stripe = this.ensureStripeEnabled();
+      const account = await stripe.accounts.retrieve(business.stripeConnectId);
+
+      // Check if account is fully onboarded (charges_enabled)
+      const isFullyConnected = account.charges_enabled ?? false;
+
+      return {
+        isConnected: isFullyConnected,
+        stripeConnectId: business.stripeConnectId,
+        message: isFullyConnected
+          ? 'Stripe Connect account is fully configured. Ready to receive payments.'
+          : 'Stripe Connect account is connected but not fully set up. Please complete the required information.',
+      };
+    } catch (error) {
+      // If we can't verify with Stripe, assume not connected
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Unknown error verifying account';
+      this.logger.warn(
+        `Failed to verify Stripe account ${business.stripeConnectId}: ${errorMessage}`
+      );
+
+      return {
+        isConnected: false,
+        stripeConnectId: business.stripeConnectId,
+        message:
+          'Could not verify Stripe account status. Please try connecting again.',
+      };
+    }
+  }
+
+  // Team Management
+  async getTeamMembers(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{
+    message: string;
+    members: Array<{
+      id: string;
+      userId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phoneNumber?: string;
+      role: BusinessUserRole;
+      createdAt: Date;
+    }>;
+  }> {
+    await this.checkBusinessAccess(businessId, userId, userRole);
+
+    const businessUsers = await this.businessUserModel
+      .find({ businessId })
+      .lean();
+
+    const userIds = businessUsers.map((bu) => bu.userId);
+    const users = await this.userModel
+      .find({ _id: { $in: userIds } })
+      .select('firstName lastName email phoneNumber role createdAt')
+      .lean();
+
+    const members = businessUsers.map((bu) => {
+      const user = users.find((u) => u._id.toString() === bu.userId);
+      return {
+        id: bu._id.toString(),
+        userId: bu.userId,
+        firstName: user?.firstName ?? 'Unknown',
+        lastName: user?.lastName ?? 'User',
+        email: user?.email ?? '',
+        phoneNumber: user?.phoneNumber,
+        role: bu.role,
+        createdAt: bu.createdAt,
+      };
+    });
+
+    return {
+      message: 'Team members retrieved successfully',
+      members,
+    };
+  }
+
+  async getPendingInvites(
+    businessId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{
+    message: string;
+    invites: Array<{
+      id: string;
+      invitedEmail: string;
+      businessRole: string;
+      inviterName: string;
+      emailSent: boolean;
+      expiresAt: Date | undefined;
+      createdAt: Date;
+    }>;
+  }> {
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const invites = await this.businessInviteModel
+      .find({
+        businessId,
+        status: 'pending',
+        expiresAt: { $gt: new Date() },
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const inviterIds = invites.map((i) => i.inviterId);
+    const inviters = await this.userModel
+      .find({ _id: { $in: inviterIds } })
+      .select('firstName lastName')
+      .lean();
+
+    const formattedInvites = invites.map((invite) => {
+      const inviter = inviters.find(
+        (u) => u._id.toString() === invite.inviterId
+      );
+      return {
+        id: invite._id.toString(),
+        invitedEmail: invite.invitedEmail,
+        businessRole: invite.businessRole,
+        inviterName: inviter
+          ? `${inviter.firstName} ${inviter.lastName}`
+          : 'System',
+        emailSent: invite.emailSent,
+        expiresAt: invite.expiresAt,
+        createdAt: invite.createdAt,
+      };
+    });
+
+    return {
+      message: 'Pending invites retrieved successfully',
+      invites: formattedInvites,
+    };
+  }
+
+  async revokeInvite(
+    businessId: string,
+    inviteId: string,
+    userId: string,
+    userRole: Role
+  ): Promise<{ message: string }> {
+    await this.checkBusinessAccess(businessId, userId, userRole, true);
+
+    const invite = await this.businessInviteModel.findById(inviteId);
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.businessId !== businessId) {
+      throw new ForbiddenException(
+        'You do not have permission to revoke this invite'
+      );
+    }
+
+    invite.status = 'revoked';
+    await invite.save();
+
+    return { message: 'Invite revoked successfully' };
   }
 }

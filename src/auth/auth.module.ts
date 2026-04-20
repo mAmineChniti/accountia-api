@@ -22,16 +22,23 @@ import {
   BusinessInvite,
   BusinessInviteSchema,
 } from '@/business/schemas/business-invite.schema';
+import {
+  BusinessUser,
+  BusinessUserSchema,
+} from '@/business/schemas/business-user.schema';
+import { Business, BusinessSchema } from '@/business/schemas/business.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: BusinessInvite.name, schema: BusinessInviteSchema },
+      { name: BusinessUser.name, schema: BusinessUserSchema },
+      { name: Business.name, schema: BusinessSchema },
     ]),
     PassportModule,
     forwardRef(() => EmailModule),
-    BusinessModule,
+    forwardRef(() => BusinessModule),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (cfg: ConfigService) => ({

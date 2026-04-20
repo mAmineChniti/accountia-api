@@ -27,6 +27,8 @@ import {
 } from '@/invoices/enums/invoice-recipient.enum';
 import { Business } from '@/business/schemas/business.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationType } from '@/notifications/schemas/notification.schema';
 
 /**
  * InvoiceIssuanceService
@@ -61,7 +63,8 @@ export class InvoiceIssuanceService {
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectModel(Business.name) private businessModel: Model<Business>,
     @InjectConnection() private connection: Connection,
-    private tenantConnectionService: TenantConnectionService
+    private tenantConnectionService: TenantConnectionService,
+    private notificationsService: NotificationsService
   ) {}
 
   /**
@@ -96,6 +99,19 @@ export class InvoiceIssuanceService {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  /**
+   * Accept only valid Mongo ObjectId values for audit user fields.
+   * This prevents runtime cast errors when payment callbacks run without a user context.
+   */
+  private normalizeAuditUserId(userId?: string): string | undefined {
+    const normalized = this.normalizeOptionalString(userId);
+    if (!normalized) {
+      return undefined;
+    }
+
+    return ObjectId.isValid(normalized) ? normalized : undefined;
+  }
+
   private getTenantInvoiceModel(databaseName: string): Model<Invoice> {
     return this.tenantConnectionService.getTenantModel<Invoice>({
       databaseName,
@@ -116,22 +132,6 @@ export class InvoiceIssuanceService {
     userId: string
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
-
-    // Calculate total amount from line items
-    const totalAmount = dto.lineItems.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0
-    );
-
-    // Create line items with amounts
-    const lineItems = dto.lineItems.map((item) => ({
-      productId: item.productId,
-      productName: item.productName,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      amount: item.quantity * item.unitPrice,
-      description: item.description,
-    }));
 
     // Auto-generate invoiceNumber if not provided
     // Format: INV-{YYYYMMDD}-{randomString}
@@ -162,13 +162,29 @@ export class InvoiceIssuanceService {
       [];
 
     try {
-      // Reserve product quantities before creating invoice so imports and direct creates behave consistently.
+      // Reserve product quantities FIRST — this also resolves product names → real ObjectIds
+      // by mutating dto.lineItems[i].productId in-place.
       await this.reserveProductQuantities(
         businessId,
         databaseName,
         dto.lineItems,
         reservedProducts
       );
+
+      // Build lineItems AFTER reservation so resolved ObjectIds are used in the invoice document.
+      const totalAmount = dto.lineItems.reduce(
+        (sum, item) => sum + item.quantity * item.unitPrice,
+        0
+      );
+
+      const lineItems = dto.lineItems.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: item.quantity * item.unitPrice,
+        description: item.description,
+      }));
 
       // Create invoice in draft state in tenant database
       // Note: Mongoose will auto-convert businessId string to ObjectId in MongoDB
@@ -221,6 +237,54 @@ export class InvoiceIssuanceService {
     }
   }
 
+  /**
+   * Resolve a productId or product name to a MongoDB ObjectId.
+   * If the value is already a valid ObjectId string, it is used directly.
+   * Otherwise, it is treated as a product name and looked up in the tenant DB.
+   * Returns the resolved ObjectId string, or throws if not found.
+   */
+  private async resolveProductId(
+    productIdOrName: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<string> {
+    const tenantDb = this.connection.useDb(databaseName, { useCache: true });
+    const productsCollection = tenantDb.collection('products');
+    const businessObjectId = new ObjectId(businessId);
+
+    // If it looks like an ObjectId, verify it actually exists in the database
+    if (ObjectId.isValid(productIdOrName)) {
+      const objectId = new ObjectId(productIdOrName);
+      const productById = await productsCollection.findOne({
+        _id: objectId,
+        $or: [{ businessId: businessObjectId }, { businessId }],
+      });
+      if (productById) {
+        return productById._id.toString();
+      }
+      // If not found by ID, continue to name-based lookup (product name might be 24-char hex)
+    }
+
+    // Treat as product name — look up by exact name (case-insensitive)
+
+    const product = await productsCollection.findOne({
+      name: {
+        $regex: `^${productIdOrName.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}$`,
+        $options: 'i',
+      },
+      $or: [{ businessId: businessObjectId }, { businessId }],
+    });
+
+    if (!product) {
+      throw new NotFoundException(
+        `Product "${productIdOrName}" not found for this business. ` +
+          `Please use a valid product name or MongoDB ObjectId.`
+      );
+    }
+
+    return product._id.toString();
+  }
+
   private async reserveProductQuantities(
     businessId: string,
     databaseName: string,
@@ -235,19 +299,28 @@ export class InvoiceIssuanceService {
     const productsCollection = tenantDb.collection('products');
     const businessObjectId = new ObjectId(businessId);
 
+    // Resolve all productIds (supports both ObjectId strings and product names)
     const quantitiesByProduct = new Map<string, number>();
     for (const item of lineItems) {
-      const productId = this.normalizeOptionalString(item.productId);
-      if (!productId || !ObjectId.isValid(productId)) {
-        throw new BadRequestException(
-          `Invalid productId in line items: ${String(item.productId)}`
-        );
+      const rawId = this.normalizeOptionalString(item.productId);
+      if (!rawId) {
+        throw new BadRequestException(`Missing productId in line items`);
       }
 
-      quantitiesByProduct.set(
-        productId,
-        (quantitiesByProduct.get(productId) ?? 0) + item.quantity
+      // Resolve name → ObjectId if needed
+      const resolvedId = await this.resolveProductId(
+        rawId,
+        businessId,
+        databaseName
       );
+
+      quantitiesByProduct.set(
+        resolvedId,
+        (quantitiesByProduct.get(resolvedId) ?? 0) + item.quantity
+      );
+
+      // Mutate the lineItem so the invoice document stores the real ObjectId
+      item.productId = resolvedId;
     }
 
     for (const [
@@ -279,7 +352,7 @@ export class InvoiceIssuanceService {
         const currentQuantity =
           typeof product.quantity === 'number' ? product.quantity : 0;
         throw new BadRequestException(
-          `Insufficient quantity for product ${productId}. Available: ${currentQuantity}, required: ${quantityToReserve}`
+          `Insufficient quantity for product "${product.name ?? productId}". Available: ${currentQuantity}, required: ${quantityToReserve}`
         );
       }
 
@@ -419,7 +492,10 @@ export class InvoiceIssuanceService {
     invoice.description = dto.description ?? invoice.description;
     invoice.paymentTerms = dto.paymentTerms ?? invoice.paymentTerms;
     invoice.dueDate = dto.dueDate ?? invoice.dueDate;
-    invoice.lastModifiedBy = userId;
+    const auditUserId = this.normalizeAuditUserId(userId);
+    if (auditUserId) {
+      invoice.lastModifiedBy = auditUserId;
+    }
 
     await invoice.save();
 
@@ -493,7 +569,10 @@ export class InvoiceIssuanceService {
     const previousStatus = currentStatus;
     invoice.status = targetStatus;
     invoice.lastStatusChangeAt = new Date();
-    invoice.lastModifiedBy = userId;
+    const auditUserId = this.normalizeAuditUserId(userId);
+    if (auditUserId) {
+      invoice.lastModifiedBy = auditUserId;
+    }
 
     // Handle voiding
     if (targetStatus === InvoiceStatus.VOIDED) {
@@ -532,6 +611,33 @@ export class InvoiceIssuanceService {
     // ISSUED creates visibility, later transitions (VIEWED/PAID/etc.) update status for recipients.
     if (targetStatus !== InvoiceStatus.DRAFT) {
       await this.syncInvoiceToReceipt(invoice, databaseName);
+    }
+
+    if (targetStatus === InvoiceStatus.ISSUED && invoice.recipient.email) {
+      try {
+        const business = await this.businessModel.findById(businessId).exec();
+        const issuerBusinessName = business?.name ?? 'Unknown Business';
+
+        await this.notificationsService.createNotification({
+          type: NotificationType.INVOICE_CREATED,
+          message: `New invoice ${invoice.invoiceNumber} from ${issuerBusinessName}`,
+          targetUserEmail: invoice.recipient.email,
+          payload: {
+            invoiceId: invoice._id.toString(),
+            invoiceNumber: invoice.invoiceNumber,
+            issuerBusinessId: businessId,
+            issuerBusinessName,
+            totalAmount: invoice.totalAmount,
+            currency: invoice.currency,
+            dueDate: invoice.dueDate,
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to notify recipient for issued invoice ${invoiceId}`,
+          error
+        );
+      }
     }
 
     return this.mapInvoiceToResponse(invoice);

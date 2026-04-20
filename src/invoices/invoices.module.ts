@@ -5,6 +5,7 @@ import {
   InvoiceReceiptService,
   RecipientResolutionService,
   InvoiceImportService,
+  InvoicePaymentService,
 } from './services';
 import { InvoicesController } from './invoices.controller';
 import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
@@ -43,6 +44,7 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     InvoiceReceiptService,
     RecipientResolutionService,
     InvoiceImportService,
+    InvoicePaymentService,
     TenantConnectionService,
     TenantContextService,
     TenantContextGuard,
@@ -52,6 +54,7 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     InvoiceIssuanceService,
     InvoiceReceiptService,
     InvoiceImportService,
+    InvoicePaymentService,
   ],
 })
 export class InvoicesModule {}
