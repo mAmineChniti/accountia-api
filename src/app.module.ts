@@ -20,6 +20,7 @@ import { AnalyticsModule } from '@/analytics/analytics.module';
 import { VendorsModule } from '@/vendors/vendors.module';
 import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
 import { ClientPortalModule } from '@/client-portal/client-portal.module';
+import { CollectionsModule } from '@/collections/collections.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { ClientPortalModule } from '@/client-portal/client-portal.module';
     VendorsModule,
     PurchaseOrdersModule,
     ClientPortalModule,
+    CollectionsModule,
   ],
   controllers: [],
   providers: [],
