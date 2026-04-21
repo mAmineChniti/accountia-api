@@ -9,7 +9,5 @@
   "moduleNameMapper": {
     "^@/(.*)$": "<rootDir>/../src/$1"
   },
-  "transformIgnorePatterns": [
-    "/node_modules/(?!(@scure|otplib|@noble|ky)/)"
-  ]
+  "transformIgnorePatterns": ["/node_modules/(?!(@scure|otplib|@noble|ky)/)"]
 }

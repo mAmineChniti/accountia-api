@@ -1,4 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
 import { BusinessService } from '../src/business/business.service';
 import { Business } from '../src/business/schemas/business.schema';
@@ -13,28 +13,31 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import { ConfigService } from '@nestjs/config';
 import { CacheService } from '../src/redis/cache.service';
 import { TensorflowPredictionService } from '../src/business/services/tensorflow-prediction.service';
-import { Role } from '@/auth/enums/role.enum';
+import { Role } from '../src/auth/enums/role.enum';
 import { Types } from 'mongoose';
 import { NotFoundException } from '@nestjs/common';
 
 describe('BusinessService (Statistics)', () => {
   let service: BusinessService;
-  let mockBusinessModel: any;
-  let mockCacheService: any;
-  let mockTensorflowService: any;
-  let mockConnection: any;
+  let mockBusinessModel: { findById: jest.Mock };
+  let mockCacheService: { get: jest.Mock; set: jest.Mock };
+  let mockTensorflowService: { forecastBusinessMetrics: jest.Mock };
+  let mockConnection: { useDb: jest.Mock };
 
   const businessId = new Types.ObjectId().toString();
   const userId = new Types.ObjectId().toString();
   const databaseName = 'tenant_business_1';
 
   // Helper to create a thenable mock query
-  const createMockQuery = (value: any) => ({
+  const createMockQuery = (value: unknown) => ({
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
     exec: jest.fn().mockResolvedValue(value),
-    then: jest.fn().mockImplementation((resolve) => resolve(value)),
+    // eslint-disable-next-line unicorn/no-thenable
+    then: jest
+      .fn()
+      .mockImplementation((resolve: (v: unknown) => void) => resolve(value)),
   });
 
   beforeEach(async () => {
@@ -43,14 +46,20 @@ describe('BusinessService (Statistics)', () => {
     };
 
     mockCacheService = {
-      get: jest.fn().mockResolvedValue(null),
+      get: jest.fn().mockResolvedValue(),
       set: jest.fn().mockResolvedValue(true),
     };
 
     mockTensorflowService = {
       forecastBusinessMetrics: jest.fn().mockResolvedValue({
-        revenue: { historical: [{ date: '2024-01-01', value: 1000 }], forecast: [] },
-        cogs: { historical: [{ date: '2024-01-01', value: 500 }], forecast: [] },
+        revenue: {
+          historical: [{ date: '2024-01-01', value: 1000 }],
+          forecast: [],
+        },
+        cogs: {
+          historical: [{ date: '2024-01-01', value: 500 }],
+          forecast: [],
+        },
         salesVolume: { historical: [], forecast: [] },
       }),
     };
@@ -77,7 +86,13 @@ describe('BusinessService (Statistics)', () => {
         },
         {
           provide: getModelToken(BusinessUser.name),
-          useValue: { findOne: jest.fn().mockReturnValue(createMockQuery({ userId, businessId, role: 'OWNER' })) },
+          useValue: {
+            findOne: jest
+              .fn()
+              .mockReturnValue(
+                createMockQuery({ userId, businessId, role: 'OWNER' })
+              ),
+          },
         },
         {
           provide: getModelToken(BusinessInvite.name),
@@ -85,7 +100,13 @@ describe('BusinessService (Statistics)', () => {
         },
         {
           provide: getModelToken(User.name),
-          useValue: { findOne: jest.fn().mockReturnValue(createMockQuery({ _id: userId, email: 'owner@test.com' })) },
+          useValue: {
+            findOne: jest
+              .fn()
+              .mockReturnValue(
+                createMockQuery({ _id: userId, email: 'owner@test.com' })
+              ),
+          },
         },
         {
           provide: getModelToken(BusinessApplication.name),
@@ -118,35 +139,43 @@ describe('BusinessService (Statistics)', () => {
     const mockCachedData = { businessId, kpis: { totalRevenue: 100 } };
     mockCacheService.get.mockResolvedValue(mockCachedData);
 
-    const result = await service.getBusinessStatistics(businessId, userId, Role.BUSINESS_USER);
+    const result = await service.getBusinessStatistics(
+      businessId,
+      userId,
+      Role.BUSINESS_USER
+    );
 
     expect(result.kpis.totalRevenue).toBe(100);
     expect(mockBusinessModel.findById).not.toHaveBeenCalled();
   });
 
   it('should calculate statistics and cache them if not cached', async () => {
-    mockBusinessModel.findById.mockResolvedValue({ _id: businessId, databaseName });
-    
+    mockBusinessModel.findById.mockResolvedValue({
+      _id: businessId,
+      databaseName,
+    });
+
     // Mock Aggregation Results
-    const mockInvoiceAgg = [{
-      totalInvoices: 10,
-      paidInvoices: 5,
-      pendingInvoices: 5,
-      paidAmount: 5000,
-      pendingAmount: 5000,
-    }];
-    
-    const mockLineItemAgg = [
-      { productId: 'p1', quantity: 10, revenue: 1000 },
+    const mockInvoiceAgg = [
+      {
+        totalInvoices: 10,
+        paidInvoices: 5,
+        pendingInvoices: 5,
+        paidAmount: 5000,
+        pendingAmount: 5000,
+      },
     ];
-    
+
+    const mockLineItemAgg = [{ productId: 'p1', quantity: 10, revenue: 1000 }];
+
     const mockProducts = [
       { _id: 'p1', name: 'Product 1', unitPrice: 100, cost: 50, quantity: 20 },
     ];
 
     const mockCollection = {
       aggregate: jest.fn().mockReturnValue({
-        toArray: jest.fn()
+        toArray: jest
+          .fn()
           .mockResolvedValueOnce(mockInvoiceAgg)
           .mockResolvedValueOnce(mockLineItemAgg),
       }),
@@ -156,10 +185,14 @@ describe('BusinessService (Statistics)', () => {
     };
 
     mockConnection.useDb.mockReturnValue({
-      collection: jest.fn().mockImplementation((name) => mockCollection),
+      collection: jest.fn().mockImplementation(() => mockCollection),
     });
 
-    const result = await service.getBusinessStatistics(businessId, userId, Role.BUSINESS_USER);
+    const result = await service.getBusinessStatistics(
+      businessId,
+      userId,
+      Role.BUSINESS_USER
+    );
 
     expect(result.businessId).toBe(businessId);
     expect(result.invoiceStatistics.totalInvoices).toBe(10);
@@ -169,9 +202,10 @@ describe('BusinessService (Statistics)', () => {
   });
 
   it('should throw NotFoundException if business not found', async () => {
-    mockBusinessModel.findById.mockResolvedValue(null);
+    mockBusinessModel.findById.mockResolvedValue();
 
-    await expect(service.getBusinessStatistics(businessId, userId, Role.BUSINESS_USER))
-      .rejects.toThrow(NotFoundException);
+    await expect(
+      service.getBusinessStatistics(businessId, userId, Role.BUSINESS_USER)
+    ).rejects.toThrow(NotFoundException);
   });
 });

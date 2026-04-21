@@ -1,4 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
 import { InvoiceIssuanceService } from '../src/invoices/services/invoice-issuance.service';
 import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
@@ -7,19 +7,24 @@ import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
 import { Business } from '../src/business/schemas/business.schema';
 import { InvoiceStatus } from '../src/invoices/enums/invoice-status.enum';
 import { Types } from 'mongoose';
-import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
 
 describe('InvoiceIssuanceService', () => {
   let service: InvoiceIssuanceService;
-  let mockInvoiceReceiptModel: any;
-  let mockBusinessModel: any;
-  let mockConnection: any;
-  let mockTenantConnectionService: any;
-  let mockNotificationsService: any;
-  let mockInvoiceModel: any;
-  let mockProductsCollection: any;
-  let mockTenantDb: any;
+  let mockInvoiceReceiptModel: {
+    findOne: jest.Mock;
+    create: jest.Mock;
+    updateOne: jest.Mock;
+    exec: jest.Mock;
+  };
+  let mockBusinessModel: { findById: jest.Mock; exec: jest.Mock };
+  let mockConnection: { useDb: jest.Mock; db: { collection: jest.Mock } };
+  let mockTenantConnectionService: { getTenantModel: jest.Mock };
+  let mockNotificationsService: { createNotification: jest.Mock };
+  let mockInvoiceModel: Record<string, jest.Mock>;
+  let mockProductsCollection: { findOne: jest.Mock; updateOne: jest.Mock };
+  let mockTenantDb: { collection: jest.Mock };
 
   const businessId = new Types.ObjectId().toString();
   const databaseName = 'tenant_db';
@@ -52,7 +57,7 @@ describe('InvoiceIssuanceService', () => {
           quantity: 2,
           unitPrice: 50,
           amount: 100,
-        }
+        },
       ],
       createdBy: uId,
       lastModifiedBy: uId,
@@ -82,9 +87,9 @@ describe('InvoiceIssuanceService', () => {
     };
 
     mockTenantDb = {
-      collection: jest.fn().mockImplementation((name) => {
+      collection: jest.fn().mockImplementation((name: string) => {
         if (name === 'products') return mockProductsCollection;
-        return null;
+        return;
       }),
     };
 
@@ -113,10 +118,12 @@ describe('InvoiceIssuanceService', () => {
     };
 
     mockTenantConnectionService = {
-      getTenantModel: jest.fn().mockImplementation(({ modelName }) => {
-        if (modelName === 'Invoice') return mockInvoiceModel;
-        return null;
-      }),
+      getTenantModel: jest
+        .fn()
+        .mockImplementation(({ modelName }: { modelName: string }) => {
+          if (modelName === 'Invoice') return mockInvoiceModel;
+          return;
+        }),
     };
 
     mockNotificationsService = {
@@ -159,14 +166,27 @@ describe('InvoiceIssuanceService', () => {
   describe('createDraftInvoice', () => {
     it('should create a draft invoice and sync to platform', async () => {
       const dto = {
-        recipient: { type: 'EXTERNAL', email: 'test@example.com', displayName: 'Test Recipient' },
+        recipient: {
+          type: 'EXTERNAL',
+          email: 'test@example.com',
+          displayName: 'Test Recipient',
+        },
         lineItems: [
-          { productId: 'prod1', productName: 'Product 1', quantity: 2, unitPrice: 50 }
+          {
+            productId: 'prod1',
+            productName: 'Product 1',
+            quantity: 2,
+            unitPrice: 50,
+          },
         ],
         currency: 'TND',
       };
 
-      const mockProduct = { _id: new ObjectId(), name: 'Product 1', quantity: 10 };
+      const mockProduct = {
+        _id: new ObjectId(),
+        name: 'Product 1',
+        quantity: 10,
+      };
       mockProductsCollection.findOne.mockResolvedValue(mockProduct);
       mockProductsCollection.updateOne.mockResolvedValue({ modifiedCount: 1 });
 
@@ -175,7 +195,12 @@ describe('InvoiceIssuanceService', () => {
       mockBusinessModel.findById.mockReturnThis();
       mockBusinessModel.exec.mockResolvedValue({ name: 'My Business' });
 
-      const result = await service.createDraftInvoice(businessId, databaseName, dto as any, userId);
+      const result = await service.createDraftInvoice(
+        businessId,
+        databaseName,
+        dto as any,
+        userId
+      );
 
       expect(mockInvoiceModel.create).toHaveBeenCalled();
       expect(result.status).toBe(InvoiceStatus.DRAFT);
@@ -188,22 +213,34 @@ describe('InvoiceIssuanceService', () => {
         lineItems: [{ productId: 'prod1', quantity: 100, unitPrice: 10 }],
       };
 
-      mockProductsCollection.findOne.mockResolvedValue({ _id: new ObjectId(), name: 'P1', quantity: 10 });
+      mockProductsCollection.findOne.mockResolvedValue({
+        _id: new ObjectId(),
+        name: 'P1',
+        quantity: 10,
+      });
       mockProductsCollection.updateOne.mockResolvedValue({ modifiedCount: 0 });
 
-      await expect(service.createDraftInvoice(businessId, databaseName, dto as any, userId))
-        .rejects.toThrow(BadRequestException);
+      await expect(
+        service.createDraftInvoice(businessId, databaseName, dto as any, userId)
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('getIssuerInvoices', () => {
     it('should return paginated invoices', async () => {
       const mockInvoices = [createMockInvoice()];
-      mockInvoiceModel.countDocuments.mockResolvedValueOnce(10).mockResolvedValueOnce(1);
+      mockInvoiceModel.countDocuments
+        .mockResolvedValueOnce(10)
+        .mockResolvedValueOnce(1);
       mockInvoiceModel.find.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoices);
 
-      const result = await service.getIssuerInvoices(businessId, databaseName, 1, 10);
+      const result = await service.getIssuerInvoices(
+        businessId,
+        databaseName,
+        1,
+        10
+      );
 
       expect(result.total).toBe(10);
       expect(result.filteredTotal).toBe(1);
@@ -224,7 +261,7 @@ describe('InvoiceIssuanceService', () => {
       mockBusinessModel.findById.mockReturnThis();
       mockBusinessModel.exec.mockResolvedValue({ name: 'Biz' });
 
-      const result = await service.transitionInvoiceState(
+      await service.transitionInvoiceState(
         invoiceId,
         businessId,
         databaseName,
@@ -247,13 +284,15 @@ describe('InvoiceIssuanceService', () => {
       mockInvoiceModel.findById.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
 
-      await expect(service.transitionInvoiceState(
-        invoiceId,
-        businessId,
-        databaseName,
-        { newStatus: InvoiceStatus.ISSUED },
-        userId
-      )).rejects.toThrow(BadRequestException);
+      await expect(
+        service.transitionInvoiceState(
+          invoiceId,
+          businessId,
+          databaseName,
+          { newStatus: InvoiceStatus.ISSUED },
+          userId
+        )
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -269,7 +308,13 @@ describe('InvoiceIssuanceService', () => {
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
 
       const dto = { description: 'Updated' };
-      const result = await service.updateDraftInvoice(invoiceId, businessId, databaseName, dto, userId);
+      const result = await service.updateDraftInvoice(
+        invoiceId,
+        businessId,
+        databaseName,
+        dto,
+        userId
+      );
 
       expect(mockInvoice.save).toHaveBeenCalled();
       expect(result).toBeDefined();
@@ -281,8 +326,15 @@ describe('InvoiceIssuanceService', () => {
       mockInvoiceModel.findById.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
 
-      await expect(service.updateDraftInvoice(invoiceId, businessId, databaseName, {}, userId))
-        .rejects.toThrow(ForbiddenException);
+      await expect(
+        service.updateDraftInvoice(
+          invoiceId,
+          businessId,
+          databaseName,
+          {},
+          userId
+        )
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

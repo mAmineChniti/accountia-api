@@ -33,9 +33,7 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/src/$1',
       },
       testEnvironment: 'node',
-      transformIgnorePatterns: [
-        '/node_modules/(?!(@scure|otplib|@noble|ky)/)'
-      ],
+      transformIgnorePatterns: ['/node_modules/(?!(@scure|otplib|@noble|ky)/)'],
     },
   ],
 };

@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from './../src/app.module';
 
-jest.setTimeout(30000);
+jest.setTimeout(30_000);
 
 describe('Accountant (e2e)', () => {
   let app: INestApplication;
@@ -19,7 +19,7 @@ describe('Accountant (e2e)', () => {
     await app.init();
 
     // Authenticate with user's credentials
-    const loginResponse = await request(app.getHttpServer())
+    const loginResponse = await request(app.getHttpServer() as string)
       .post('/auth/login')
       .send({
         email: 'grajawiem@gmail.com',
@@ -27,7 +27,7 @@ describe('Accountant (e2e)', () => {
       });
 
     if (loginResponse.status === 200) {
-      jwtToken = loginResponse.body.accessToken;
+      jwtToken = (loginResponse.body as { accessToken: string }).accessToken;
     }
   });
 
@@ -36,7 +36,7 @@ describe('Accountant (e2e)', () => {
   });
 
   it('/accountant/health (GET) - Should return health status', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/accountant/health?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
@@ -48,16 +48,18 @@ describe('Accountant (e2e)', () => {
   it('/accountant/jobs (GET) - Should attempt to list jobs (handling unconfigured state)', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/accountant/jobs?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`);
 
     // Expect 200 if configured, or 503 if not configured
     if (response.status === 503) {
-      expect(response.body.message).toContain('not configured');
+      expect((response.body as { message: string }).message).toContain(
+        'not configured'
+      );
     } else {
       expect(response.status).toBe(200);
-      expect(response.body.success).toBe(true);
+      expect((response.body as { success: boolean }).success).toBe(true);
     }
   });
 
@@ -65,7 +67,7 @@ describe('Accountant (e2e)', () => {
     if (!jwtToken) return;
 
     const otherBusinessId = '600000000000000000000000';
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as string)
       .get(`/accountant/history?businessId=${otherBusinessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(404);

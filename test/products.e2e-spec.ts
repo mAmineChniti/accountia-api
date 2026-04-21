@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from './../src/app.module';
 
-jest.setTimeout(30000);
+jest.setTimeout(30_000);
 
 describe('ProductsController (e2e)', () => {
   let app: INestApplication;
@@ -20,7 +20,7 @@ describe('ProductsController (e2e)', () => {
     await app.init();
 
     // Authenticate with user's credentials
-    const loginResponse = await request(app.getHttpServer())
+    const loginResponse = await request(app.getHttpServer() as string)
       .post('/auth/login')
       .send({
         email: 'grajawiem@gmail.com',
@@ -28,7 +28,7 @@ describe('ProductsController (e2e)', () => {
       });
 
     if (loginResponse.status === 200) {
-      jwtToken = loginResponse.body.accessToken;
+      jwtToken = (loginResponse.body as { accessToken: string }).accessToken;
     }
   });
 
@@ -39,7 +39,7 @@ describe('ProductsController (e2e)', () => {
   it('/products (GET) - Should list products', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/products?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
@@ -50,7 +50,7 @@ describe('ProductsController (e2e)', () => {
   it('/products (POST) - Should create a new product', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .post('/products')
       .set('Authorization', `Bearer ${jwtToken}`)
       .send({
@@ -64,27 +64,27 @@ describe('ProductsController (e2e)', () => {
       .expect(201);
 
     expect(response.body).toHaveProperty('id');
-    expect(response.body.name).toBe('Jest E2E Product');
+    expect((response.body as { name: string }).name).toBe('Jest E2E Product');
 
-    createdProductId = response.body.id;
+    createdProductId = (response.body as { id: string }).id;
   });
 
   it('/products/:id (GET) - Should get the product by ID', async () => {
     if (!jwtToken || !createdProductId) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/products/${createdProductId}?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
 
     expect(response.body).toHaveProperty('id', createdProductId);
-    expect(response.body.name).toBe('Jest E2E Product');
+    expect((response.body as { name: string }).name).toBe('Jest E2E Product');
   });
 
   it('/products/:id (PATCH) - Should update the product', async () => {
     if (!jwtToken || !createdProductId) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .patch(`/products/${createdProductId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .send({
@@ -94,14 +94,16 @@ describe('ProductsController (e2e)', () => {
       })
       .expect(200);
 
-    expect(response.body.name).toBe('Jest E2E Product Updated');
-    expect(response.body.quantity).toBe(15);
+    expect((response.body as { name: string }).name).toBe(
+      'Jest E2E Product Updated'
+    );
+    expect((response.body as { quantity: number }).quantity).toBe(15);
   });
 
   it('/products/stock-insights (GET) - Should get stock insights', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/products/stock-insights?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
@@ -113,12 +115,17 @@ describe('ProductsController (e2e)', () => {
   it('/products/import (POST) - Should import products from CSV', async () => {
     if (!jwtToken) return;
 
-    const csvContent = Buffer.from('name,description,unitPrice,quantity\nE2E Item,Test,20,5');
+    const csvContent = Buffer.from(
+      'name,description,unitPrice,quantity\nE2E Item,Test,20,5'
+    );
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .post(`/products/import?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
-      .attach('file', csvContent, { filename: 'test.csv', contentType: 'text/csv' })
+      .attach('file', csvContent, {
+        filename: 'test.csv',
+        contentType: 'text/csv',
+      })
       .expect(201);
 
     expect(response.body).toHaveProperty('imported');
@@ -128,22 +135,22 @@ describe('ProductsController (e2e)', () => {
     if (!jwtToken) return;
 
     // Send a dummy ID just to see if the route responds successfully
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .post('/products/bulk-delete')
       .set('Authorization', `Bearer ${jwtToken}`)
       .query({ businessId })
       .send({
-        ids: ['60d5ecb8b392d40015b67a12']
+        ids: ['60d5ecb8b392d40015b67a12'],
       })
       .expect(200);
 
-    expect(response.body.success).toBe(true);
+    expect((response.body as { success: boolean }).success).toBe(true);
   });
 
   it('/products/:id (DELETE) - Should delete the test product', async () => {
     if (!jwtToken || !createdProductId) return;
 
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as string)
       .delete(`/products/${createdProductId}?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(204);

@@ -1,11 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
 import { InvoiceReceiptService } from '../src/invoices/services/invoice-receipt.service';
 import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
 import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
 import { Invoice } from '../src/invoices/schemas/invoice.schema';
 import { Types } from 'mongoose';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 
 describe('InvoiceReceiptService', () => {
   let service: InvoiceReceiptService;
@@ -92,10 +92,16 @@ describe('InvoiceReceiptService', () => {
   describe('getReceivedInvoicesByBusiness', () => {
     it('should return paginated receipts for a business', async () => {
       const mockReceipts = [createMockReceipt()];
-      mockInvoiceReceiptModel.countDocuments.mockResolvedValueOnce(5).mockResolvedValueOnce(1);
+      mockInvoiceReceiptModel.countDocuments
+        .mockResolvedValueOnce(5)
+        .mockResolvedValueOnce(1);
       mockInvoiceReceiptModel.exec.mockResolvedValue(mockReceipts);
 
-      const result = await service.getReceivedInvoicesByBusiness(recipientBusinessId, 1, 10);
+      const result = await service.getReceivedInvoicesByBusiness(
+        recipientBusinessId,
+        1,
+        10
+      );
 
       expect(result.total).toBe(5);
       expect(result.receipts.length).toBe(1);
@@ -106,24 +112,36 @@ describe('InvoiceReceiptService', () => {
   describe('getReceivedInvoicesByIndividual', () => {
     it('should return receipts matching userId or email', async () => {
       const mockReceipts = [createMockReceipt({ recipientUserId: userId })];
-      mockInvoiceReceiptModel.countDocuments.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+      mockInvoiceReceiptModel.countDocuments
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(1);
       mockInvoiceReceiptModel.exec.mockResolvedValue(mockReceipts);
 
-      const result = await service.getReceivedInvoicesByIndividual(userId, userEmail, 1, 10);
+      const result = await service.getReceivedInvoicesByIndividual(
+        userId,
+        userEmail,
+        1,
+        10
+      );
 
       expect(result.total).toBe(2);
-      expect(mockInvoiceReceiptModel.find).toHaveBeenCalledWith(expect.objectContaining({
-        $or: [{ recipientUserId: userId }, { recipientEmail: userEmail.toLowerCase() }]
-      }));
+      expect(mockInvoiceReceiptModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          $or: [
+            { recipientUserId: userId },
+            { recipientEmail: userEmail.toLowerCase() },
+          ],
+        })
+      );
     });
   });
 
   describe('getInvoiceDetailsAsRecipient', () => {
     it('should return full invoice details and mark as viewed', async () => {
       const receiptId = new Types.ObjectId().toString();
-      const mockReceipt = createMockReceipt({ 
+      const mockReceipt = createMockReceipt({
         _id: new Types.ObjectId(receiptId),
-        issuerTenantDatabaseName: 'issuer_db' 
+        issuerTenantDatabaseName: 'issuer_db',
       });
       const mockInvoice = {
         _id: mockReceipt.invoiceId,
@@ -135,14 +153,19 @@ describe('InvoiceReceiptService', () => {
       };
 
       mockInvoiceReceiptModel.exec.mockResolvedValue(mockReceipt);
-      
+
       const mockIssuerModel = {
         findById: jest.fn().mockReturnThis(),
         exec: jest.fn().mockResolvedValue(mockInvoice),
       };
-      mockTenantConnectionService.getTenantModel.mockReturnValue(mockIssuerModel);
+      mockTenantConnectionService.getTenantModel.mockReturnValue(
+        mockIssuerModel
+      );
 
-      const result = await service.getInvoiceDetailsAsRecipient(receiptId, recipientBusinessId);
+      const result = await service.getInvoiceDetailsAsRecipient(
+        receiptId,
+        recipientBusinessId
+      );
 
       expect(result.invoiceNumber).toBe(mockInvoice.invoiceNumber);
       expect(mockInvoiceReceiptModel.updateOne).toHaveBeenCalledWith(
@@ -153,24 +176,33 @@ describe('InvoiceReceiptService', () => {
 
     it('should throw ForbiddenException if recipient mismatch', async () => {
       const receiptId = new Types.ObjectId().toString();
-      const mockReceipt = createMockReceipt({ recipientBusinessId: 'other-biz' });
+      const mockReceipt = createMockReceipt({
+        recipientBusinessId: 'other-biz',
+      });
       mockInvoiceReceiptModel.exec.mockResolvedValue(mockReceipt);
 
-      await expect(service.getInvoiceDetailsAsRecipient(receiptId, recipientBusinessId))
-        .rejects.toThrow(ForbiddenException);
+      await expect(
+        service.getInvoiceDetailsAsRecipient(receiptId, recipientBusinessId)
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw ForbiddenException for external recipient without platform identity', async () => {
       const receiptId = new Types.ObjectId().toString();
-      const mockReceipt = createMockReceipt({ 
+      const mockReceipt = createMockReceipt({
         recipientEmail: 'external@example.com',
         recipientUserId: undefined,
-        recipientBusinessId: undefined 
+        recipientBusinessId: undefined,
       });
       mockInvoiceReceiptModel.exec.mockResolvedValue(mockReceipt);
 
-      await expect(service.getInvoiceDetailsAsRecipient(receiptId, undefined, undefined, 'external@example.com'))
-        .rejects.toThrow(ForbiddenException);
+      await expect(
+        service.getInvoiceDetailsAsRecipient(
+          receiptId,
+          undefined,
+          undefined,
+          'external@example.com'
+        )
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });

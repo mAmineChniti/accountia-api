@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { Test, type TestingModule } from '@nestjs/testing';
+import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from './../src/app.module';
 
-jest.setTimeout(30000);
+jest.setTimeout(30_000);
 
 describe('Statistics (e2e)', () => {
   let app: INestApplication;
@@ -19,7 +19,7 @@ describe('Statistics (e2e)', () => {
     await app.init();
 
     // Authenticate with user's credentials
-    const loginResponse = await request(app.getHttpServer())
+    const loginResponse = await request(app.getHttpServer() as string)
       .post('/auth/login')
       .send({
         email: 'grajawiem@gmail.com',
@@ -27,7 +27,7 @@ describe('Statistics (e2e)', () => {
       });
 
     if (loginResponse.status === 200) {
-      jwtToken = loginResponse.body.accessToken;
+      jwtToken = (loginResponse.body as { accessToken: string }).accessToken;
     }
   });
 
@@ -38,7 +38,7 @@ describe('Statistics (e2e)', () => {
   it('/business/statistics (GET) - Should retrieve business statistics', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
+    const response = await request(app.getHttpServer() as string)
       .get(`/business/statistics?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
@@ -54,8 +54,10 @@ describe('Statistics (e2e)', () => {
   it('/business/statistics (GET) - Should work with custom prediction horizon', async () => {
     if (!jwtToken) return;
 
-    const response = await request(app.getHttpServer())
-      .get(`/business/statistics?businessId=${businessId}&predictionHorizonDays=60`)
+    const response = await request(app.getHttpServer() as string)
+      .get(
+        `/business/statistics?businessId=${businessId}&predictionHorizonDays=60`
+      )
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
 
@@ -66,7 +68,7 @@ describe('Statistics (e2e)', () => {
     if (!jwtToken) return;
 
     const otherBusinessId = '600000000000000000000000'; // Non-existent ID
-    await request(app.getHttpServer())
+    await request(app.getHttpServer() as string)
       .get(`/business/statistics?businessId=${otherBusinessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(404);

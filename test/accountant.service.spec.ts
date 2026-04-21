@@ -1,8 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AccountantService } from '../src/accountant/accountant.service';
 import { ServiceUnavailableException } from '@nestjs/common';
-import ky from 'ky';
 
 // Mock ky
 jest.mock('ky', () => ({
@@ -14,13 +13,13 @@ jest.mock('ky', () => ({
 
 describe('AccountantService', () => {
   let service: AccountantService;
-  let mockConfigService: any;
-  let mockHttpClient: any;
+  let mockConfigService: { get: jest.Mock };
+  let mockHttpClient: { post: jest.Mock; get: jest.Mock };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockConfigService = {
-      get: jest.fn((key, defaultValue) => {
+      get: jest.fn((key: string, defaultValue?: any) => {
         if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
         if (key === 'AI_ACCOUNTANT_API_KEY') return 'test-api-key';
         return defaultValue;
@@ -39,7 +38,7 @@ describe('AccountantService', () => {
 
     service = module.get<AccountantService>(AccountantService);
     // Access the private httpClient for mocking calls
-    mockHttpClient = (service as any).httpClient;
+    mockHttpClient = (service as unknown as { httpClient: any }).httpClient;
   });
 
   it('should be defined', () => {
@@ -53,28 +52,39 @@ describe('AccountantService', () => {
         json: jest.fn().mockResolvedValue(mockResponse),
       });
 
-      const dto = { period_start: '2024-01-01', period_end: '2024-01-31', business_id: 'b1' };
+      const dto = {
+        period_start: '2024-01-01',
+        period_end: '2024-01-31',
+        business_id: 'b1',
+      };
       const result = await service.createAccountingJob(dto);
 
-      expect(mockHttpClient.post).toHaveBeenCalledWith('api/accounting/jobs', expect.objectContaining({
-        json: dto,
-      }));
+      expect(mockHttpClient.post).toHaveBeenCalledWith(
+        'api/accounting/jobs',
+        expect.objectContaining({
+          json: dto,
+        })
+      );
       expect(result).toEqual(mockResponse);
     });
 
     it('should throw ServiceUnavailableException if API key is missing', async () => {
       // Re-instantiate service without API key
-      mockConfigService.get.mockImplementation((key) => {
+      mockConfigService.get.mockImplementation((key: string) => {
         if (key === 'AI_ACCOUNTANT_API_KEY') return '';
-        return null;
+        return;
       });
       const module: TestingModule = await Test.createTestingModule({
-        providers: [AccountantService, { provide: ConfigService, useValue: mockConfigService }],
+        providers: [
+          AccountantService,
+          { provide: ConfigService, useValue: mockConfigService },
+        ],
       }).compile();
       const disabledService = module.get<AccountantService>(AccountantService);
 
-      await expect(disabledService.createAccountingJob({} as any))
-        .rejects.toThrow(ServiceUnavailableException);
+      await expect(
+        disabledService.createAccountingJob({} as any)
+      ).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
@@ -87,9 +97,12 @@ describe('AccountantService', () => {
 
       const result = await service.getJobStatus('job_123', 'b1');
 
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/accounting/jobs/job_123', expect.objectContaining({
-        searchParams: { business_id: 'b1' },
-      }));
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        'api/accounting/jobs/job_123',
+        expect.objectContaining({
+          searchParams: { business_id: 'b1' },
+        })
+      );
       expect(result).toEqual(mockStatus);
     });
   });
@@ -103,9 +116,12 @@ describe('AccountantService', () => {
 
       const result = await service.getTaxSummary('b1', 2024);
 
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/accounting/business/b1/taxes', expect.objectContaining({
-        searchParams: { year: '2024' },
-      }));
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        'api/accounting/business/b1/taxes',
+        expect.objectContaining({
+          searchParams: { year: '2024' },
+        })
+      );
       expect(result).toEqual(mockTaxes);
     });
   });

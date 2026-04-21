@@ -1,4 +1,4 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test, type TestingModule } from '@nestjs/testing';
 import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
 import { BusinessService } from '../src/business/business.service';
 import { BusinessInvite } from '../src/business/schemas/business-invite.schema';
@@ -20,31 +20,38 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('BusinessService (Invites)', () => {
   let service: BusinessService;
-  let mockBusinessInviteModel: any;
-  let mockBusinessModel: any;
-  let mockBusinessUserModel: any;
-  let mockUserModel: any;
-  let mockEmailService: any;
+  let mockBusinessInviteModel: Record<string, jest.Mock>;
+  let mockBusinessModel: { findById: jest.Mock };
+  let mockBusinessUserModel: { findOne: jest.Mock };
+  let mockUserModel: {
+    findOne: jest.Mock;
+    findById: jest.Mock;
+    find: jest.Mock;
+  };
+  let mockEmailService: { sendBusinessInviteEmail: jest.Mock };
 
   const businessId = new Types.ObjectId().toString();
   const inviterId = new Types.ObjectId().toString();
   const invitedEmail = 'newuser@example.com';
 
-  const createMockQuery = (value: any) => ({
+  const createMockQuery = (value: unknown) => ({
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
     exec: jest.fn().mockResolvedValue(value),
-    then: jest.fn().mockImplementation((resolve) => resolve(value)),
+    // eslint-disable-next-line unicorn/no-thenable
+    then: jest
+      .fn()
+      .mockImplementation((resolve: (v: unknown) => void) => resolve(value)),
   });
 
   beforeEach(async () => {
     mockBusinessInviteModel = jest.fn().mockImplementation((dto) => ({
       ...dto,
-      save: jest.fn().mockResolvedValue({ 
-        ...dto, 
-        _id: new Types.ObjectId(), 
-        toInviteResponse: () => ({ id: '123', invitedEmail: dto.invitedEmail }) 
+      save: jest.fn().mockResolvedValue({
+        ...dto,
+        _id: new Types.ObjectId(),
+        toInviteResponse: () => ({ id: '123', invitedEmail: dto.invitedEmail }),
       }),
     }));
 
@@ -138,12 +145,22 @@ describe('BusinessService (Invites)', () => {
 
   describe('inviteBusinessUser', () => {
     it('should create an invitation and send an email for a new user', async () => {
-      mockBusinessModel.findById.mockResolvedValue({ _id: businessId, name: 'My Business' });
-      mockBusinessInviteModel.findOne.mockReturnValue(createMockQuery(null));
-      mockUserModel.findOne.mockReturnValue(createMockQuery(null));
-      mockBusinessInviteModel.findByIdAndUpdate.mockReturnValue(createMockQuery({ emailSent: true }));
-      
-      const result = await service.inviteBusinessUser(businessId, { invitedEmail, businessRole: BusinessUserRole.MEMBER, businessId }, inviterId, Role.PLATFORM_ADMIN);
+      mockBusinessModel.findById.mockResolvedValue({
+        _id: businessId,
+        name: 'My Business',
+      });
+      mockBusinessInviteModel.findOne.mockReturnValue(createMockQuery());
+      mockUserModel.findOne.mockReturnValue(createMockQuery());
+      mockBusinessInviteModel.findByIdAndUpdate.mockReturnValue(
+        createMockQuery({ emailSent: true })
+      );
+
+      const result = await service.inviteBusinessUser(
+        businessId,
+        { invitedEmail, businessRole: BusinessUserRole.MEMBER, businessId },
+        inviterId,
+        Role.PLATFORM_ADMIN
+      );
 
       expect(mockBusinessInviteModel).toHaveBeenCalled();
       expect(mockEmailService.sendBusinessInviteEmail).toHaveBeenCalled();
@@ -151,21 +168,44 @@ describe('BusinessService (Invites)', () => {
     });
 
     it('should throw BadRequestException if user already invited', async () => {
-      mockBusinessModel.findById.mockResolvedValue({ _id: businessId, name: 'My Business' });
-      mockBusinessInviteModel.findOne.mockReturnValue(createMockQuery({ _id: 'existing' }));
+      mockBusinessModel.findById.mockResolvedValue({
+        _id: businessId,
+        name: 'My Business',
+      });
+      mockBusinessInviteModel.findOne.mockReturnValue(
+        createMockQuery({ _id: 'existing' })
+      );
 
-      await expect(service.inviteBusinessUser(businessId, { invitedEmail, businessRole: BusinessUserRole.MEMBER, businessId }, inviterId, Role.PLATFORM_ADMIN))
-        .rejects.toThrow(BadRequestException);
+      await expect(
+        service.inviteBusinessUser(
+          businessId,
+          { invitedEmail, businessRole: BusinessUserRole.MEMBER, businessId },
+          inviterId,
+          Role.PLATFORM_ADMIN
+        )
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('getPendingInvites', () => {
     it('should return a list of pending invites', async () => {
-      const mockInvites = [{ _id: '1', invitedEmail: 'a@b.com', inviterId: inviterId }];
-      mockBusinessInviteModel.find.mockReturnValue(createMockQuery(mockInvites));
-      mockUserModel.find.mockReturnValue(createMockQuery([{ _id: inviterId, firstName: 'John', lastName: 'Doe' }]));
+      const mockInvites = [
+        { _id: '1', invitedEmail: 'a@b.com', inviterId: inviterId },
+      ];
+      mockBusinessInviteModel.find.mockReturnValue(
+        createMockQuery(mockInvites)
+      );
+      mockUserModel.find.mockReturnValue(
+        createMockQuery([
+          { _id: inviterId, firstName: 'John', lastName: 'Doe' },
+        ])
+      );
 
-      const result = await service.getPendingInvites(businessId, inviterId, Role.PLATFORM_ADMIN);
+      const result = await service.getPendingInvites(
+        businessId,
+        inviterId,
+        Role.PLATFORM_ADMIN
+      );
 
       expect(result.invites.length).toBe(1);
     });
@@ -173,25 +213,38 @@ describe('BusinessService (Invites)', () => {
 
   describe('revokeInvite', () => {
     it('should delete a pending invite', async () => {
-      const mockInvite = { 
-        _id: 'invite1', 
-        status: 'pending', 
+      const mockInvite = {
+        _id: 'invite1',
+        status: 'pending',
         businessId: businessId,
-        save: jest.fn().mockResolvedValue(true)
+        save: jest.fn().mockResolvedValue(true),
       };
-      mockBusinessInviteModel.findById.mockReturnValue(createMockQuery(mockInvite));
+      mockBusinessInviteModel.findById.mockReturnValue(
+        createMockQuery(mockInvite)
+      );
       mockBusinessInviteModel.findByIdAndDelete.mockResolvedValue(mockInvite);
 
-      const result = await service.revokeInvite(businessId, 'invite1', inviterId, Role.PLATFORM_ADMIN);
+      const result = await service.revokeInvite(
+        businessId,
+        'invite1',
+        inviterId,
+        Role.PLATFORM_ADMIN
+      );
 
       expect(result.message).toContain('revoked');
     });
 
     it('should throw NotFoundException if invite not found', async () => {
-      mockBusinessInviteModel.findById.mockReturnValue(createMockQuery(null));
+      mockBusinessInviteModel.findById.mockReturnValue(createMockQuery());
 
-      await expect(service.revokeInvite(businessId, 'non-existent', inviterId, Role.PLATFORM_ADMIN))
-        .rejects.toThrow(NotFoundException);
+      await expect(
+        service.revokeInvite(
+          businessId,
+          'non-existent',
+          inviterId,
+          Role.PLATFORM_ADMIN
+        )
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
