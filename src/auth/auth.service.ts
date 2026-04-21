@@ -12,8 +12,9 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import Stripe from 'stripe';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import { Connection, Model, Types, Document } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
@@ -48,9 +49,26 @@ import { BusinessService } from '@/business/business.service';
 import { Business } from '@/business/schemas/business.schema';
 import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 
+import {
+  UserStripeOnboardingLinkDto,
+  UserStripeConnectStatusDto,
+} from '@/auth/dto/stripe-connect.dto';
+
+import { generateSecret, verify, generateURI } from 'otplib';
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+let qrcodeModule: typeof import('qrcode') | undefined;
+
+const getQrcode = async () => {
+  qrcodeModule ??= await import('qrcode');
+  return qrcodeModule;
+};
+
 interface TokenPayload {
   sub?: string;
   id: string;
+  email: string;
+  role: string;
 }
 
 type TwoFactorChallengeResponse = {
@@ -89,16 +107,6 @@ type GoogleAuthCodeRecord = {
   expiresAt: Date;
 };
 
-import { generateSecret, verify, generateURI } from 'otplib';
-
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
-let qrcodeModule: typeof import('qrcode') | undefined;
-
-const getQrcode = async () => {
-  qrcodeModule ??= await import('qrcode');
-  return qrcodeModule;
-};
-
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -107,6 +115,8 @@ export class AuthService {
     accessMs: 15 * 60 * 1000, // 15 minutes
     refreshMs: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
+
+  private readonly stripe: InstanceType<typeof Stripe>;
 
   private oauthIndexesInitialized = false;
 
@@ -133,12 +143,17 @@ export class AuthService {
     private tenantConnectionService: TenantConnectionService,
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService
-  ) {}
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
+    this.stripe = new (Stripe as any)(process.env.STRIPE_SECRET_KEY ?? '', {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      apiVersion: '2022-11-15' as any,
+    });
+  }
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
 
-    // Rate-limit OAuth state creation per IP
     const rateLimit = await this.rateLimitingService.checkOAuthStateRequests(
       params.ip
     );
@@ -212,7 +227,7 @@ export class AuthService {
       const tokens = this.generateTokens(user);
 
       await this.userModel.updateOne(
-        { _id: user._id },
+        { _id: (user as unknown as { _id: Types.ObjectId })._id },
         {
           $push: {
             refreshTokens: {
@@ -303,7 +318,6 @@ export class AuthService {
       secret: user.twoFactorTempSecret,
       token: code,
     });
-    // Use constant-time comparison to prevent timing attacks
     const isValid = result.valid === true;
 
     if (!isValid) return false;
@@ -331,7 +345,6 @@ export class AuthService {
       secret: user.twoFactorSecret!,
       token: code,
     });
-    // Use constant-time comparison to prevent timing attacks
     if (result.valid !== true) {
       await this.record2FAAttempt(context.email, context.ip, false);
       throw new UnauthorizedException('Invalid 2FA code');
@@ -375,7 +388,6 @@ export class AuthService {
     await this.check2FAVerificationLimit(user.email, ip);
 
     const result = await verify({ secret: user.twoFactorSecret, token: code });
-    // Use constant-time comparison to prevent timing attacks
     const isValid = result.valid === true;
 
     if (!isValid) {
@@ -464,7 +476,6 @@ export class AuthService {
       throw error;
     }
 
-    // Check if user is invited to any business
     const pendingInvites = await this.businessInviteModel.find({
       invitedEmail: normalizedEmail,
       status: 'pending',
@@ -499,11 +510,10 @@ export class AuthService {
         phoneNumber,
         acceptTerms,
         profilePicture: finalProfilePicture,
-        emailConfirmed: isInvited, // Auto-confirm if invited
+        emailConfirmed: isInvited,
         ...(isInvited
           ? {}
           : {
-              // Only set token fields if email needs confirmation
               emailToken: this.generateEmailToken(),
               emailTokenExpiresAt,
               emailTokenGeneratedAt,
@@ -512,9 +522,7 @@ export class AuthService {
 
       await user.save();
 
-      // If invited, auto-process invites; otherwise send confirmation email
       if (isInvited) {
-        // Process invites immediately - fail registration if processing fails
         try {
           await this.businessService.processInvitesForNewUser(
             user._id.toString(),
@@ -539,14 +547,12 @@ export class AuthService {
               error: errorMessage,
             },
           });
-          // Delete the user since invite processing failed
           await this.userModel.findByIdAndDelete(user._id);
           throw new InternalServerErrorException(
             'Failed to process business invitation. Please try again later.'
           );
         }
       } else {
-        // Send confirmation email (fire-and-forget)
         void this.emailService
           .sendConfirmationEmail(normalizedEmail, user.emailToken!)
           .catch((error) => {
@@ -818,7 +824,6 @@ export class AuthService {
     token: string
   ): Promise<{ success: boolean; message: string; user?: User }> {
     try {
-      // Use atomic update to prevent race conditions
       const now = new Date();
       const result = await this.userModel.findOneAndUpdate(
         {
@@ -844,7 +849,6 @@ export class AuthService {
       );
 
       if (!result) {
-        // Check why it failed for better error messaging
         const user = await this.userModel.findOne({ emailToken: token });
         if (!user) {
           return { success: false, message: 'Invalid confirmation token' };
@@ -858,7 +862,6 @@ export class AuthService {
         return { success: false, message: 'Invalid confirmation token' };
       }
 
-      // Record audit event for successful email confirmation
       await this.auditEmitter.emitAction({
         action: AuditAction.EMAIL_CONFIRMED,
         userId: result._id.toString(),
@@ -899,11 +902,10 @@ export class AuthService {
       );
     }
 
-    // Record attempt immediately after check passes (reduces race condition window)
     await this.rateLimitingService.recordEmailAttempt(user._id.toString());
 
     const newEmailToken = this.generateEmailToken();
-    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const emailTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const emailTokenGeneratedAt = new Date();
     user.emailToken = newEmailToken;
     user.emailTokenExpiresAt = emailTokenExpiresAt;
@@ -914,7 +916,6 @@ export class AuthService {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
       return { message: 'Confirmation email sent successfully' };
     } catch (error) {
-      // Refund the rate limit attempt since email failed
       await this.rateLimitingService.refundEmailAttempt(user._id.toString());
       this.logger.error('Failed to send confirmation email', error);
       throw new InternalServerErrorException(
@@ -990,20 +991,22 @@ export class AuthService {
   async fetchAllUsers(): Promise<UsersListResponseDto> {
     const users = await this.userModel.find().lean();
 
-    const formatted = users.map((u) => ({
-      id: u._id.toString(),
-      username: u.username,
-      email: u.email,
-      firstName: u.firstName,
-      lastName: u.lastName,
-      birthdate: u.birthdate,
-      profilePicture: u.profilePicture,
-      phoneNumber: u.phoneNumber,
-      role: u.role,
-      dateJoined: u.createdAt,
-      isBanned: u.isBanned ?? false,
-      bannedReason: u.bannedReason,
-    }));
+    const formatted = users.map(
+      (u: User & { _id: Types.ObjectId; createdAt?: Date }) => ({
+        id: u._id.toString(),
+        username: u.username,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        birthdate: u.birthdate,
+        profilePicture: u.profilePicture,
+        phoneNumber: u.phoneNumber,
+        role: u.role,
+        dateJoined: u.createdAt,
+        isBanned: u.isBanned ?? false,
+        bannedReason: u.bannedReason,
+      })
+    );
 
     return {
       message: 'Users retrieved successfully',
@@ -1023,9 +1026,6 @@ export class AuthService {
 
     const isEmailChanging = updateDto.email && updateDto.email !== user.email;
     const isPasswordChanging = !!updateDto.password;
-    // Check if user has a local password (not just an OAuth-generated random one)
-    // For now, we assume all users have passwordHash. If a provider/isOAuthOnly field exists,
-    // this logic should be updated to skip verification for OAuth-only users setting their first password.
     const hasLocalPassword = !!user.passwordHash;
 
     if (
@@ -1117,17 +1117,13 @@ export class AuthService {
       throw new BadRequestException('No update fields provided');
     }
 
-    // If email is being updated, persist token first, then send confirmation email
     if (updateData.email && updateData.emailToken) {
-      // Store original email for potential rollback
       const originalEmail = user.email;
       const originalEmailConfirmed = user.emailConfirmed;
 
-      // Use MongoDB transaction for atomic email update
       const session = await this.connection.startSession();
       try {
         const updatedUser = await session.withTransaction(async () => {
-          // Persist the email change and token atomically within transaction
           const userResult = await this.userModel.findByIdAndUpdate(
             userId,
             {
@@ -1145,14 +1141,12 @@ export class AuthService {
           return userResult;
         });
 
-        // Send email outside transaction (non-transactional operation)
         try {
           await this.emailService.sendConfirmationEmail(
             updateData.email,
             updateData.emailToken
           );
         } catch (emailError) {
-          // Rollback: restore original email and confirmation status
           await this.userModel.findByIdAndUpdate(userId, {
             $set: {
               email: originalEmail,
@@ -1169,12 +1163,10 @@ export class AuthService {
           );
         }
 
-        // Remove email-related fields from updateData since we handled them
         delete updateData.email;
         delete updateData.emailToken;
         delete updateData.emailConfirmed;
 
-        // If no other updates, return success
         if (Object.keys(updateData).length === 0) {
           const publicUser: PrivateUserDto = {
             username: updatedUser.username,
@@ -1207,7 +1199,6 @@ export class AuthService {
       }
     }
 
-    // Apply any remaining updates (or all updates if no email change)
     if (Object.keys(updateData).length > 0) {
       try {
         const updatedUser = await this.userModel.findByIdAndUpdate(
@@ -1247,7 +1238,6 @@ export class AuthService {
       }
     }
 
-    // If only email was updated and no other fields, fetch the updated user
     const finalUser = await this.userModel.findById(userId);
     if (!finalUser) {
       throw new BadRequestException('Failed to retrieve updated user');
@@ -1289,11 +1279,9 @@ export class AuthService {
     }
 
     try {
-      // Get all business associations before deleting
       const businessUsers = await this.businessUserModel.find({ userId });
       const businessIds = businessUsers.map((bu) => bu.businessId);
 
-      // Remove user from tenant databases first
       let tenantDatabasesCleaned = 0;
       if (businessIds.length > 0) {
         const businesses = await this.businessModel.find({
@@ -1311,7 +1299,6 @@ export class AuthService {
         }
       }
 
-      // Delete user from platform business_users collection
       const businessUserDeleteResult = await this.businessUserModel.deleteMany({
         userId,
       });
@@ -1357,7 +1344,6 @@ export class AuthService {
       throw new NotFoundException('Admin not found');
     }
 
-    // Prevent platform admins from deleting platform owners
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       user.role === Role.PLATFORM_OWNER
@@ -1367,11 +1353,9 @@ export class AuthService {
       );
     }
 
-    // Get all business associations before deleting
     const businessUsers = await this.businessUserModel.find({ userId });
     const businessIds = businessUsers.map((bu) => bu.businessId);
 
-    // Remove user from tenant databases first
     let tenantDatabasesCleaned = 0;
     if (businessIds.length > 0) {
       const businesses = await this.businessModel.find({
@@ -1389,7 +1373,6 @@ export class AuthService {
       }
     }
 
-    // Delete user from platform business_users collection
     const businessUserDeleteResult = await this.businessUserModel.deleteMany({
       userId,
     });
@@ -1448,12 +1431,16 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
-    const userId =
-      user instanceof User && '_id' in user ? user._id.toString() : user.id;
+    const isUser = '_id' in user;
+    const userId = isUser
+      ? String((user as Record<string, unknown>)._id)
+      : String((user as Record<string, unknown>).id);
 
     const payload: TokenPayload = {
       sub: userId,
       id: userId,
+      email: user.email ?? '',
+      role: (user as User).role ?? '',
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -1767,7 +1754,7 @@ export class AuthService {
       if (!existing.emailConfirmed) {
         existing.emailConfirmed = true;
         existing.emailToken = undefined;
-        await existing.save();
+        await (existing as Document).save();
       }
       return existing;
     }
@@ -1860,7 +1847,6 @@ export class AuthService {
     if (!admin) throw new NotFoundException('Admin not found');
     if (!user) throw new NotFoundException('User not found');
 
-    // Platform Admins cannot ban Platform Owners or other Platform Admins
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
@@ -1870,7 +1856,6 @@ export class AuthService {
       );
     }
 
-    // Platform Owners cannot ban other Platform Owners
     if (
       admin.role === Role.PLATFORM_OWNER &&
       user.role === Role.PLATFORM_OWNER
@@ -1921,7 +1906,6 @@ export class AuthService {
     if (!admin) throw new NotFoundException('Admin not found');
     if (!user) throw new NotFoundException('User not found');
 
-    // Platform Admins cannot unban Platform Owners or other Platform Admins
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
@@ -1931,7 +1915,6 @@ export class AuthService {
       );
     }
 
-    // Platform Owners cannot unban other Platform Owners
     if (
       admin.role === Role.PLATFORM_OWNER &&
       user.role === Role.PLATFORM_OWNER
@@ -1961,7 +1944,7 @@ export class AuthService {
     });
 
     return {
-      message: 'User unbanned successfully',
+      message: 'User ununbanned successfully',
       userId: user._id.toString(),
       isBanned: false,
     };
@@ -1972,37 +1955,25 @@ export class AuthService {
     newRole: Role,
     currentUser: UserPayload
   ): Promise<RoleResponseDto> {
-    // Prevent users from changing their own role
-    if (userId === currentUser.id) {
+    if (userId === currentUser.id)
       throw new ForbiddenException('You cannot change your own role');
-    }
-
     const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
+    if (!user) throw new NotFoundException('User not found');
     const previousRole = user.role;
-
-    // Only allow PLATFORM_OWNER to change roles of PLATFORM_ADMIN
     if (
       currentUser.role === Role.PLATFORM_ADMIN &&
       previousRole === Role.PLATFORM_OWNER
-    ) {
+    )
       throw new ForbiddenException(
         'Platform Admin cannot change Platform Owner role'
       );
-    }
-
-    // Only allow PLATFORM_OWNER to assign elevated roles
     if (
       currentUser.role === Role.PLATFORM_ADMIN &&
       (newRole === Role.PLATFORM_OWNER || newRole === Role.PLATFORM_ADMIN)
-    ) {
+    )
       throw new ForbiddenException(
         'Platform Admin cannot assign Platform Owner or Platform Admin roles'
       );
-    }
 
     user.role = newRole;
     await user.save();
@@ -2021,6 +1992,72 @@ export class AuthService {
       userId: user._id.toString(),
       newRole: user.role,
       previousRole,
+    };
+  }
+
+  async getStripeOnboardingLink(
+    userId: string
+  ): Promise<UserStripeOnboardingLinkDto> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!(user as User & { stripeConnectId?: string }).stripeConnectId) {
+      const account = await this.stripe.accounts.create({
+        type: 'express',
+        email: user.email,
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
+      });
+      (user as User & { stripeConnectId?: string }).stripeConnectId =
+        account.id;
+      await user.save();
+    }
+
+    const accountLink = await this.stripe.accountLinks.create({
+      account: (user as User & { stripeConnectId?: string }).stripeConnectId!,
+      refresh_url: `${process.env.FRONTEND_URL}/en/invoices`,
+      return_url: `${process.env.FRONTEND_URL}/en/invoices`,
+      type: 'account_onboarding',
+    });
+
+    return {
+      message: 'Stripe onboarding link generated',
+      onboardingUrl: accountLink.url,
+    };
+  }
+
+  async getStripeConnectStatus(
+    userId: string
+  ): Promise<UserStripeConnectStatusDto> {
+    const user = await this.userModel.findById(userId);
+    if (!user) return { isConnected: false, message: 'Account not found' };
+
+    let isConnected = false;
+    let message = 'Connect your Stripe account to start receiving payments.';
+
+    if ((user as User & { stripeConnectId?: string }).stripeConnectId) {
+      try {
+        const account = await this.stripe.accounts.retrieve(
+          (user as User & { stripeConnectId?: string }).stripeConnectId!
+        );
+        isConnected = account.charges_enabled;
+        message = isConnected ? 'Connected' : 'Setup incomplete';
+      } catch (error: unknown) {
+        console.error(
+          'Stripe error:',
+          error instanceof Error ? error.message : String(error)
+        );
+        message = 'Stripe verification failed';
+      }
+    }
+
+    return {
+      isConnected,
+      stripeConnectId: (user as User & { stripeConnectId?: string })
+        .stripeConnectId,
+      message,
     };
   }
 }

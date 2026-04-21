@@ -553,6 +553,30 @@ export class InvoicesController {
     return { received: true };
   }
 
+  @Post('payments/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '[PLATFORM] Confirm payment status (JSON)',
+    description:
+      'Verifies Stripe session status and updates invoice. Returns JSON.',
+  })
+  @ApiOkResponse({
+    description: 'Payment status confirmed',
+    schema: {
+      type: 'object',
+      properties: { success: { type: 'boolean' }, status: { type: 'string' } },
+    },
+  })
+  async confirmPayment(
+    @Query('session_id') sessionId: string,
+    @Query('receipt_id') receiptId: string
+  ): Promise<{ success: boolean; status: string }> {
+    if (!sessionId || !receiptId) {
+      throw new BadRequestException('session_id and receipt_id are required');
+    }
+    return await this.paymentService.confirmPaymentStatus(sessionId, receiptId);
+  }
+
   @Get('payments/return')
   @HttpCode(HttpStatus.FOUND)
   @ApiOperation({

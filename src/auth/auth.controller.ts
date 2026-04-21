@@ -61,6 +61,11 @@ import {
   TwoFALoginDto,
 } from '@/auth/dto/2fa.dto';
 import { BanUserDto, BanResponseDto } from '@/auth/dto/ban-user.dto';
+import {
+  UserStripeOnboardingLinkDto,
+  UserStripeConnectStatusDto,
+} from './dto/stripe-connect.dto';
+
 import { GoogleAuthGuard } from '@/auth/guards/google-auth.guard';
 import { GoogleCallbackGuard } from '@/auth/guards/google-callback.guard';
 import { type GoogleAuthUser } from '@/auth/strategies/google.strategy';
@@ -643,5 +648,29 @@ export class AuthController {
     @Param('id') id: string
   ): Promise<BanResponseDto> {
     return this.authService.unbanUser(currentUser.id, id);
+  }
+
+  @Post('stripe/onboarding')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Generate Stripe onboarding link for individual user',
+  })
+  @ApiResponse({ status: 200, type: UserStripeOnboardingLinkDto })
+  async stripeOnboarding(
+    @CurrentUser() user: UserPayload
+  ): Promise<UserStripeOnboardingLinkDto> {
+    return this.authService.getStripeOnboardingLink(user.id);
+  }
+
+  @Get('stripe/status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Check Stripe Connect status for individual user' })
+  @ApiResponse({ status: 200, type: UserStripeConnectStatusDto })
+  async stripeStatus(
+    @CurrentUser() user: UserPayload
+  ): Promise<UserStripeConnectStatusDto> {
+    return this.authService.getStripeConnectStatus(user.id);
   }
 }

@@ -486,4 +486,7 @@ export class InvoiceCheckoutSessionResponseDto {
   @IsOptional()
   @IsString()
   checkoutUrl?: string;
+
+  @IsString()
+  receiptId!: string;
 }

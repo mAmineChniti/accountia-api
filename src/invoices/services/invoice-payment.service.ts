@@ -246,7 +246,7 @@ export class InvoicePaymentService {
 
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded' as never,
+          ui_mode: 'embedded_page' as never,
           mode: 'payment',
           redirect_on_completion: 'never',
           ...(paymentMethodConfigurationId
@@ -336,6 +336,7 @@ export class InvoicePaymentService {
         clientSecret,
         sessionId: sessionObj.id as string,
         checkoutUrl: undefined,
+        receiptId,
       };
     }
 
@@ -343,6 +344,7 @@ export class InvoicePaymentService {
       clientSecret: (sessionObj.client_secret as string) ?? '',
       sessionId: sessionObj.id as string,
       checkoutUrl: sessionObj.url as string,
+      receiptId,
     };
   }
 
@@ -432,6 +434,67 @@ export class InvoicePaymentService {
     );
 
     return updatedInvoice;
+  }
+
+  async confirmPaymentStatus(
+    sessionId: string,
+    receiptId: string
+  ): Promise<{ success: boolean; status: string }> {
+    this.logger.log(
+      `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`
+    );
+    const stripe = this.ensureStripeEnabled();
+    let session: { payment_status?: string } | undefined;
+
+    for (let i = 0; i < 5; i++) {
+      // Increase to 5 retries
+      try {
+        session = (await stripe.checkout.sessions.retrieve(sessionId)) as {
+          payment_status?: string;
+        };
+        this.logger.debug(
+          `Retry ${i + 1}: Stripe session status is "${session.payment_status}"`
+        );
+        if (session.payment_status === 'paid') {
+          break;
+        }
+      } catch (error) {
+        this.logger.error(
+          `Error retrieving session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    if (session?.payment_status !== 'paid') {
+      this.logger.warn(
+        `Payment not confirmed for session ${sessionId}. Final status: ${session?.payment_status}`
+      );
+      return {
+        success: false,
+        status: session?.payment_status ?? 'not_found',
+      };
+    }
+
+    const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
+    if (!receipt) {
+      this.logger.error(`Receipt ${receiptId} not found during confirmation`);
+      throw new NotFoundException('Invoice receipt not found');
+    }
+
+    this.logger.log(
+      `Confirmed! Updating invoice ${receipt.invoiceId} for business ${receipt.issuerBusinessId}`
+    );
+    const success = await this.completeInvoicePayment({
+      invoiceId: receipt.invoiceId.toString(),
+      issuerBusinessId: receipt.issuerBusinessId.toString(),
+      issuerTenantDatabaseName: receipt.issuerTenantDatabaseName,
+      payerUserId: receipt.recipientUserId?.toString(),
+      payerEmail: receipt.recipientEmail,
+      issuerBusinessName: receipt.issuerBusinessName,
+    });
+
+    return { success, status: session?.payment_status ?? 'unknown' };
   }
 
   async finalizeCheckoutSessionFromReturn(

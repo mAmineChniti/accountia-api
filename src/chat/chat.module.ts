@@ -15,6 +15,7 @@ import {
   InvoiceReceipt,
   InvoiceReceiptSchema,
 } from '@/invoices/schemas/invoice-receipt.schema';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import {
       { name: BusinessUser.name, schema: BusinessUserSchema },
       { name: Invoice.name, schema: InvoiceSchema },
       { name: InvoiceReceipt.name, schema: InvoiceReceiptSchema },
+      { name: Product.name, schema: ProductSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

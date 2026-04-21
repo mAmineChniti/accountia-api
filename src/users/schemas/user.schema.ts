@@ -100,6 +100,12 @@ export class User extends Document {
 
   @Prop()
   updatedAt?: Date;
+
+  @Prop()
+  stripeConnectId?: string;
+
+  @Prop()
+  stripeOnboardingUrl?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

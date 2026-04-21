@@ -19,6 +19,7 @@ interface ChatMessage {
   businessId?: string;
   history?: Array<{ role: string; content: string }>;
   messageId?: string; // Client-generated ID for tracking
+  context?: string; // Information about the current page (e.g., 'products', 'received', 'statistics')
 }
 
 interface AuthenticatedSocket extends Socket {
@@ -133,7 +134,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-    const { query, businessId, history = [], messageId } = data;
+    const { query, businessId, history = [], messageId, context } = data;
 
     if (!query || typeof query !== 'string') {
       client.emit('message_error', { messageId, message: 'Query is required' });
@@ -157,6 +158,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         businessId ?? undefined,
         client.user.email,
         history,
+        context,
         {
           onChunk: (chunk: string) => {
             // Use reliable emit for chunks so clients don't lose data
