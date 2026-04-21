@@ -1,11 +1,17 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import {
+  InvoiceImportJob,
+  InvoiceImportJobSchema,
+} from './schemas/invoice-import-job.schema';
+import {
   InvoiceIssuanceService,
   InvoiceReceiptService,
   RecipientResolutionService,
   InvoiceImportService,
   InvoicePaymentService,
+  InvoiceAiService,
+  InvoicePdfImportService,
 } from './services';
 import { InvoicesController } from './invoices.controller';
 import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
@@ -37,6 +43,7 @@ import { NotificationsModule } from '@/notifications/notifications.module';
       { name: Business.name, schema: BusinessSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
       { name: User.name, schema: UserSchema },
+      { name: InvoiceImportJob.name, schema: InvoiceImportJobSchema },
     ]),
   ],
   providers: [
@@ -45,6 +52,8 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     RecipientResolutionService,
     InvoiceImportService,
     InvoicePaymentService,
+    InvoiceAiService,
+    InvoicePdfImportService,
     TenantConnectionService,
     TenantContextService,
     TenantContextGuard,
@@ -55,6 +64,7 @@ import { NotificationsModule } from '@/notifications/notifications.module';
     InvoiceReceiptService,
     InvoiceImportService,
     InvoicePaymentService,
+    InvoicePdfImportService,
   ],
 })
 export class InvoicesModule {}

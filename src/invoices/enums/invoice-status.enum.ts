@@ -12,6 +12,7 @@ export enum InvoiceStatus {
   DISPUTED = 'DISPUTED', // Recipient disputes the amount
   VOIDED = 'VOIDED', // Issuer voided the invoice
   ARCHIVED = 'ARCHIVED', // Kept for historical record
+  PENDING_REVIEW = 'PENDING_REVIEW', // PDF import needs manual check
 }
 
 /**
@@ -63,4 +64,9 @@ export const INVOICE_STATUS_TRANSITIONS: Record<
   ],
   [InvoiceStatus.VOIDED]: [InvoiceStatus.ARCHIVED],
   [InvoiceStatus.ARCHIVED]: [],
+  [InvoiceStatus.PENDING_REVIEW]: [
+    InvoiceStatus.DRAFT,
+    InvoiceStatus.ISSUED,
+    InvoiceStatus.VOIDED,
+  ],
 };
