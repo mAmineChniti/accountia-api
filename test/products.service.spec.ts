@@ -178,7 +178,7 @@ describe('ProductsService', () => {
     });
 
     it('should throw NotFoundException if product not found', async () => {
-      mockProductModel.findById.mockResolvedValue();
+      mockProductModel.findById.mockResolvedValue(undefined as never);
 
       await expect(
         service.findById('invalid-id', businessId, databaseName)
@@ -295,7 +295,7 @@ describe('ProductsService', () => {
     it('should return false if product does not exist', async () => {
       mockProductModel.findOne.mockReturnThis();
       mockProductModel.select.mockReturnThis();
-      mockProductModel.lean.mockResolvedValue();
+      mockProductModel.lean.mockResolvedValue(undefined as never);
 
       const result = await service.existsForBusiness(
         'any',
@@ -336,7 +336,7 @@ describe('ProductsService', () => {
       const productId = new Types.ObjectId().toString();
       const mockProduct = { _id: productId, businessId, quantity: 10 };
       mockProductModel.findById.mockResolvedValue(mockProduct);
-      mockProductModel.findOneAndUpdate.mockResolvedValue(); // Simulate atomic fail
+      mockProductModel.findOneAndUpdate.mockResolvedValue(undefined as never); // Simulate atomic fail
 
       await expect(
         service.updateQuantity(productId, businessId, databaseName, -15)
@@ -356,7 +356,7 @@ describe('ProductsService', () => {
     });
 
     it('should calculate insights and cache them if not cached', async () => {
-      (cacheService.get as jest.Mock).mockResolvedValue();
+      (cacheService.get as jest.Mock).mockResolvedValue(undefined as never);
 
       const productId = new Types.ObjectId().toString();
       const mockProducts = [

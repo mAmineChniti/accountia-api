@@ -29,7 +29,7 @@ describe('BusinessService (Statistics)', () => {
   const databaseName = 'tenant_business_1';
 
   // Helper to create a thenable mock query
-  const createMockQuery = (value: unknown) => ({
+  const createMockQuery = (value?: unknown) => ({
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
@@ -46,7 +46,7 @@ describe('BusinessService (Statistics)', () => {
     };
 
     mockCacheService = {
-      get: jest.fn().mockResolvedValue(),
+      get: jest.fn().mockResolvedValue(undefined as never),
       set: jest.fn().mockResolvedValue(true),
     };
 
@@ -202,7 +202,7 @@ describe('BusinessService (Statistics)', () => {
   });
 
   it('should throw NotFoundException if business not found', async () => {
-    mockBusinessModel.findById.mockResolvedValue();
+    mockBusinessModel.findById.mockResolvedValue(undefined as never);
 
     await expect(
       service.getBusinessStatistics(businessId, userId, Role.CLIENT)

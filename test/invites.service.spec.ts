@@ -34,7 +34,7 @@ describe('BusinessService (Invites)', () => {
   const inviterId = new Types.ObjectId().toString();
   const invitedEmail = 'newuser@example.com';
 
-  const createMockQuery = (value: unknown) => ({
+  const createMockQuery = (value?: unknown) => ({
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
