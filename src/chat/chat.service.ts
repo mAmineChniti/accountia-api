@@ -575,7 +575,7 @@ export class ChatService {
         dueDate: inv.dueDate,
       })),
       products: (
-        products as Array<{
+        products as unknown as Array<{
           name: string;
           quantity?: number;
           unitPrice?: number;
