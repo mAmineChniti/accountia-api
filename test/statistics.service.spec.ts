@@ -142,7 +142,7 @@ describe('BusinessService (Statistics)', () => {
     const result = await service.getBusinessStatistics(
       businessId,
       userId,
-      Role.BUSINESS_USER
+      Role.CLIENT
     );
 
     expect(result.kpis.totalRevenue).toBe(100);
@@ -191,7 +191,7 @@ describe('BusinessService (Statistics)', () => {
     const result = await service.getBusinessStatistics(
       businessId,
       userId,
-      Role.BUSINESS_USER
+      Role.CLIENT
     );
 
     expect(result.businessId).toBe(businessId);
@@ -205,7 +205,7 @@ describe('BusinessService (Statistics)', () => {
     mockBusinessModel.findById.mockResolvedValue();
 
     await expect(
-      service.getBusinessStatistics(businessId, userId, Role.BUSINESS_USER)
+      service.getBusinessStatistics(businessId, userId, Role.CLIENT)
     ).rejects.toThrow(NotFoundException);
   });
 });

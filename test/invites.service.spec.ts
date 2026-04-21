@@ -20,7 +20,7 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('BusinessService (Invites)', () => {
   let service: BusinessService;
-  let mockBusinessInviteModel: Record<string, jest.Mock>;
+  let mockBusinessInviteModel: any;
   let mockBusinessModel: { findById: jest.Mock };
   let mockBusinessUserModel: { findOne: jest.Mock };
   let mockUserModel: {
