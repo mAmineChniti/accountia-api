@@ -3,7 +3,8 @@ export { AccountantController } from './accountant.controller';
 export { AccountantService } from './accountant.service';
 
 // DTOs
-export type { CreateAccountingJobDto } from './dto';
+export { CreateAccountingJobDto } from './dto';
+export type { InternalCreateAccountingJobPayload } from './dto';
 
 // Types
 export type {

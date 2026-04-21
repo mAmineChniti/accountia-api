@@ -14,6 +14,8 @@ import type {
   AccountingJobStatus,
   AccountingResults,
   BusinessJobsResponse,
+  BusinessWorkResponse,
+  TaxSummaryResponse,
   AccountingJobSummary,
 } from './types';
 
@@ -91,19 +93,14 @@ export class AccountantService {
   ): Promise<AccountingJobResponse> {
     this.ensureEnabled();
 
-    const businessId = 'business_id' in dto ? dto.business_id : undefined;
-    this.logger.log(
-      businessId
-        ? `Creating accounting job for business ${businessId}`
-        : 'Creating accounting job'
-    );
+    // debug logging removed
 
     try {
-      return await this.httpClient
-        .post('api/accounting/jobs', {
-          json: dto,
-        })
-        .json<AccountingJobResponse>();
+      const response = await this.httpClient.post('api/accounting/jobs', {
+        json: dto,
+      });
+      const data = await response.json<AccountingJobResponse>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'create accounting job');
     }
@@ -118,14 +115,19 @@ export class AccountantService {
   ): Promise<AccountingJobStatus> {
     this.ensureEnabled();
 
+    // debug logging removed
+
     try {
-      return await this.httpClient
-        .get(`api/accounting/jobs/${encodeURIComponent(taskId)}`, {
+      const response = await this.httpClient.get(
+        `api/accounting/jobs/${encodeURIComponent(taskId)}`,
+        {
           searchParams: {
             business_id: businessId,
           },
-        })
-        .json<AccountingJobStatus>();
+        }
+      );
+      const data = await response.json<AccountingJobStatus>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'get job status');
     }
@@ -140,14 +142,19 @@ export class AccountantService {
   ): Promise<AccountingResults> {
     this.ensureEnabled();
 
+    // debug logging removed
+
     try {
-      return await this.httpClient
-        .get(`api/accounting/jobs/${encodeURIComponent(taskId)}/results`, {
+      const response = await this.httpClient.get(
+        `api/accounting/jobs/${encodeURIComponent(taskId)}/results`,
+        {
           searchParams: {
             business_id: businessId,
           },
-        })
-        .json<AccountingResults>();
+        }
+      );
+      const data = await response.json<AccountingResults>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'get job results');
     }
@@ -163,17 +170,22 @@ export class AccountantService {
   ): Promise<BusinessJobsResponse> {
     this.ensureEnabled();
 
-    const url = new URL(`${this.baseUrl}/api/accounting/jobs`);
-    url.searchParams.append('business_id', businessId);
-    url.searchParams.append('limit', limit.toString());
+    const searchParams: Record<string, string> = {
+      business_id: businessId,
+      limit: limit.toString(),
+    };
     if (status) {
-      url.searchParams.append('status', status);
+      searchParams.status = status;
     }
 
+    // debug logging removed
+
     try {
-      return await this.httpClient
-        .get(url.pathname + url.search)
-        .json<BusinessJobsResponse>();
+      const response = await this.httpClient.get('api/accounting/jobs', {
+        searchParams,
+      });
+      const data = await response.json<BusinessJobsResponse>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'list jobs');
     }
@@ -188,22 +200,20 @@ export class AccountantService {
   ): Promise<{ business_id: string; tasks: AccountingJobSummary[] }> {
     this.ensureEnabled();
 
-    const url = new URL(
-      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
-        businessId
-      )}/history`
-    );
-    url.searchParams.append('limit', limit.toString());
+    // debug logging removed
 
     try {
-      return await this.httpClient
-        .get(
-          `api/accounting/business/${encodeURIComponent(businessId)}/history`,
-          {
-            searchParams: { limit: limit.toString() },
-          }
-        )
-        .json<{ business_id: string; tasks: AccountingJobSummary[] }>();
+      const response = await this.httpClient.get(
+        `api/accounting/business/${encodeURIComponent(businessId)}/history`,
+        {
+          searchParams: { limit: limit.toString() },
+        }
+      );
+      const data = await response.json<{
+        business_id: string;
+        tasks: AccountingJobSummary[];
+      }>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'get history');
     }
@@ -217,28 +227,25 @@ export class AccountantService {
     startDate?: string,
     endDate?: string,
     status?: string
-  ): Promise<Record<string, unknown>> {
+  ): Promise<BusinessWorkResponse> {
     this.ensureEnabled();
 
-    const url = new URL(
-      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
-        businessId
-      )}/work`
-    );
-    if (startDate) url.searchParams.append('start_date', startDate);
-    if (endDate) url.searchParams.append('end_date', endDate);
-    if (status) url.searchParams.append('status', status);
+    const searchParams: Record<string, string> = {
+      ...(startDate && { start_date: startDate }),
+      ...(endDate && { end_date: endDate }),
+      ...(status && { status }),
+    };
+    // debug logging removed
 
     try {
-      return await this.httpClient
-        .get(`api/accounting/business/${encodeURIComponent(businessId)}/work`, {
-          searchParams: {
-            ...(startDate && { start_date: startDate }),
-            ...(endDate && { end_date: endDate }),
-            ...(status && { status }),
-          },
-        })
-        .json<Record<string, unknown>>();
+      const response = await this.httpClient.get(
+        `api/accounting/business/${encodeURIComponent(businessId)}/work`,
+        {
+          searchParams,
+        }
+      );
+      const data = await response.json<BusinessWorkResponse>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'get work log');
     }
@@ -250,27 +257,59 @@ export class AccountantService {
   async getTaxSummary(
     businessId: string,
     year?: number
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TaxSummaryResponse> {
     this.ensureEnabled();
 
-    const url = new URL(
-      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
-        businessId
-      )}/taxes`
-    );
-    if (year) url.searchParams.append('year', year.toString());
+    // debug logging removed
 
     try {
-      return await this.httpClient
-        .get(
-          `api/accounting/business/${encodeURIComponent(businessId)}/taxes`,
-          {
-            searchParams: year ? { year: year.toString() } : undefined,
-          }
-        )
-        .json<Record<string, unknown>>();
+      const response = await this.httpClient.get(
+        `api/accounting/business/${encodeURIComponent(businessId)}/taxes`,
+        {
+          searchParams: year ? { year: year.toString() } : undefined,
+        }
+      );
+      const data = await response.json<TaxSummaryResponse>();
+      return data;
     } catch (error) {
       this.handleHttpError(error, 'get tax summary');
+    }
+  }
+
+  /**
+   * Cancel an accounting job
+   */
+  async cancelJob(
+    taskId: string,
+    businessId: string
+  ): Promise<{
+    task_id: string;
+    status: string;
+    message: string;
+    previous_status: string;
+  }> {
+    this.ensureEnabled();
+
+    // debug logging removed
+
+    try {
+      const response = await this.httpClient.delete(
+        `api/accounting/jobs/${encodeURIComponent(taskId)}`,
+        {
+          searchParams: {
+            business_id: businessId,
+          },
+        }
+      );
+      const data = await response.json<{
+        task_id: string;
+        status: string;
+        message: string;
+        previous_status: string;
+      }>();
+      return data;
+    } catch (error) {
+      this.handleHttpError(error, 'cancel accounting job');
     }
   }
 

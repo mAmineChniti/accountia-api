@@ -13,6 +13,7 @@ import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
 import { CacheService } from '@/redis/cache.service';
 
 // Groq API configuration - free tier, fast responses
@@ -39,6 +40,30 @@ export interface BusinessContext {
   averagePaymentDelay?: number;
   clientCount?: number;
   topDebtors?: Array<{ name: string; overdueAmount: number }>;
+  recentInvoices?: Array<{
+    invoiceNumber: string;
+    recipientName?: string;
+    totalAmount: number;
+    currency?: string;
+    status?: InvoiceStatus;
+    issuedDate?: Date;
+    dueDate?: Date;
+    lineItems?: Array<{
+      productName?: string;
+      description?: string;
+      quantity?: number;
+      unitPrice?: number;
+      amount?: number;
+    }>;
+  }>;
+  recentProducts?: Array<{
+    name: string;
+    description?: string;
+    unitPrice: number;
+    quantity?: number;
+    currency?: string;
+    createdAt?: Date;
+  }>;
 }
 
 export interface IndividualContext {
@@ -132,6 +157,56 @@ export class ChatService {
     return Math.max(1000, Math.min(Math.floor(parsed), 120_000));
   }
 
+  /**
+   * Trim system content to a safe character budget while keeping invoice/product details.
+   * Heuristic: prefer removing product catalog first, then shrink recent invoices and remove line items.
+   */
+  private trimSystemContent(content: string): string {
+    const SAFE_LIMIT = 16_000; // characters
+    if (content.length <= SAFE_LIMIT) return content;
+
+    let trimmed = content;
+
+    // 1) Remove product catalog section if present
+    const productCatalogIdx = trimmed.indexOf('\nProduct Catalog (sample):');
+    if (productCatalogIdx !== -1) {
+      trimmed = trimmed.slice(0, productCatalogIdx);
+    }
+
+    if (trimmed.length <= SAFE_LIMIT) return trimmed;
+
+    // 2) Remove line-items details blocks, replace with placeholder
+    // Matches '  Line items:' and following indented lines starting with '  - '
+    trimmed = trimmed.replaceAll(
+      /\n\s{2}Line items:[\S\s]*?(?=\n- |$)/g,
+      '\n  Line items: (omitted)'
+    );
+
+    if (trimmed.length <= SAFE_LIMIT) return trimmed;
+
+    // 3) Reduce recent invoices list size by keeping only header and first 3 entries
+    const recentHeaderIdx = trimmed.indexOf('\nRecent Issued Invoices:');
+    if (recentHeaderIdx !== -1) {
+      const before = trimmed.slice(
+        0,
+        recentHeaderIdx + '\nRecent Issued Invoices:'.length
+      );
+      // capture first 3 invoice lines
+      const invoiceLines = trimmed
+        .slice(recentHeaderIdx)
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .slice(0, 15); // a few lines per invoice
+      trimmed = before + '\n' + invoiceLines.join('\n') + '\n  ... (truncated)';
+    }
+
+    // Final safety clamp
+    if (trimmed.length > SAFE_LIMIT) {
+      return trimmed.slice(0, SAFE_LIMIT) + '\n... (context truncated)';
+    }
+    return trimmed;
+  }
+
   private async withTimeout<T>(
     promise: Promise<T>,
     operationName: string
@@ -163,9 +238,12 @@ export class ChatService {
       throw new Error('GROQ_API_KEY is not configured');
     }
 
-    const systemContent = params.businessContext
+    let systemContent = params.businessContext
       ? `${params.systemPrompt}\n\n${params.businessContext}`
       : params.systemPrompt;
+
+    // Trim context to keep prompts within reasonable size and preserve invoice details
+    systemContent = this.trimSystemContent(systemContent);
 
     const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
     const safeHistory = params.history
@@ -227,9 +305,12 @@ export class ChatService {
       throw new Error('GROQ_API_KEY is not configured');
     }
 
-    const systemContent = params.businessContext
+    let systemContent = params.businessContext
       ? `${params.systemPrompt}\n\n${params.businessContext}`
       : params.systemPrompt;
+
+    // Trim context to keep prompts within reasonable size and preserve invoice details
+    systemContent = this.trimSystemContent(systemContent);
 
     const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
     const safeHistory = params.history
@@ -359,8 +440,18 @@ export class ChatService {
     // Fetch all invoices issued by this business for analysis
     const invoices = (await tenantInvoiceModel
       .find({ issuerBusinessId: businessId })
+      .sort({ createdAt: -1 })
       .lean()
       .exec()) as Array<Invoice & { _id: unknown; __v?: number }>;
+
+    // Fetch tenant products (catalog) from the tenant database using the canonical schema
+    const tenantProductModel = tenantDb.model(Product.name, ProductSchema);
+    const products = await tenantProductModel
+      .find({ businessId })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+      .exec();
 
     // Calculate statistics
     const totalInvoices = invoices.length;
@@ -494,6 +585,33 @@ export class ChatService {
       .toSorted((a, b) => b.overdueAmount - a.overdueAmount)
       .slice(0, 5);
 
+    // Recent invoices sample (include line items for context)
+    const recentInvoices = invoices.slice(0, 10).map((inv) => ({
+      invoiceNumber: inv.invoiceNumber,
+      recipientName: inv.recipient?.displayName ?? inv.recipient?.email ?? '',
+      totalAmount: inv.totalAmount,
+      currency: inv.currency,
+      status: inv.status,
+      issuedDate: inv.issuedDate,
+      dueDate: inv.dueDate,
+      lineItems: (inv.lineItems ?? []).slice(0, 5).map((li) => ({
+        productName: li.productName,
+        description: li.description,
+        quantity: li.quantity,
+        unitPrice: li.unitPrice,
+        amount: li.amount,
+      })),
+    }));
+
+    const recentProducts = (products ?? []).slice(0, 15).map((p) => ({
+      name: p.name,
+      description: p.description,
+      unitPrice: p.unitPrice,
+      quantity: p.quantity,
+      currency: p.currency,
+      createdAt: p.createdAt,
+    }));
+
     const result: BusinessContext = {
       businessId,
       businessName: business.name,
@@ -508,6 +626,8 @@ export class ChatService {
       averagePaymentDelay: Number(averagePaymentDelay.toFixed(1)),
       clientCount,
       topDebtors,
+      recentInvoices,
+      recentProducts,
     };
 
     // Cache for 60 seconds
@@ -533,13 +653,24 @@ export class ChatService {
       return structuredClone(cached);
     }
 
-    // Normalize email for matching
-    const normalizedEmail = email.toLowerCase().trim();
+    // Normalize email for matching if provided; avoid crashing if undefined
+    const normalizedEmail =
+      typeof email === 'string' && email
+        ? email.toLowerCase().trim()
+        : undefined;
+
+    // Build query: match by recipientUserId or recipientEmail (only include email clause if available)
+    const orClauses: Array<Record<string, unknown>> = [
+      { recipientUserId: userId },
+    ];
+    if (normalizedEmail) {
+      orClauses.push({ recipientEmail: normalizedEmail });
+    }
 
     // Find all receipts where user is recipient (by userId or email)
     const receipts = await this.invoiceReceiptModel
       .find({
-        $or: [{ recipientUserId: userId }, { recipientEmail: normalizedEmail }],
+        $or: orClauses,
       })
       .sort({ issuedDate: -1 })
       .lean()
@@ -808,6 +939,47 @@ ABSOLUTE RULES:
       parts.push('\nTop Debtors (overdue amounts):');
       for (const debtor of context.topDebtors) {
         parts.push(`- ${debtor.name}: ${debtor.overdueAmount.toFixed(2)} TND`);
+      }
+    }
+
+    // Include recent invoices (full sample) for the AI to reference individual invoice details
+    if (context.recentInvoices && context.recentInvoices.length > 0) {
+      parts.push('\nRecent Issued Invoices:');
+      for (const inv of context.recentInvoices.slice(0, 10)) {
+        const issued = inv.issuedDate
+          ? new Date(inv.issuedDate).toISOString().split('T')[0]
+          : 'n/a';
+        const due = inv.dueDate
+          ? new Date(inv.dueDate).toISOString().split('T')[0]
+          : 'n/a';
+        parts.push(
+          `- ${inv.invoiceNumber} → ${inv.recipientName ?? 'Unknown'}: ${inv.totalAmount} ${inv.currency ?? 'TND'} (${inv.status ?? 'UNKNOWN'}, issued: ${issued}, due: ${due})`
+        );
+        if (inv.lineItems && inv.lineItems.length > 0) {
+          parts.push('  Line items:');
+          for (const li of inv.lineItems.slice(0, 5)) {
+            parts.push(
+              `  - ${li.productName ?? li.description ?? 'Item'}: ${li.quantity ?? 1} × ${li.unitPrice ?? 0} = ${li.amount ?? 0}`
+            );
+          }
+        }
+      }
+    }
+
+    // Include product catalog (recent products) so AI can reference product-level details
+    const recentProductsTyped = context.recentProducts;
+    if (recentProductsTyped && recentProductsTyped.length > 0) {
+      parts.push('\nProduct Catalog (sample):');
+      for (const p of recentProductsTyped.slice(0, 15)) {
+        const name = p.name ?? '';
+        const description = p.description ?? '';
+        const unitPrice = p.unitPrice ?? 0;
+        const currency = p.currency ?? 'TND';
+        const quantity = p.quantity ?? 0;
+
+        parts.push(
+          `- ${name}: ${description} — ${unitPrice} ${currency} (qty: ${quantity})`
+        );
       }
     }
 
