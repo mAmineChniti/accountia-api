@@ -10,7 +10,11 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Query as QueryParam,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
@@ -19,8 +23,11 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiParam,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ExpensesService } from './expenses.service';
+import { ReceiptExtractionService } from './services/receipt-extraction.service';
 import {
   CreateExpenseDto,
   UpdateExpenseDto,
@@ -44,7 +51,30 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
 @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
 export class ExpensesController {
-  constructor(private readonly expensesService: ExpensesService) {}
+  constructor(
+    private readonly expensesService: ExpensesService,
+    private readonly receiptExtractionService: ReceiptExtractionService
+  ) {}
+
+  @Post('extract-receipt')
+  @ApiOperation({ summary: 'Extract expense data from a receipt image or PDF using AI' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        businessId: { type: 'string' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
+  async extractReceipt(
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (!file) throw new Error('No file uploaded');
+    return this.receiptExtractionService.extractFromFile(file);
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
