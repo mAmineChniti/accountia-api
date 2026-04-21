@@ -34,7 +34,7 @@ describe('BusinessService (Statistics)', () => {
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
     exec: jest.fn().mockResolvedValue(value),
-    // eslint-disable-next-line unicorn/no-thenable
+
     then: jest
       .fn()
       .mockImplementation((resolve: (v: unknown) => void) => resolve(value)),

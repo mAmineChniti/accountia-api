@@ -48,7 +48,7 @@ describe('ProductsService', () => {
     };
 
     // For "new productModel()" calls
-    // eslint-disable-next-line unicorn/no-immediate-mutation
+
     mockProductModel.constructor = jest.fn().mockImplementation(() => ({
       save: jest.fn().mockResolvedValue({
         _id: new Types.ObjectId(),
