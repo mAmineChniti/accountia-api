@@ -1433,8 +1433,8 @@ export class AuthService {
   } {
     const isUser = '_id' in user;
     const userId = isUser
-      ? String((user as Record<string, unknown>)._id)
-      : String((user as Record<string, unknown>).id);
+      ? String((user as unknown as Record<string, unknown>)._id)
+      : String(user.id);
 
     const payload: TokenPayload = {
       sub: userId,
