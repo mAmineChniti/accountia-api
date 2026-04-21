@@ -39,6 +39,7 @@ import {
   InvoiceReceiptService,
   InvoiceImportService,
   InvoicePaymentService,
+  InvoicePdfImportService,
 } from '@/invoices/services';
 import {
   CreateInvoiceDto,
@@ -77,7 +78,8 @@ export class InvoicesController {
     private readonly issuanceService: InvoiceIssuanceService,
     private readonly receiptService: InvoiceReceiptService,
     private readonly importService: InvoiceImportService,
-    private readonly paymentService: InvoicePaymentService
+    private readonly paymentService: InvoicePaymentService,
+    private readonly pdfImportService: InvoicePdfImportService
   ) {}
 
   /**
@@ -709,5 +711,82 @@ export class InvoicesController {
     );
     this.logger.debug(`Import results: ${JSON.stringify(result.results)}`);
     return result;
+  }
+
+  @Post('import/pdf')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/pdf') {
+          // eslint-disable-next-line unicorn/no-null
+          cb(null, true);
+        } else {
+          cb(new BadRequestException('Only PDF files are allowed'), false);
+        }
+      },
+    })
+  )
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: '[TENANT DB] Import invoice from PDF using AI extraction',
+    description:
+      'Upload a PDF invoice to be processed asynchronously. ' +
+      'Uses OCR and AI to extract invoice data. The request returns a Job ID. ' +
+      'businessId is REQUIRED as a query parameter.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business ID to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Import job started',
+    schema: { type: 'object', properties: { jobId: { type: 'string' } } },
+  })
+  async importInvoiceFromPdf(
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+    @CurrentTenant() tenant: TenantContext,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ jobId: string }> {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    return await this.pdfImportService.startImportJob(
+      file,
+      tenant.businessId,
+      tenant.databaseName,
+      user.id
+    );
+  }
+
+  @Get('import/jobs/:id')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiOperation({
+    summary: '[TENANT DB] Get PDF import job status',
+    description:
+      'Check the status of a PDF import job. ' +
+      'businessId is REQUIRED as a query parameter.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business ID to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Import job status and metadata',
+  })
+  @ApiParam({ name: 'id', description: 'Job ID' })
+  async getImportJobStatus(
+    @Param('id') jobId: string,
+    @CurrentTenant() tenant: TenantContext
+  ) {
+    return await this.pdfImportService.getJobStatus(jobId, tenant.businessId);
   }
 }

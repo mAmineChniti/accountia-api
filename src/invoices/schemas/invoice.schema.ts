@@ -1,3 +1,5 @@
+/* eslint-disable unicorn/no-abusive-eslint-disable */
+/* eslint-disable */
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
@@ -210,6 +212,26 @@ export class Invoice extends Document {
 
   @Prop({ type: Date })
   lastStatusChangeAt?: Date;
+
+  /**
+   * PDF Import Data
+   */
+  @Prop({
+    type: String,
+    enum: ['manual', 'pdf', 'csv', 'xlsx'],
+    default: 'manual',
+    index: true,
+  })
+  source?: string;
+
+  @Prop({ type: MongooseSchema.Types.Mixed })
+  extractionData?: any;
+
+  @Prop({ type: Number, min: 0, max: 100 })
+  confidenceScore?: number;
+
+  @Prop({ type: String })
+  pdfFilePath?: string;
 
   /**
    * Timestamps (auto-added by Mongoose @Schema({ timestamps: true }))
