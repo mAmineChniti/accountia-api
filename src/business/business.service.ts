@@ -9,7 +9,7 @@ import {
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-import { Connection, Model } from 'mongoose';
+import type { Connection, Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditEmitter } from '@/audit/audit.emitter';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';

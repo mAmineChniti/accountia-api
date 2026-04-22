@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection } from 'mongoose';
+import type { Model, Connection } from 'mongoose';
 import OpenAI from 'openai';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';

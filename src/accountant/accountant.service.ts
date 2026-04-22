@@ -68,11 +68,9 @@ export class AccountantService {
    */
   private handleHttpError(error: unknown, operation: string): never {
     if (error instanceof HTTPError) {
-      const httpError = error as HTTPError;
-      const cid =
-        httpError.response.headers.get('x-correlation-id') ?? 'unknown';
+      const cid = error.response.headers.get('x-correlation-id') ?? 'unknown';
       this.logger.error(
-        `AI Accountant error: ${httpError.response.status} cid=${cid}`
+        `AI Accountant error: ${error.response.status} cid=${cid}`
       );
       throw new Error(`Failed to ${operation}`);
     }
