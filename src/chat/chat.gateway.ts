@@ -9,7 +9,10 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { ChatService } from './chat.service';
+import { User } from '@/users/schemas/user.schema';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { WebSocketStateService } from '@/redis/websocket-state.service';
@@ -67,10 +70,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly wsStateService: WebSocketStateService
+    private readonly wsStateService: WebSocketStateService,
+    @InjectModel(User.name) private readonly userModel: Model<User>
   ) {}
 
-  handleConnection(client: AuthenticatedSocket) {
+  async handleConnection(client: AuthenticatedSocket) {
     try {
       // Only accept token from auth (not query) to prevent JWT logging in URLs
       const token = client.handshake.auth.token as string | undefined;
@@ -88,15 +92,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const payload = this.jwtService.verify<{
-        sub: string;
-        email: string;
-        role: string;
-      }>(token, { secret });
+      const payload = this.jwtService.verify<{ sub: string }>(token, {
+        secret,
+      });
+
+      const user = await this.userModel.findById(payload.sub).lean();
+      if (!user) {
+        this.logger.warn('User from token not found');
+        client.disconnect(true);
+        return;
+      }
+
       client.user = {
         id: payload.sub,
-        email: payload.email,
-        role: payload.role,
+        email: user.email,
+        role: user.role,
       };
 
       // Record connection in Redis for tracking

@@ -67,8 +67,6 @@ const getQrcode = async () => {
 interface TokenPayload {
   sub?: string;
   id: string;
-  email: string;
-  role: string;
 }
 
 type TwoFactorChallengeResponse = {
@@ -1433,8 +1431,6 @@ export class AuthService {
     const payload: TokenPayload = {
       sub: userId,
       id: userId,
-      email: user.email ?? '',
-      role: (user as User).role ?? '',
     };
 
     const accessToken = this.jwtService.sign(payload, {
