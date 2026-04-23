@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection } from 'mongoose';
+import type { Model, Connection } from 'mongoose';
 import { ObjectId } from 'mongodb';
 import {
   CreateInvoiceDto,

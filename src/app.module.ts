@@ -45,6 +45,7 @@ import { AccountantModule } from '@/accountant/accountant.module';
         STRIPE_FX_RATES: Joi.string().required(),
         MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
         REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
+        REDIS_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
         // AI Accountant Service (optional - will warn if not configured)
         AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
         AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),

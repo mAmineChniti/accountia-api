@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import Stripe from 'stripe';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model, Types, Document } from 'mongoose';
+import type { Connection, Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import type { Model } from 'mongoose';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { Business } from '@/business/schemas/business.schema';

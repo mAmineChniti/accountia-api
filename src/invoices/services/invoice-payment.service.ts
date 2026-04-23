@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { Connection, Model } from 'mongoose';
+import type { Connection, Model } from 'mongoose';
 import Stripe from 'stripe';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 
