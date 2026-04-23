@@ -44,17 +44,25 @@ describe('BusinessService (Invites)', () => {
   beforeEach(async () => {
     mockBusinessInviteModel = jest
       .fn()
-      .mockImplementation((dto: Partial<BusinessInvite>) => ({
-        ...dto,
-        save: jest.fn().mockResolvedValue({
+      .mockImplementation((dto: Partial<BusinessInvite>) => {
+        const constructedObj = {
           ...dto,
           _id: new Types.ObjectId(),
           toInviteResponse: () => ({
             id: '123',
             invitedEmail: dto.invitedEmail,
           }),
-        }),
-      }));
+          save: jest.fn(),
+        };
+
+        constructedObj.save.mockResolvedValue(constructedObj);
+
+        return constructedObj as unknown as BusinessInvite & {
+          _id: Types.ObjectId;
+          toInviteResponse: () => { id: string; invitedEmail?: string };
+          save: jest.Mock;
+        };
+      });
 
     Object.assign(mockBusinessInviteModel, {
       findOne: jest.fn(),

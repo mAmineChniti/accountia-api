@@ -28,8 +28,7 @@ describe('BusinessService (Statistics)', () => {
   const userId = new Types.ObjectId().toString();
   const databaseName = 'tenant_business_1';
 
-  // Helper to create a mock query with chainable methods (use `lean()`/`exec()` to get Promise)
-  // (unused now that providers use mockResolvedValue directly)
+  // Helper removed: providers use mockResolvedValue directly
 
   beforeEach(async () => {
     mockBusinessModel = {
@@ -37,7 +36,7 @@ describe('BusinessService (Statistics)', () => {
     };
 
     mockCacheService = {
-      get: jest.fn().mockResolvedValue(undefined as never),
+      get: jest.fn().mockResolvedValue(),
       set: jest.fn().mockResolvedValue(true),
     };
 
@@ -134,6 +133,11 @@ describe('BusinessService (Statistics)', () => {
 
     expect(result.kpis.totalRevenue).toBe(100);
     expect(mockBusinessModel.findById).not.toHaveBeenCalled();
+    // Ensure we returned a clone of cached data, not the same reference
+    expect(result).not.toBe(mockCachedData);
+    expect(mockCacheService.get).toHaveBeenCalledWith(
+      `business:statistics:${businessId}:90`
+    );
   });
 
   it('should calculate statistics and cache them if not cached', async () => {
@@ -185,7 +189,11 @@ describe('BusinessService (Statistics)', () => {
     expect(result.invoiceStatistics.totalInvoices).toBe(10);
     expect(result.productStatistics.totalProducts).toBe(1);
     expect(result.productStatistics.totalInventoryValue).toBe(2000); // 100 * 20
-    expect(mockCacheService.set).toHaveBeenCalled();
+    expect(mockCacheService.set).toHaveBeenCalledWith(
+      `business:statistics:${businessId}:90`,
+      expect.any(Object),
+      300
+    );
   });
 
   it('should throw NotFoundException if business not found', async () => {
@@ -194,5 +202,6 @@ describe('BusinessService (Statistics)', () => {
     await expect(
       service.getBusinessStatistics(businessId, userId, Role.CLIENT)
     ).rejects.toThrow(NotFoundException);
+    expect(mockBusinessModel.findById).toHaveBeenCalledWith(businessId);
   });
 });

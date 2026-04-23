@@ -89,10 +89,14 @@ describe('AccountantService', () => {
       }).compile();
       const disabledService = module.get<AccountantService>(AccountantService);
 
+      const payload: InternalCreateAccountingJobPayload = {
+        business_id: 'b1',
+        period_start: '2024-01-01',
+        period_end: '2024-01-31',
+      };
+
       await expect(
-        disabledService.createAccountingJob(
-          {} as unknown as Record<string, unknown>
-        )
+        disabledService.createAccountingJob(payload)
       ).rejects.toThrow(ServiceUnavailableException);
     });
   });
