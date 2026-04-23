@@ -28,17 +28,8 @@ describe('BusinessService (Statistics)', () => {
   const userId = new Types.ObjectId().toString();
   const databaseName = 'tenant_business_1';
 
-  // Helper to create a thenable mock query
-  const createMockQuery = (value?: unknown) => ({
-    select: jest.fn().mockReturnThis(),
-    sort: jest.fn().mockReturnThis(),
-    lean: jest.fn().mockResolvedValue(value),
-    exec: jest.fn().mockResolvedValue(value),
-
-    then: jest
-      .fn()
-      .mockImplementation((resolve: (v: unknown) => void) => resolve(value)),
-  });
+  // Helper to create a mock query with chainable methods (use `lean()`/`exec()` to get Promise)
+  // (unused now that providers use mockResolvedValue directly)
 
   beforeEach(async () => {
     mockBusinessModel = {
@@ -89,9 +80,7 @@ describe('BusinessService (Statistics)', () => {
           useValue: {
             findOne: jest
               .fn()
-              .mockReturnValue(
-                createMockQuery({ userId, businessId, role: 'OWNER' })
-              ),
+              .mockResolvedValue({ userId, businessId, role: 'OWNER' }),
           },
         },
         {
@@ -103,9 +92,7 @@ describe('BusinessService (Statistics)', () => {
           useValue: {
             findOne: jest
               .fn()
-              .mockReturnValue(
-                createMockQuery({ _id: userId, email: 'owner@test.com' })
-              ),
+              .mockResolvedValue({ _id: userId, email: 'owner@test.com' }),
           },
         },
         {

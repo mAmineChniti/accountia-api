@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { type InvoiceResponseDto } from '../src/invoices/dto/invoice.dto';
 import { AppModule } from './../src/app.module';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
@@ -106,9 +107,11 @@ describe('InvoicesController (e2e)', () => {
       .expect(200);
 
     expect(response.body).toHaveProperty('invoices');
-    expect(Array.isArray((response.body as { invoices: any[] }).invoices)).toBe(
-      true
-    );
+    expect(
+      Array.isArray(
+        (response.body as { invoices: InvoiceResponseDto[] }).invoices
+      )
+    ).toBe(true);
   });
 
   it('/invoices/issued/:id (GET) - Should get invoice details', async () => {

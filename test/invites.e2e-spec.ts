@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { type BusinessInviteResponseDto } from '../src/business/dto/business-invite.dto';
 import { AppModule } from './../src/app.module';
 
 jest.setTimeout(60_000);
@@ -66,12 +67,15 @@ describe('Invites (e2e)', () => {
       .expect(200);
 
     expect(response.body).toHaveProperty('invites');
-    expect(Array.isArray((response.body as { invites: any[] }).invites)).toBe(
-      true
-    );
-    const found = (response.body as { invites: any[] }).invites.some(
-      (inv: { invitedEmail: string }) => inv.invitedEmail === testEmail
-    );
+    expect(
+      Array.isArray(
+        (response.body as { invites: BusinessInviteResponseDto['invite'][] })
+          .invites
+      )
+    ).toBe(true);
+    const found = (
+      response.body as { invites: BusinessInviteResponseDto['invite'][] }
+    ).invites.some((inv) => inv.invitedEmail === testEmail);
     expect(found).toBe(true);
   });
 
@@ -89,9 +93,9 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${jwtToken}`)
       .expect(200);
 
-    const found = (listResponse.body as { invites: any[] }).invites.some(
-      (inv: { id: string }) => inv.id === createdInviteId
-    );
+    const found = (
+      listResponse.body as { invites: BusinessInviteResponseDto['invite'][] }
+    ).invites.some((inv) => inv.id === createdInviteId);
     expect(found).toBe(false);
   });
 });

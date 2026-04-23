@@ -2,6 +2,12 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AccountantService } from '../src/accountant/accountant.service';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { type InternalCreateAccountingJobPayload } from '../src/accountant/dto';
+
+interface HttpClientMock {
+  post: jest.Mock;
+  get: jest.Mock;
+}
 
 // Mock ky
 jest.mock('ky', () => ({
@@ -14,12 +20,12 @@ jest.mock('ky', () => ({
 describe('AccountantService', () => {
   let service: AccountantService;
   let mockConfigService: { get: jest.Mock };
-  let mockHttpClient: { post: jest.Mock; get: jest.Mock };
+  let mockHttpClient: HttpClientMock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockConfigService = {
-      get: jest.fn((key: string, defaultValue?: any) => {
+      get: jest.fn((key: string, defaultValue?: unknown) => {
         if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
         if (key === 'AI_ACCOUNTANT_API_KEY') return 'test-api-key';
         return defaultValue;
@@ -38,7 +44,8 @@ describe('AccountantService', () => {
 
     service = module.get<AccountantService>(AccountantService);
     // Access the private httpClient for mocking calls
-    mockHttpClient = (service as unknown as { httpClient: any }).httpClient;
+    mockHttpClient = (service as unknown as { httpClient: HttpClientMock })
+      .httpClient;
   });
 
   it('should be defined', () => {
@@ -52,10 +59,10 @@ describe('AccountantService', () => {
         json: jest.fn().mockResolvedValue(mockResponse),
       });
 
-      const dto = {
+      const dto: InternalCreateAccountingJobPayload = {
+        business_id: 'b1',
         period_start: '2024-01-01',
         period_end: '2024-01-31',
-        business_id: 'b1',
       };
       const result = await service.createAccountingJob(dto);
 
@@ -83,7 +90,9 @@ describe('AccountantService', () => {
       const disabledService = module.get<AccountantService>(AccountantService);
 
       await expect(
-        disabledService.createAccountingJob({} as any)
+        disabledService.createAccountingJob(
+          {} as unknown as Record<string, unknown>
+        )
       ).rejects.toThrow(ServiceUnavailableException);
     });
   });

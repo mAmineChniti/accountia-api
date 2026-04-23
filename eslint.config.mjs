@@ -12,12 +12,7 @@ export default defineConfig(
   eslintPluginPrettierRecommended,
   unicornPlugin.configs.all,
   [
-    globalIgnores([
-      'dist/**',
-      'node_modules/**',
-      'coverage/**',
-      'jest.config.js',
-    ]),
+    globalIgnores(['dist/**', 'node_modules/**', 'coverage/**']),
     {
       files: ['eslint.config.mjs', '*.config.mjs', '*.config.js'],
       languageOptions: {
@@ -66,25 +61,6 @@ export default defineConfig(
           projectService: true,
           tsconfigRootDir: import.meta.dirname,
         },
-      },
-    },
-    {
-      files: ['test/**/*.ts'],
-      rules: {
-        '@typescript-eslint/no-unsafe-argument': 'off',
-        '@typescript-eslint/no-unsafe-assignment': 'off',
-        '@typescript-eslint/no-unsafe-member-access': 'off',
-        '@typescript-eslint/no-unsafe-call': 'off',
-        '@typescript-eslint/no-unsafe-return': 'off',
-        '@typescript-eslint/no-explicit-any': 'off',
-        '@typescript-eslint/unbound-method': 'off',
-        '@typescript-eslint/no-unused-vars': 'warn',
-        'unicorn/no-null': 'off',
-        'unicorn/no-thenable': 'off',
-        'unicorn/consistent-function-scoping': 'off',
-        'unicorn/numeric-separators-style': 'off',
-        'unicorn/no-immediate-mutation': 'off',
-        'unicorn/no-useless-undefined': 'off',
       },
     },
     eslintNestJs.configs.flatRecommended,

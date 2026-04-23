@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, type TestingModule } from '@nestjs/testing';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { ProductsService } from '../src/products/products.service';
@@ -8,6 +9,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { type CreateProductDto } from '../src/products/dto/create-product.dto';
 // Mock the AI mapper utility
 jest.mock('@/common/utils/ai-mapper.util', () => ({
   mapColumnsUsingAi: jest
@@ -45,23 +47,26 @@ describe('ProductsService', () => {
       save: jest.fn(),
       or: jest.fn().mockReturnThis(),
       aggregate: jest.fn().mockReturnThis(),
+      constructor: jest
+        .fn()
+        .mockImplementation((data: Partial<CreateProductDto>) => ({
+          ...data,
+          _id: new Types.ObjectId(),
+          save: jest
+            .fn()
+            .mockResolvedValue({ ...data, _id: new Types.ObjectId() }),
+        })),
     };
-
-    // For "new productModel()" calls
-
-    mockProductModel.constructor = jest.fn().mockImplementation(() => ({
-      save: jest.fn().mockResolvedValue({
-        _id: new Types.ObjectId(),
-        businessId,
-        name: 'Test Product',
-      }),
-    }));
     // In NestJS/Mongoose, 'new Model()' is often mocked like this:
-    const mockModelConstructor = jest.fn().mockImplementation((data) => ({
-      ...data,
-      _id: new Types.ObjectId(),
-      save: jest.fn().mockResolvedValue({ ...data, _id: new Types.ObjectId() }),
-    }));
+    const mockModelConstructor = jest
+      .fn()
+      .mockImplementation((data: Partial<CreateProductDto>) => ({
+        ...data,
+        _id: new Types.ObjectId(),
+        save: jest
+          .fn()
+          .mockResolvedValue({ ...data, _id: new Types.ObjectId() }),
+      }));
     Object.assign(mockModelConstructor, mockProductModel);
 
     mockInvoiceModel = {
@@ -108,13 +113,17 @@ describe('ProductsService', () => {
 
   describe('create', () => {
     it('should create a new product', async () => {
-      const dto = {
+      const dto: Partial<CreateProductDto> = {
         name: 'New Product',
         description: 'Desc',
         unitPrice: 10,
         quantity: 5,
       };
-      const result = await service.create(businessId, databaseName, dto as any);
+      const result = await service.create(
+        businessId,
+        databaseName,
+        dto as CreateProductDto
+      );
 
       expect(mockConnection.useDb).toHaveBeenCalledWith(databaseName, {
         useCache: true,
@@ -217,7 +226,7 @@ describe('ProductsService', () => {
         productId,
         businessId,
         databaseName,
-        dto as any
+        dto as Partial<CreateProductDto>
       );
 
       expect(result.name).toBe('New Name');

@@ -4,21 +4,22 @@ import { InvoiceReceiptService } from '../src/invoices/services/invoice-receipt.
 import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
 import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
 import { Invoice } from '../src/invoices/schemas/invoice.schema';
+/* Model typing not required in this test file */
 import { Types } from 'mongoose';
 import { ForbiddenException } from '@nestjs/common';
 
 describe('InvoiceReceiptService', () => {
   let service: InvoiceReceiptService;
-  let mockInvoiceReceiptModel: any;
-  let mockInvoiceModel: any;
-  let mockConnection: any;
-  let mockTenantConnectionService: any;
+  let mockInvoiceReceiptModel: Record<string, jest.Mock>;
+  let mockInvoiceModel: Record<string, jest.Mock>;
+  let mockConnection: Record<string, unknown>;
+  let mockTenantConnectionService: { getTenantModel: jest.Mock };
 
   const recipientBusinessId = new Types.ObjectId().toString();
   const userId = new Types.ObjectId().toString();
   const userEmail = 'recipient@example.com';
 
-  const createMockReceipt = (overrides = {}) => ({
+  const createMockReceipt = (overrides: Partial<InvoiceReceipt> = {}) => ({
     _id: new Types.ObjectId(),
     invoiceId: new Types.ObjectId(),
     issuerBusinessId: new Types.ObjectId(),

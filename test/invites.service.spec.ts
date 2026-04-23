@@ -20,7 +20,7 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('BusinessService (Invites)', () => {
   let service: BusinessService;
-  let mockBusinessInviteModel: any;
+  let mockBusinessInviteModel: jest.Mock & Record<string, jest.Mock>;
   let mockBusinessModel: { findById: jest.Mock };
   let mockBusinessUserModel: { findOne: jest.Mock };
   let mockUserModel: {
@@ -39,21 +39,22 @@ describe('BusinessService (Invites)', () => {
     sort: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(value),
     exec: jest.fn().mockResolvedValue(value),
-
-    then: jest
-      .fn()
-      .mockImplementation((resolve: (v: unknown) => void) => resolve(value)),
   });
 
   beforeEach(async () => {
-    mockBusinessInviteModel = jest.fn().mockImplementation((dto) => ({
-      ...dto,
-      save: jest.fn().mockResolvedValue({
+    mockBusinessInviteModel = jest
+      .fn()
+      .mockImplementation((dto: Partial<BusinessInvite>) => ({
         ...dto,
-        _id: new Types.ObjectId(),
-        toInviteResponse: () => ({ id: '123', invitedEmail: dto.invitedEmail }),
-      }),
-    }));
+        save: jest.fn().mockResolvedValue({
+          ...dto,
+          _id: new Types.ObjectId(),
+          toInviteResponse: () => ({
+            id: '123',
+            invitedEmail: dto.invitedEmail,
+          }),
+        }),
+      }));
 
     Object.assign(mockBusinessInviteModel, {
       findOne: jest.fn(),
@@ -149,11 +150,11 @@ describe('BusinessService (Invites)', () => {
         _id: businessId,
         name: 'My Business',
       });
-      mockBusinessInviteModel.findOne.mockReturnValue(createMockQuery());
-      mockUserModel.findOne.mockReturnValue(createMockQuery());
-      mockBusinessInviteModel.findByIdAndUpdate.mockReturnValue(
-        createMockQuery({ emailSent: true })
-      );
+      mockBusinessInviteModel.findOne.mockResolvedValue();
+      mockUserModel.findOne.mockResolvedValue();
+      mockBusinessInviteModel.findByIdAndUpdate.mockResolvedValue({
+        emailSent: true,
+      });
 
       const result = await service.inviteBusinessUser(
         businessId,
@@ -172,9 +173,7 @@ describe('BusinessService (Invites)', () => {
         _id: businessId,
         name: 'My Business',
       });
-      mockBusinessInviteModel.findOne.mockReturnValue(
-        createMockQuery({ _id: 'existing' })
-      );
+      mockBusinessInviteModel.findOne.mockResolvedValue({ _id: 'existing' });
 
       await expect(
         service.inviteBusinessUser(

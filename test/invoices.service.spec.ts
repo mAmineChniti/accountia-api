@@ -9,6 +9,7 @@ import { InvoiceStatus } from '../src/invoices/enums/invoice-status.enum';
 import { Types } from 'mongoose';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
+import { type CreateInvoiceDto } from '../src/invoices/dto/invoice.dto';
 
 describe('InvoiceIssuanceService', () => {
   let service: InvoiceIssuanceService;
@@ -104,7 +105,7 @@ describe('InvoiceIssuanceService', () => {
 
     mockInvoiceReceiptModel = {
       findOne: jest.fn().mockReturnThis(),
-      create: jest.fn().mockImplementation((data) => ({
+      create: jest.fn().mockImplementation((data: Partial<InvoiceReceipt>) => ({
         ...data,
         _id: new Types.ObjectId(),
       })),
@@ -165,7 +166,7 @@ describe('InvoiceIssuanceService', () => {
 
   describe('createDraftInvoice', () => {
     it('should create a draft invoice and sync to platform', async () => {
-      const dto = {
+      const dto: Partial<CreateInvoiceDto> = {
         recipient: {
           type: 'EXTERNAL',
           email: 'test@example.com',
@@ -198,7 +199,7 @@ describe('InvoiceIssuanceService', () => {
       const result = await service.createDraftInvoice(
         businessId,
         databaseName,
-        dto as any,
+        dto as CreateInvoiceDto,
         userId
       );
 
@@ -208,7 +209,7 @@ describe('InvoiceIssuanceService', () => {
     });
 
     it('should rollback if product reservation fails', async () => {
-      const dto = {
+      const dto: Partial<CreateInvoiceDto> = {
         recipient: { type: 'EXTERNAL', email: 'test@example.com' },
         lineItems: [{ productId: 'prod1', quantity: 100, unitPrice: 10 }],
       };
@@ -221,7 +222,12 @@ describe('InvoiceIssuanceService', () => {
       mockProductsCollection.updateOne.mockResolvedValue({ modifiedCount: 0 });
 
       await expect(
-        service.createDraftInvoice(businessId, databaseName, dto as any, userId)
+        service.createDraftInvoice(
+          businessId,
+          databaseName,
+          dto as CreateInvoiceDto,
+          userId
+        )
       ).rejects.toThrow(BadRequestException);
     });
   });

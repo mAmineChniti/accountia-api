@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { type InvoiceReceiptResponseDto } from '../src/invoices/dto/invoice.dto';
 import { AppModule } from './../src/app.module';
 
 jest.setTimeout(60_000);
@@ -45,13 +46,19 @@ describe('CompanyInvoices (e2e)', () => {
       .expect(200);
 
     expect(response.body).toHaveProperty('receipts');
-    expect(Array.isArray((response.body as { receipts: any[] }).receipts)).toBe(
-      true
-    );
+    expect(
+      Array.isArray(
+        (response.body as { receipts: InvoiceReceiptResponseDto[] }).receipts
+      )
+    ).toBe(true);
 
-    if ((response.body as { receipts: any[] }).receipts.length > 0) {
-      firstReceiptId = (response.body as { receipts: { id: string }[] })
-        .receipts[0].id;
+    if (
+      (response.body as { receipts: InvoiceReceiptResponseDto[] }).receipts
+        .length > 0
+    ) {
+      firstReceiptId = (
+        response.body as { receipts: InvoiceReceiptResponseDto[] }
+      ).receipts[0].id;
     }
   });
 
