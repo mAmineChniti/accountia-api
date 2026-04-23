@@ -1423,10 +1423,8 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
-    const isUser = '_id' in user;
-    const userId = isUser
-      ? String((user as unknown as Record<string, unknown>)._id)
-      : String(user.id);
+    const userId =
+      user instanceof User && '_id' in user ? user._id.toString() : user.id;
 
     const payload: TokenPayload = {
       sub: userId,
@@ -1744,7 +1742,7 @@ export class AuthService {
       if (!existing.emailConfirmed) {
         existing.emailConfirmed = true;
         existing.emailToken = undefined;
-        await (existing as Document).save();
+        await existing.save();
       }
       return existing;
     }
@@ -1934,7 +1932,7 @@ export class AuthService {
     });
 
     return {
-      message: 'User ununbanned successfully',
+      message: 'User unbanned successfully',
       userId: user._id.toString(),
       isBanned: false,
     };
