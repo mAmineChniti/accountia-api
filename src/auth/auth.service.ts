@@ -144,11 +144,7 @@ export class AuthService {
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
-    this.stripe = new (Stripe as any)(process.env.STRIPE_SECRET_KEY ?? '', {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-      apiVersion: '2022-11-15' as any,
-    });
+    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
   }
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -227,7 +223,7 @@ export class AuthService {
       const tokens = this.generateTokens(user);
 
       await this.userModel.updateOne(
-        { _id: (user as unknown as { _id: Types.ObjectId })._id },
+        { _id: user._id },
         {
           $push: {
             refreshTokens: {
@@ -991,22 +987,20 @@ export class AuthService {
   async fetchAllUsers(): Promise<UsersListResponseDto> {
     const users = await this.userModel.find().lean();
 
-    const formatted = users.map(
-      (u: User & { _id: Types.ObjectId; createdAt?: Date }) => ({
-        id: u._id.toString(),
-        username: u.username,
-        email: u.email,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        birthdate: u.birthdate,
-        profilePicture: u.profilePicture,
-        phoneNumber: u.phoneNumber,
-        role: u.role,
-        dateJoined: u.createdAt,
-        isBanned: u.isBanned ?? false,
-        bannedReason: u.bannedReason,
-      })
-    );
+    const formatted = users.map((u) => ({
+      id: u._id.toString(),
+      username: u.username,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      birthdate: u.birthdate,
+      profilePicture: u.profilePicture,
+      phoneNumber: u.phoneNumber,
+      role: u.role,
+      dateJoined: u.createdAt,
+      isBanned: u.isBanned ?? false,
+      bannedReason: u.bannedReason,
+    }));
 
     return {
       message: 'Users retrieved successfully',

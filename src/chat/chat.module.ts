@@ -23,8 +23,8 @@ import { Product, ProductSchema } from '@/products/schemas/product.schema';
       { name: Business.name, schema: BusinessSchema },
       { name: BusinessUser.name, schema: BusinessUserSchema },
       { name: Invoice.name, schema: InvoiceSchema },
-      { name: InvoiceReceipt.name, schema: InvoiceReceiptSchema },
       { name: Product.name, schema: ProductSchema },
+      { name: InvoiceReceipt.name, schema: InvoiceReceiptSchema },
     ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

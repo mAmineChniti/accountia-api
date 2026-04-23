@@ -246,7 +246,7 @@ export class InvoicePaymentService {
 
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded_page' as never,
+          ui_mode: 'embedded' as never,
           mode: 'payment',
           redirect_on_completion: 'never',
           ...(paymentMethodConfigurationId

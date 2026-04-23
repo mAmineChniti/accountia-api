@@ -4,9 +4,8 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection } from 'mongoose';
+import type { Model, Connection } from 'mongoose';
 import OpenAI from 'openai';
 import { Business } from '@/business/schemas/business.schema';
 import { BusinessUser } from '@/business/schemas/business-user.schema';
@@ -14,7 +13,7 @@ import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { Invoice } from '@/invoices/schemas/invoice.schema';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
-import { Product } from '@/products/schemas/product.schema';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
 import { CacheService } from '@/redis/cache.service';
 
 // Groq API configuration - free tier, fast responses
@@ -43,28 +42,28 @@ export interface BusinessContext {
   topDebtors?: Array<{ name: string; overdueAmount: number }>;
   recentInvoices?: Array<{
     invoiceNumber: string;
-    recipientName: string;
+    recipientName?: string;
     totalAmount: number;
-    currency: string;
-    status: InvoiceStatus;
-    dueDate: Date;
+    currency?: string;
+    status?: InvoiceStatus;
+    issuedDate?: Date;
+    dueDate?: Date;
+    lineItems?: Array<{
+      productName?: string;
+      description?: string;
+      quantity?: number;
+      unitPrice?: number;
+      amount?: number;
+    }>;
   }>;
-  products?: Array<{
+  recentProducts?: Array<{
     name: string;
-    quantity: number;
+    description?: string;
     unitPrice: number;
-    currency: string;
+    quantity?: number;
+    currency?: string;
+    createdAt?: Date;
   }>;
-  receivedInvoices?: Array<{
-    invoiceNumber: string;
-    issuerName: string;
-    totalAmount: number;
-    currency: string;
-    status: InvoiceStatus;
-    dueDate: Date;
-  }>;
-  receivedInvoicesCount?: number;
-  receivedInvoicesTotal?: number;
 }
 
 export interface IndividualContext {
@@ -113,20 +112,15 @@ export class ChatService {
     private invoiceModel: Model<Invoice>,
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
-    @InjectModel(Product.name)
-    private productModel: Model<Product>,
     @InjectConnection() private connection: Connection,
-    private readonly cacheService: CacheService,
-    private readonly configService: ConfigService
+    private readonly cacheService: CacheService
   ) {
-    const apiKey = this.configService.get<string>('GROQ_API_KEY');
+    const apiKey = process.env.GROQ_API_KEY;
     this.chatEnabled = Boolean(apiKey);
     this.maxCompletionTokens = this.resolveMaxCompletionTokens(
-      this.configService.get<string>('GROQ_MAX_COMPLETION_TOKENS')
+      process.env.GROQ_MAX_COMPLETION_TOKENS
     );
-    this.timeoutMs = this.resolveTimeoutMs(
-      this.configService.get<string>('GROQ_TIMEOUT_MS')
-    );
+    this.timeoutMs = this.resolveTimeoutMs(process.env.GROQ_TIMEOUT_MS);
 
     if (!this.chatEnabled) {
       this.logger.warn(
@@ -138,7 +132,7 @@ export class ChatService {
 
     // Initialize OpenAI client with Groq's base URL
     this.client = new OpenAI({
-      apiKey: apiKey,
+      apiKey: process.env.GROQ_API_KEY,
       baseURL: 'https://api.groq.com/openai/v1',
     });
 
@@ -156,11 +150,61 @@ export class ChatService {
   }
 
   private resolveTimeoutMs(rawValue?: string): number {
-    const fallback = 60_000;
+    const fallback = 30_000;
     if (!rawValue) return fallback;
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.max(1000, Math.min(Math.floor(parsed), 120_000));
+  }
+
+  /**
+   * Trim system content to a safe character budget while keeping invoice/product details.
+   * Heuristic: prefer removing product catalog first, then shrink recent invoices and remove line items.
+   */
+  private trimSystemContent(content: string): string {
+    const SAFE_LIMIT = 16_000; // characters
+    if (content.length <= SAFE_LIMIT) return content;
+
+    let trimmed = content;
+
+    // 1) Remove product catalog section if present
+    const productCatalogIdx = trimmed.indexOf('\nProduct Catalog (sample):');
+    if (productCatalogIdx !== -1) {
+      trimmed = trimmed.slice(0, productCatalogIdx);
+    }
+
+    if (trimmed.length <= SAFE_LIMIT) return trimmed;
+
+    // 2) Remove line-items details blocks, replace with placeholder
+    // Matches '  Line items:' and following indented lines starting with '  - '
+    trimmed = trimmed.replaceAll(
+      /\n\s{2}Line items:[\S\s]*?(?=\n- |$)/g,
+      '\n  Line items: (omitted)'
+    );
+
+    if (trimmed.length <= SAFE_LIMIT) return trimmed;
+
+    // 3) Reduce recent invoices list size by keeping only header and first 3 entries
+    const recentHeaderIdx = trimmed.indexOf('\nRecent Issued Invoices:');
+    if (recentHeaderIdx !== -1) {
+      const before = trimmed.slice(
+        0,
+        recentHeaderIdx + '\nRecent Issued Invoices:'.length
+      );
+      // capture first 3 invoice lines
+      const invoiceLines = trimmed
+        .slice(recentHeaderIdx)
+        .split('\n')
+        .filter((l) => l.trim().length > 0)
+        .slice(0, 15); // a few lines per invoice
+      trimmed = before + '\n' + invoiceLines.join('\n') + '\n  ... (truncated)';
+    }
+
+    // Final safety clamp
+    if (trimmed.length > SAFE_LIMIT) {
+      return trimmed.slice(0, SAFE_LIMIT) + '\n... (context truncated)';
+    }
+    return trimmed;
   }
 
   private async withTimeout<T>(
@@ -194,9 +238,12 @@ export class ChatService {
       throw new Error('GROQ_API_KEY is not configured');
     }
 
-    const systemContent = params.businessContext
+    let systemContent = params.businessContext
       ? `${params.systemPrompt}\n\n${params.businessContext}`
       : params.systemPrompt;
+
+    // Trim context to keep prompts within reasonable size and preserve invoice details
+    systemContent = this.trimSystemContent(systemContent);
 
     const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
     const safeHistory = params.history
@@ -222,18 +269,15 @@ export class ChatService {
     ];
 
     try {
-      const res = await this.client.chat.completions.create(
-        {
+      const res = await this.withTimeout(
+        this.client.chat.completions.create({
           model: GROQ_MODEL,
           messages,
           max_tokens: this.maxCompletionTokens,
           temperature: 0.7,
           top_p: 0.95,
-        },
-        {
-          maxRetries: 3,
-          timeout: this.timeoutMs,
-        }
+        }),
+        'Groq chat request'
       );
 
       const content = res.choices[0]?.message?.content;
@@ -243,9 +287,10 @@ export class ChatService {
 
       throw new Error('Groq response did not include message content');
     } catch (error) {
-      this.logger.error('Groq request failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Groq request failed: ${message}`);
       if (error instanceof Error) throw error;
-      throw new Error(String(error));
+      throw new Error(message);
     }
   }
 
@@ -260,9 +305,12 @@ export class ChatService {
       throw new Error('GROQ_API_KEY is not configured');
     }
 
-    const systemContent = params.businessContext
+    let systemContent = params.businessContext
       ? `${params.systemPrompt}\n\n${params.businessContext}`
       : params.systemPrompt;
+
+    // Trim context to keep prompts within reasonable size and preserve invoice details
+    systemContent = this.trimSystemContent(systemContent);
 
     const safeQuery = params.query.slice(0, ChatService.MAX_MESSAGE_CHARS);
     const safeHistory = params.history
@@ -301,11 +349,7 @@ export class ChatService {
           top_p: 0.95,
           stream: true,
         },
-        {
-          signal: controller.signal,
-          maxRetries: 3,
-          timeout: this.timeoutMs,
-        }
+        { signal: controller.signal }
       );
 
       let fullContent = '';
@@ -326,9 +370,10 @@ export class ChatService {
 
       return fullContent;
     } catch (error) {
-      this.logger.error('Groq streaming request failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Groq streaming request failed: ${message}`);
       if (error instanceof Error) throw error;
-      throw new Error(String(error));
+      throw new Error(message);
     } finally {
       clearTimeout(timeoutId);
     }
@@ -395,8 +440,18 @@ export class ChatService {
     // Fetch all invoices issued by this business for analysis
     const invoices = (await tenantInvoiceModel
       .find({ issuerBusinessId: businessId })
+      .sort({ createdAt: -1 })
       .lean()
       .exec()) as Array<Invoice & { _id: unknown; __v?: number }>;
+
+    // Fetch tenant products (catalog) from the tenant database using the canonical schema
+    const tenantProductModel = tenantDb.model(Product.name, ProductSchema);
+    const products = await tenantProductModel
+      .find({ businessId })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+      .exec();
 
     // Calculate statistics
     const totalInvoices = invoices.length;
@@ -530,24 +585,32 @@ export class ChatService {
       .toSorted((a, b) => b.overdueAmount - a.overdueAmount)
       .slice(0, 5);
 
-    // Fetch products from tenant database
-    const tenantProductModel = tenantDb.model(
-      Product.name,
-      this.productModel.schema
-    );
-    const products = await tenantProductModel
-      .find({ businessId })
-      .limit(50) // Higher limit for better context
-      .lean()
-      .exec();
+    // Recent invoices sample (include line items for context)
+    const recentInvoices = invoices.slice(0, 10).map((inv) => ({
+      invoiceNumber: inv.invoiceNumber,
+      recipientName: inv.recipient?.displayName ?? inv.recipient?.email ?? '',
+      totalAmount: inv.totalAmount,
+      currency: inv.currency,
+      status: inv.status,
+      issuedDate: inv.issuedDate,
+      dueDate: inv.dueDate,
+      lineItems: (inv.lineItems ?? []).slice(0, 5).map((li) => ({
+        productName: li.productName,
+        description: li.description,
+        quantity: li.quantity,
+        unitPrice: li.unitPrice,
+        amount: li.amount,
+      })),
+    }));
 
-    // Fetch received invoices where this business is the recipient
-    const receivedReceipts = await this.invoiceReceiptModel
-      .find({ recipientBusinessId: businessId })
-      .sort({ issuedDate: -1 })
-      .limit(50)
-      .lean()
-      .exec();
+    const recentProducts = (products ?? []).slice(0, 15).map((p) => ({
+      name: p.name,
+      description: p.description,
+      unitPrice: p.unitPrice,
+      quantity: p.quantity,
+      currency: p.currency,
+      createdAt: p.createdAt,
+    }));
 
     const result: BusinessContext = {
       businessId,
@@ -563,43 +626,8 @@ export class ChatService {
       averagePaymentDelay: Number(averagePaymentDelay.toFixed(1)),
       clientCount,
       topDebtors,
-      recentInvoices: invoices.slice(0, 50).map((inv) => ({
-        invoiceNumber: inv.invoiceNumber,
-        recipientName:
-          inv.recipient?.displayName ??
-          inv.recipient?.email ??
-          'Unknown Client',
-        totalAmount: inv.totalAmount ?? 0,
-        currency: inv.currency ?? 'TND',
-        status: inv.status,
-        dueDate: inv.dueDate,
-      })),
-      products: (
-        products as unknown as Array<{
-          name: string;
-          quantity?: number;
-          unitPrice?: number;
-          currency?: string;
-        }>
-      ).map((p) => ({
-        name: p.name,
-        quantity: p.quantity ?? 0,
-        unitPrice: p.unitPrice ?? 0,
-        currency: p.currency ?? 'TND',
-      })),
-      receivedInvoices: receivedReceipts.map((r) => ({
-        invoiceNumber: r.invoiceNumber,
-        issuerName: r.issuerBusinessName,
-        totalAmount: r.totalAmount,
-        currency: r.currency,
-        status: r.invoiceStatus,
-        dueDate: r.dueDate,
-      })),
-      receivedInvoicesCount: receivedReceipts.length,
-      receivedInvoicesTotal: receivedReceipts.reduce(
-        (sum, r) => sum + (r.totalAmount || 0),
-        0
-      ),
+      recentInvoices,
+      recentProducts,
     };
 
     // Cache for 60 seconds
@@ -625,13 +653,24 @@ export class ChatService {
       return structuredClone(cached);
     }
 
-    // Normalize email for matching
-    const normalizedEmail = email?.toLowerCase().trim() || '';
+    // Normalize email for matching if provided; avoid crashing if undefined
+    const normalizedEmail =
+      typeof email === 'string' && email
+        ? email.toLowerCase().trim()
+        : undefined;
+
+    // Build query: match by recipientUserId or recipientEmail (only include email clause if available)
+    const orClauses: Array<Record<string, unknown>> = [
+      { recipientUserId: userId },
+    ];
+    if (normalizedEmail) {
+      orClauses.push({ recipientEmail: normalizedEmail });
+    }
 
     // Find all receipts where user is recipient (by userId or email)
     const receipts = await this.invoiceReceiptModel
       .find({
-        $or: [{ recipientUserId: userId }, { recipientEmail: normalizedEmail }],
+        $or: orClauses,
       })
       .sort({ issuedDate: -1 })
       .lean()
@@ -678,8 +717,8 @@ export class ChatService {
       .filter((r) => r.invoiceStatus === InvoiceStatus.PAID)
       .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
 
-    // Get 50 most recent invoices to provide broader context
-    const recentInvoices = receipts.slice(0, 50).map((r) => ({
+    // Get 5 most recent invoices
+    const recentInvoices = receipts.slice(0, 5).map((r) => ({
       invoiceNumber: r.invoiceNumber,
       issuerName: r.issuerBusinessName,
       totalAmount: r.totalAmount,
@@ -708,7 +747,7 @@ export class ChatService {
         ),
       }))
       .toSorted((a, b) => a.daysUntilDue - b.daysUntilDue)
-      .slice(0, 50);
+      .slice(0, 5);
 
     const upcomingDueAmount = upcomingInvoices.reduce(
       (sum, inv) => sum + (inv.totalAmount || 0),
@@ -766,7 +805,7 @@ export class ChatService {
       parts.push('\nRecent Invoices:');
       for (const inv of context.recentInvoices) {
         parts.push(
-          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${new Date(inv.dueDate).toISOString().split('T')[0]})`
+          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${inv.dueDate.toISOString().split('T')[0]})`
         );
       }
     }
@@ -787,36 +826,9 @@ export class ChatService {
    * Generate system prompt based on mode (business or individual)
    * Groq will respond in the same language as the user's query
    */
-  private getSystemPrompt(
-    mode: 'business' | 'individual',
-    pageContext?: string
-  ): string {
+  private getSystemPrompt(mode: 'business' | 'individual'): string {
     if (mode === 'business') {
-      let pageInstructions = '';
-      switch (pageContext) {
-        case 'products': {
-          pageInstructions =
-            '\nCONTEXT NOTE: The user is currently viewing their PRODUCTS & INVENTORY list. Prioritize answering questions about stock levels, reorder needs, and product pricing.';
-
-          break;
-        }
-        case 'received':
-        case 'issued': {
-          pageInstructions =
-            '\nCONTEXT NOTE: The user is currently viewing their ISSUED INVOICES (Sales). Prioritize analysis of money owed to them, payment performance of clients, and sales trends.';
-
-          break;
-        }
-        case 'statistics': {
-          pageInstructions =
-            '\nCONTEXT NOTE: The user is currently viewing their FINANCIAL DASHBOARD. Focus on high-level KPIs, growth trends, and overall financial health.';
-
-          break;
-        }
-        // No default
-      }
-
-      return `You are an expert financial advisor (virtual CFO) for Accountia Business.${pageInstructions}
+      return `You are an expert financial advisor (virtual CFO) for Accountia Business.
 
 YOUR PURPOSE:
 Help business owners understand their financial situation and make better decisions to improve cash flow, reduce overdue payments, and grow their business.
@@ -872,10 +884,7 @@ ABSOLUTE RULES:
   /**
    * Format business context as a string for the prompt
    */
-  private formatBusinessContext(
-    context?: BusinessContext,
-    pageContext?: string
-  ): string {
+  private formatBusinessContext(context?: BusinessContext): string {
     if (!context) return '';
 
     const parts: string[] = ['BUSINESS FINANCIAL CONTEXT:'];
@@ -933,46 +942,44 @@ ABSOLUTE RULES:
       }
     }
 
+    // Include recent invoices (full sample) for the AI to reference individual invoice details
     if (context.recentInvoices && context.recentInvoices.length > 0) {
-      parts.push('\nRECENT ISSUED INVOICES:');
-      for (const inv of context.recentInvoices) {
+      parts.push('\nRecent Issued Invoices:');
+      for (const inv of context.recentInvoices.slice(0, 10)) {
+        const issued = inv.issuedDate
+          ? new Date(inv.issuedDate).toISOString().split('T')[0]
+          : 'n/a';
+        const due = inv.dueDate
+          ? new Date(inv.dueDate).toISOString().split('T')[0]
+          : 'n/a';
         parts.push(
-          `- ${inv.invoiceNumber} to ${inv.recipientName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${new Date(inv.dueDate).toISOString().split('T')[0]})`
+          `- ${inv.invoiceNumber} → ${inv.recipientName ?? 'Unknown'}: ${inv.totalAmount} ${inv.currency ?? 'TND'} (${inv.status ?? 'UNKNOWN'}, issued: ${issued}, due: ${due})`
         );
-      }
-    }
-
-    if (context.receivedInvoicesCount !== undefined) {
-      parts.push(`- Total Received Invoices: ${context.receivedInvoicesCount}`);
-      if (context.receivedInvoicesTotal !== undefined) {
-        parts.push(
-          `- Total Received Amount: ${context.receivedInvoicesTotal.toFixed(2)} TND`
-        );
-      }
-    }
-
-    if (context.products && context.products.length > 0) {
-      parts.push('\nPRODUCTS & INVENTORY:');
-      for (const p of context.products) {
-        parts.push(
-          `- ${p.name}: ${p.quantity} units at ${p.unitPrice} ${p.currency} each`
-        );
-      }
-    }
-
-    if (
-      (context.receivedInvoices && context.receivedInvoices.length > 0) ||
-      pageContext === 'received'
-    ) {
-      parts.push('\nRECENT RECEIVED INVOICES (PURCHASES):');
-      if (context.receivedInvoices && context.receivedInvoices.length > 0) {
-        for (const inv of context.receivedInvoices) {
-          parts.push(
-            `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${new Date(inv.dueDate).toISOString().split('T')[0]})`
-          );
+        if (inv.lineItems && inv.lineItems.length > 0) {
+          parts.push('  Line items:');
+          for (const li of inv.lineItems.slice(0, 5)) {
+            parts.push(
+              `  - ${li.productName ?? li.description ?? 'Item'}: ${li.quantity ?? 1} × ${li.unitPrice ?? 0} = ${li.amount ?? 0}`
+            );
+          }
         }
-      } else {
-        parts.push('- No received invoices found for this business.');
+      }
+    }
+
+    // Include product catalog (recent products) so AI can reference product-level details
+    const recentProductsTyped = context.recentProducts;
+    if (recentProductsTyped && recentProductsTyped.length > 0) {
+      parts.push('\nProduct Catalog (sample):');
+      for (const p of recentProductsTyped.slice(0, 15)) {
+        const name = p.name ?? '';
+        const description = p.description ?? '';
+        const unitPrice = p.unitPrice ?? 0;
+        const currency = p.currency ?? 'TND';
+        const quantity = p.quantity ?? 0;
+
+        parts.push(
+          `- ${name}: ${description} — ${unitPrice} ${currency} (qty: ${quantity})`
+        );
       }
     }
 
@@ -989,7 +996,6 @@ ABSOLUTE RULES:
     businessId: string | undefined,
     userEmail: string,
     history: Array<{ role: string; content: string }> = [],
-    pageContext: string | undefined = undefined,
     callbacks: {
       onChunk: (chunk: string) => void;
       onComplete: (fullResponse: string) => void;
@@ -1004,7 +1010,7 @@ ABSOLUTE RULES:
         // Business mode: verify access and fetch business context
         await this.verifyBusinessAccess(businessId, userId);
         const businessContext = await this.fetchBusinessContext(businessId);
-        contextStr = this.formatBusinessContext(businessContext, pageContext);
+        contextStr = this.formatBusinessContext(businessContext);
         mode = 'business';
       } else {
         // Individual mode: fetch user's received invoices
@@ -1016,7 +1022,7 @@ ABSOLUTE RULES:
         mode = 'individual';
       }
 
-      const systemPrompt = this.getSystemPrompt(mode, pageContext);
+      const systemPrompt = this.getSystemPrompt(mode);
 
       // Stream the response
       const fullResponse = await this.streamWithGroq({
