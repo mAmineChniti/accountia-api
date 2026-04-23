@@ -13,6 +13,7 @@ describe('InvoicesController (e2e)', () => {
   let jwtToken: string;
   const businessId = '69d969f17a9661afc2afbb2f';
   let createdInvoiceId: string;
+  let seededProductId: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -23,16 +24,50 @@ describe('InvoicesController (e2e)', () => {
     await app.init();
 
     // Authenticate with user's credentials
+    const email = process.env.TEST_USER_EMAIL;
+    const password = process.env.TEST_USER_PASSWORD;
+    if (!email || !password) {
+      throw new Error(
+        'Set TEST_USER_EMAIL and TEST_USER_PASSWORD env vars for e2e tests'
+      );
+    }
+
     const loginResponse = await request(app.getHttpServer() as string)
       .post('/auth/login')
+      .send({ email, password });
+
+    if (loginResponse.status !== 200) {
+      throw new Error(
+        `Auth failed during setup: ${loginResponse.status} ${JSON.stringify(loginResponse.body)}`
+      );
+    }
+
+    const token = (loginResponse.body as { accessToken?: string }).accessToken;
+    if (typeof token !== 'string') {
+      throw new TypeError('Auth response did not contain accessToken');
+    }
+    jwtToken = token;
+
+    // Seed a product for invoice line items so invoice creation is deterministic
+    const productResp = await request(app.getHttpServer() as string)
+      .post('/products')
+      .set('Authorization', `Bearer ${jwtToken}`)
       .send({
-        email: 'grajawiem@gmail.com',
-        password: '000000000000',
+        businessId,
+        name: `E2E Seed Product ${Date.now()}`,
+        description: 'Seed product for invoices e2e',
+        quantity: 100,
+        unitPrice: 1000,
+        cost: 500,
       });
 
-    if (loginResponse.status === 200) {
-      jwtToken = (loginResponse.body as { accessToken: string }).accessToken;
+    if (productResp.status !== 201) {
+      throw new Error(
+        `Failed to seed product for invoices e2e: ${productResp.status} ${JSON.stringify(productResp.body)}`
+      );
     }
+
+    seededProductId = (productResp.body as { id: string }).id;
   });
 
   afterAll(async () => {
@@ -40,8 +75,7 @@ describe('InvoicesController (e2e)', () => {
   });
 
   it('/invoices (POST) - Should create a new draft invoice', async () => {
-    if (!jwtToken) return;
-
+    if (!jwtToken) throw new Error('Missing jwtToken in test setup');
     // We need a product to exist for reservation.
     // Usually we'd create one here, but let's try with a dummy product ID
     // that might fail if validation is strict.
@@ -60,7 +94,7 @@ describe('InvoicesController (e2e)', () => {
         },
         lineItems: [
           {
-            productId: '69d969f17a9661afc2afbb30', // Sample product ID
+            productId: seededProductId,
             productName: 'E2E Test Product',
             quantity: 1,
             unitPrice: 1500,
@@ -70,32 +104,13 @@ describe('InvoicesController (e2e)', () => {
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         currency: 'TND',
       })
-      .expect((res) => {
-        // If the product ID is invalid, it may return 400 or 404.
-        // If the DB is slow, it might timeout.
-        if (res.status === 201) return;
-        if (
-          res.status === 400 &&
-          (res.body as { message: string }).message.includes('Product')
-        )
-          return;
-        if (
-          res.status === 404 &&
-          (res.body as { message: string }).message.includes('Product')
-        )
-          return;
-        throw new Error(
-          `Unexpected status: ${res.status} ${JSON.stringify(res.body)}`
-        );
-      });
+      .expect(201);
 
-    if (response.status === 201) {
-      expect(response.body).toHaveProperty('id');
-      expect((response.body as { status: string }).status).toBe(
-        InvoiceStatus.DRAFT
-      );
-      createdInvoiceId = (response.body as { id: string }).id;
-    }
+    expect(response.body).toHaveProperty('id');
+    expect((response.body as { status: string }).status).toBe(
+      InvoiceStatus.DRAFT
+    );
+    createdInvoiceId = (response.body as { id: string }).id;
   });
 
   it('/invoices/issued (GET) - Should list issued invoices', async () => {

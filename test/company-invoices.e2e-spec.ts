@@ -20,17 +20,29 @@ describe('CompanyInvoices (e2e)', () => {
     app = moduleFixture.createNestApplication();
     await app.init();
 
-    // Authenticate
+    const email = process.env.TEST_USER_EMAIL;
+    const password = process.env.TEST_USER_PASSWORD;
+    if (!email || !password) {
+      throw new Error(
+        'Set TEST_USER_EMAIL and TEST_USER_PASSWORD env vars for e2e tests'
+      );
+    }
+
     const loginResponse = await request(app.getHttpServer() as string)
       .post('/auth/login')
-      .send({
-        email: 'grajawiem@gmail.com',
-        password: '000000000000',
-      });
+      .send({ email, password });
 
-    if (loginResponse.status === 200) {
-      jwtToken = (loginResponse.body as { accessToken: string }).accessToken;
+    if (loginResponse.status !== 200) {
+      throw new Error(
+        `Auth failed during setup: ${loginResponse.status} ${JSON.stringify(loginResponse.body)}`
+      );
     }
+
+    const token = (loginResponse.body as { accessToken?: string }).accessToken;
+    if (typeof token !== 'string') {
+      throw new TypeError('Auth response did not contain accessToken');
+    }
+    jwtToken = token;
   });
 
   afterAll(async () => {
