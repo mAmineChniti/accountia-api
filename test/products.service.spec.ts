@@ -78,7 +78,7 @@ describe('ProductsService', () => {
       model: jest.fn().mockImplementation((name: string) => {
         if (name === 'Product') return mockModelConstructor;
         if (name === 'Invoice') return mockInvoiceModel;
-        return;
+        throw new Error(`Unexpected model name: ${name}`);
       }),
     };
 

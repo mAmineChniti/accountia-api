@@ -168,7 +168,7 @@ describe('InvoicesController (e2e)', () => {
       .set('Authorization', `Bearer ${jwtToken}`)
       .send({
         businessId,
-        newStatus: InvoiceStatus.ISSUED,
+        status: InvoiceStatus.ISSUED,
       })
       .expect(201);
 
