@@ -4,7 +4,6 @@ import { InvoiceReceiptService } from '../src/invoices/services/invoice-receipt.
 import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
 import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
 import { Invoice } from '../src/invoices/schemas/invoice.schema';
-/* Model typing not required in this test file */
 import { Types } from 'mongoose';
 import { ForbiddenException } from '@nestjs/common';
 

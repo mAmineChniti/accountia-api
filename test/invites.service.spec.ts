@@ -218,9 +218,7 @@ describe('BusinessService (Invites)', () => {
         businessId: businessId,
         save: jest.fn().mockResolvedValue(true),
       };
-      mockBusinessInviteModel.findById.mockReturnValue(
-        createMockQuery(mockInvite)
-      );
+      mockBusinessInviteModel.findById.mockResolvedValue(mockInvite);
       mockBusinessInviteModel.findByIdAndDelete.mockResolvedValue(mockInvite);
 
       const result = await service.revokeInvite(
@@ -234,7 +232,7 @@ describe('BusinessService (Invites)', () => {
     });
 
     it('should throw NotFoundException if invite not found', async () => {
-      mockBusinessInviteModel.findById.mockReturnValue(createMockQuery());
+      mockBusinessInviteModel.findById.mockResolvedValue();
 
       await expect(
         service.revokeInvite(
