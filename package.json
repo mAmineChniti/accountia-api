@@ -34,7 +34,6 @@
     "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/websockets": "^11.1.17",
-    "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-node": "^4.22.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
@@ -122,7 +121,6 @@
     "@nestjs/core",
     "@openrouter/sdk",
     "@scarf/scarf",
-    "@tensorflow/tfjs-node",
     "bcrypt",
     "core-js",
     "unrs-resolver"

@@ -12,6 +12,11 @@ import type { Connection, Model } from 'mongoose';
 import Stripe from 'stripe';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 
+type StripeClient = InstanceType<typeof Stripe>;
+type StripeCheckoutSession = Awaited<
+  ReturnType<StripeClient['checkout']['sessions']['retrieve']>
+>;
+
 interface StripeSessionMetadata {
   invoiceId?: string;
   issuerBusinessId?: string;
@@ -321,8 +326,7 @@ export class InvoicePaymentService {
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sessionObj = session as Record<string, any>;
+    const sessionObj = session as StripeCheckoutSession;
 
     if (!sessionObj.url || !sessionObj.id) {
       const clientSecret = sessionObj.client_secret as string | undefined;
@@ -334,15 +338,17 @@ export class InvoicePaymentService {
 
       return {
         clientSecret,
-        sessionId: sessionObj.id as string,
+        sessionId: sessionObj.id,
         checkoutUrl: undefined,
+        receiptId,
       };
     }
 
     return {
-      clientSecret: (sessionObj.client_secret as string) ?? '',
-      sessionId: sessionObj.id as string,
-      checkoutUrl: sessionObj.url as string,
+      clientSecret: sessionObj.client_secret! ?? '',
+      sessionId: sessionObj.id,
+      checkoutUrl: sessionObj.url,
+      receiptId,
     };
   }
 
@@ -434,6 +440,112 @@ export class InvoicePaymentService {
     return updatedInvoice;
   }
 
+  async confirmPaymentStatus(
+    sessionId: string,
+    receiptId: string,
+    user: UserPayload
+  ): Promise<{ success: boolean; status: string }> {
+    this.logger.log(
+      `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`
+    );
+    const stripe = this.ensureStripeEnabled();
+    let session: StripeCheckoutSession | undefined;
+
+    // Retries with exponential backoff. If a non-retryable Stripe error is
+    // encountered, surface permanent errors to the caller so clients stop
+    // polling and rely on the returned failure status. Webhooks remain the
+    // source of truth for eventual state when we return 'pending'.
+    const attempts = 3;
+    const backoffs = [200, 500];
+
+    for (let i = 0; i < attempts; i++) {
+      try {
+        session = (await stripe.checkout.sessions.retrieve(
+          sessionId
+        )) as StripeCheckoutSession;
+        this.logger.debug(
+          `Attempt ${i + 1}: Stripe session status is "${session.payment_status}"`
+        );
+        if (session.payment_status === 'paid') {
+          break;
+        }
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        const errAny = error as unknown as { type?: string; code?: string };
+        const errType = errAny?.type ?? 'unknown';
+        const errCode = errAny?.code ?? 'unknown';
+        this.logger.error(
+          `Error retrieving session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+        );
+
+        // Detect non-retryable Stripe errors and surface permanent failures.
+        const isResourceMissing = errAny?.code === 'resource_missing';
+        const isAuthError =
+          errAny?.type === 'StripeAuthenticationError' ||
+          errAny?.code === 'authentication_required';
+        const isInvalidRequest = errAny?.type === 'StripeInvalidRequestError';
+
+        if (isResourceMissing) {
+          this.logger.error(
+            `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+          );
+          // Missing resource indicates a bad request from the client
+          throw new BadRequestException(`Stripe resource missing: ${errMsg}`);
+        }
+
+        if (isAuthError || isInvalidRequest) {
+          this.logger.error(
+            `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+          );
+          // Authentication or invalid request — surface failed status so client stops polling
+          return { success: false, status: 'failed' };
+        }
+      }
+
+      // Only wait before next attempt when there is another attempt left.
+      if (i < attempts - 1) {
+        const delay = backoffs[Math.min(i, backoffs.length - 1)];
+        // Small non-blocking sleep
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    if (session?.payment_status !== 'paid') {
+      this.logger.warn(
+        `Payment not confirmed for session ${sessionId}. Final status: ${session?.payment_status}`
+      );
+      // Return 'pending' so that the Stripe webhook handler remains authoritative
+      // for final payment state instead of blocking the request here.
+      return {
+        success: false,
+        status: session?.payment_status ?? 'pending',
+      };
+    }
+
+    const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
+    if (!receipt) {
+      this.logger.error(`Receipt ${receiptId} not found during confirmation`);
+      throw new NotFoundException('Invoice receipt not found');
+    }
+
+    // Enforce that the authenticated user is allowed to pay this receipt
+    this.assertRecipientCanPay(receipt, user);
+
+    this.logger.log(
+      `Confirmed! Updating invoice ${receipt.invoiceId} for business ${receipt.issuerBusinessId}`
+    );
+    const success = await this.completeInvoicePayment({
+      invoiceId: receipt.invoiceId.toString(),
+      issuerBusinessId: receipt.issuerBusinessId.toString(),
+      issuerTenantDatabaseName: receipt.issuerTenantDatabaseName,
+      payerUserId: receipt.recipientUserId?.toString(),
+      payerEmail: receipt.recipientEmail,
+      issuerBusinessName: receipt.issuerBusinessName,
+    });
+
+    return { success, status: session?.payment_status ?? 'unknown' };
+  }
+
   async finalizeCheckoutSessionFromReturn(
     sessionId: string,
     receiptId: string
@@ -449,8 +561,7 @@ export class InvoicePaymentService {
     void _businessId;
     // Connected account logic skipped for this fix
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let session: any;
+    let session: StripeCheckoutSession;
     const requestOptions = undefined; // Force platform account testing
 
     try {
@@ -464,8 +575,7 @@ export class InvoicePaymentService {
       session = await stripe.checkout.sessions.retrieve(sessionId);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sessionObj = session as Record<string, any>;
+    const sessionObj = session;
     if (sessionObj.payment_status !== 'paid') {
       return false;
     }

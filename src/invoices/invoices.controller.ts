@@ -553,6 +553,52 @@ export class InvoicesController {
     return { received: true };
   }
 
+  @Post('payments/confirm')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '[PLATFORM] Confirm payment status (JSON)',
+    description:
+      'Verifies Stripe session status and updates invoice. Returns JSON.',
+  })
+  @ApiQuery({
+    name: 'session_id',
+    required: true,
+    type: 'string',
+    description: 'Stripe Checkout session ID',
+  })
+  @ApiQuery({
+    name: 'receipt_id',
+    required: true,
+    type: 'string',
+    description: 'Invoice receipt ID',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Missing or invalid query parameters: session_id and receipt_id are required',
+  })
+  @ApiOkResponse({
+    description: 'Payment status confirmed',
+    schema: {
+      type: 'object',
+      properties: { success: { type: 'boolean' }, status: { type: 'string' } },
+    },
+  })
+  async confirmPayment(
+    @Query('session_id') sessionId: string,
+    @Query('receipt_id') receiptId: string,
+    @CurrentUser() user: UserPayload
+  ): Promise<{ success: boolean; status: string }> {
+    if (!sessionId || !receiptId) {
+      throw new BadRequestException('session_id and receipt_id are required');
+    }
+    return await this.paymentService.confirmPaymentStatus(
+      sessionId,
+      receiptId,
+      user
+    );
+  }
+
   @Get('payments/return')
   @HttpCode(HttpStatus.FOUND)
   @ApiOperation({
