@@ -1,13 +1,11 @@
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import type ky from 'ky';
 import { AccountantService } from '../src/accountant/accountant.service';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { type InternalCreateAccountingJobPayload } from '../src/accountant/dto';
 
-interface HttpClientMock {
-  post: jest.Mock;
-  get: jest.Mock;
-}
+type KyInstance = ReturnType<typeof ky.create>;
 
 // Mock ky
 jest.mock('ky', () => ({
@@ -20,10 +18,10 @@ jest.mock('ky', () => ({
 describe('AccountantService', () => {
   let service: AccountantService;
   let mockConfigService: { get: jest.Mock };
-  let mockHttpClient: HttpClientMock;
+  let mockHttpClient: jest.Mocked<KyInstance>;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockConfigService = {
       get: jest.fn((key: string, defaultValue?: unknown) => {
         if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
@@ -44,8 +42,9 @@ describe('AccountantService', () => {
 
     service = module.get<AccountantService>(AccountantService);
     // Access the private httpClient for mocking calls
-    mockHttpClient = (service as unknown as { httpClient: HttpClientMock })
-      .httpClient;
+    mockHttpClient = (
+      service as unknown as { httpClient: jest.Mocked<KyInstance> }
+    ).httpClient;
   });
 
   it('should be defined', () => {
@@ -55,9 +54,14 @@ describe('AccountantService', () => {
   describe('createAccountingJob', () => {
     it('should call the AI service and return job info', async () => {
       const mockResponse = { task_id: 'job_123', status: 'pending' };
-      mockHttpClient.post.mockReturnValue({
-        json: jest.fn().mockResolvedValue(mockResponse),
-      });
+      const mockPostResp = {
+        json: jest
+          .fn<Promise<{ task_id: string; status: string }>, []>()
+          .mockResolvedValue(mockResponse),
+      };
+      mockHttpClient.post.mockImplementation(
+        () => mockPostResp as unknown as ReturnType<KyInstance['post']>
+      );
 
       const dto: InternalCreateAccountingJobPayload = {
         business_id: 'b1',
@@ -77,10 +81,13 @@ describe('AccountantService', () => {
 
     it('should throw ServiceUnavailableException if API key is missing', async () => {
       // Re-instantiate service without API key
-      mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'AI_ACCOUNTANT_API_KEY') return '';
-        return;
-      });
+      mockConfigService.get.mockImplementation(
+        (key: string, defaultValue?: unknown) => {
+          if (key === 'AI_ACCOUNTANT_API_KEY') return '';
+          if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
+          return defaultValue;
+        }
+      );
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           AccountantService,
@@ -104,9 +111,14 @@ describe('AccountantService', () => {
   describe('getJobStatus', () => {
     it('should return the status of a job', async () => {
       const mockStatus = { task_id: 'job_123', status: 'completed' };
-      mockHttpClient.get.mockReturnValue({
-        json: jest.fn().mockResolvedValue(mockStatus),
-      });
+      const mockGetResp = {
+        json: jest
+          .fn<Promise<{ task_id: string; status: string }>, []>()
+          .mockResolvedValue(mockStatus),
+      };
+      mockHttpClient.get.mockImplementation(
+        () => mockGetResp as unknown as ReturnType<KyInstance['get']>
+      );
 
       const result = await service.getJobStatus('job_123', 'b1');
 
@@ -123,9 +135,14 @@ describe('AccountantService', () => {
   describe('getTaxSummary', () => {
     it('should return tax summary for a year', async () => {
       const mockTaxes = { vat: 1000, income_tax: 2000 };
-      mockHttpClient.get.mockReturnValue({
-        json: jest.fn().mockResolvedValue(mockTaxes),
-      });
+      const mockGetTaxesResp = {
+        json: jest
+          .fn<Promise<Record<string, number>>, []>()
+          .mockResolvedValue(mockTaxes),
+      };
+      mockHttpClient.get.mockImplementation(
+        () => mockGetTaxesResp as unknown as ReturnType<KyInstance['get']>
+      );
 
       const result = await service.getTaxSummary('b1', 2024);
 
@@ -146,6 +163,7 @@ describe('AccountantService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(true);
+      expect(mockHttpClient.get).toHaveBeenCalledWith('', { timeout: 5000 });
     });
 
     it('should return false if AI service is down', async () => {
@@ -154,6 +172,7 @@ describe('AccountantService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(false);
+      expect(mockHttpClient.get).toHaveBeenCalledWith('', { timeout: 5000 });
     });
   });
 });

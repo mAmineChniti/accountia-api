@@ -28,8 +28,6 @@ describe('BusinessService (Statistics)', () => {
   const userId = new Types.ObjectId().toString();
   const databaseName = 'tenant_business_1';
 
-  // Helper removed: providers use mockResolvedValue directly
-
   beforeEach(async () => {
     mockBusinessModel = {
       findById: jest.fn(),
@@ -133,6 +131,10 @@ describe('BusinessService (Statistics)', () => {
 
     expect(result.kpis.totalRevenue).toBe(100);
     expect(mockBusinessModel.findById).not.toHaveBeenCalled();
+    expect(mockConnection.useDb).not.toHaveBeenCalled();
+    expect(
+      mockTensorflowService.forecastBusinessMetrics
+    ).not.toHaveBeenCalled();
     // Ensure we returned a clone of cached data, not the same reference
     expect(result).not.toBe(mockCachedData);
     expect(mockCacheService.get).toHaveBeenCalledWith(

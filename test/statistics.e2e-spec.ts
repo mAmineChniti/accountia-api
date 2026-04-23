@@ -77,7 +77,7 @@ describe('Statistics (e2e)', () => {
     expect(response.body).toHaveProperty('businessId', businessId);
   });
 
-  it('/business/statistics (GET) - Should return 403 for unauthorized business access', async () => {
+  it('/business/statistics (GET) - Should return 404 for non-existent business', async () => {
     if (!jwtToken) return;
 
     const otherBusinessId = '600000000000000000000000'; // Non-existent ID

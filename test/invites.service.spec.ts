@@ -171,9 +171,26 @@ describe('BusinessService (Invites)', () => {
         Role.PLATFORM_ADMIN
       );
 
-      expect(mockBusinessInviteModel).toHaveBeenCalled();
-      expect(mockEmailService.sendBusinessInviteEmail).toHaveBeenCalled();
+      const normalizedEmail = invitedEmail.toLowerCase().trim();
+
+      expect(mockBusinessInviteModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invitedEmail: normalizedEmail,
+          businessRole: BusinessUserRole.MEMBER,
+          businessId,
+          inviterId,
+        })
+      );
+      expect(mockEmailService.sendBusinessInviteEmail).toHaveBeenCalledWith(
+        normalizedEmail,
+        'My Business',
+        'A business owner',
+        BusinessUserRole.MEMBER
+      );
+
       expect(result).toBeDefined();
+      expect(result.invite.invitedEmail).toBe(normalizedEmail);
+      expect(result.invite.emailSent).toBe(true);
     });
 
     it('should throw BadRequestException if user already invited', async () => {
@@ -215,6 +232,8 @@ describe('BusinessService (Invites)', () => {
       );
 
       expect(result.invites.length).toBe(1);
+      expect(result.invites[0].invitedEmail).toBe('a@b.com');
+      expect(result.invites[0].inviterName).toBe('John Doe');
     });
   });
 
@@ -227,7 +246,6 @@ describe('BusinessService (Invites)', () => {
         save: jest.fn().mockResolvedValue(true),
       };
       mockBusinessInviteModel.findById.mockResolvedValue(mockInvite);
-      mockBusinessInviteModel.findByIdAndDelete.mockResolvedValue(mockInvite);
 
       const result = await service.revokeInvite(
         businessId,
@@ -236,7 +254,9 @@ describe('BusinessService (Invites)', () => {
         Role.PLATFORM_ADMIN
       );
 
-      expect(result.message).toContain('revoked');
+      expect(result.message).toBe('Invite revoked successfully');
+      expect(mockInvite.status).toBe('revoked');
+      expect(mockInvite.save).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if invite not found', async () => {

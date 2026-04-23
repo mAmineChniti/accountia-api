@@ -9,7 +9,11 @@ jest.setTimeout(60_000);
 describe('CompanyInvoices (e2e)', () => {
   let app: INestApplication;
   let jwtToken: string;
-  const businessId = '69d969f17a9661afc2afbb2f';
+  const businessId =
+    process.env.TEST_BUSINESS_ID ??
+    (() => {
+      throw new Error('Set TEST_BUSINESS_ID env var for e2e tests');
+    })();
   let firstReceiptId: string;
 
   beforeAll(async () => {

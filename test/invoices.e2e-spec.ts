@@ -76,11 +76,6 @@ describe('InvoicesController (e2e)', () => {
 
   it('/invoices (POST) - Should create a new draft invoice', async () => {
     if (!jwtToken) throw new Error('Missing jwtToken in test setup');
-    // We need a product to exist for reservation.
-    // Usually we'd create one here, but let's try with a dummy product ID
-    // that might fail if validation is strict.
-    // Better: create a product first or use an existing one if we are sure.
-    // In products.e2e-spec.ts they just used the businessId.
 
     const response = await request(app.getHttpServer() as string)
       .post('/invoices')
@@ -114,8 +109,6 @@ describe('InvoicesController (e2e)', () => {
   });
 
   it('/invoices/issued (GET) - Should list issued invoices', async () => {
-    if (!jwtToken) return;
-
     const response = await request(app.getHttpServer() as string)
       .get(`/invoices/issued?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`)
@@ -127,10 +120,18 @@ describe('InvoicesController (e2e)', () => {
         (response.body as { invoices: InvoiceResponseDto[] }).invoices
       )
     ).toBe(true);
+    // If we created a draft invoice earlier it should NOT appear in issued list
+    if (createdInvoiceId) {
+      const invoices = (response.body as { invoices: InvoiceResponseDto[] })
+        .invoices;
+      const found = invoices.some((inv) => inv.id === createdInvoiceId);
+      expect(found).toBe(false);
+    }
   });
 
   it('/invoices/issued/:id (GET) - Should get invoice details', async () => {
-    if (!jwtToken || !createdInvoiceId) return;
+    if (!createdInvoiceId)
+      throw new Error('Missing createdInvoiceId from previous test');
 
     const response = await request(app.getHttpServer() as string)
       .get(`/invoices/issued/${createdInvoiceId}?businessId=${businessId}`)
@@ -144,7 +145,8 @@ describe('InvoicesController (e2e)', () => {
   });
 
   it('/invoices/issued/:id (PATCH) - Should update draft invoice', async () => {
-    if (!jwtToken || !createdInvoiceId) return;
+    if (!createdInvoiceId)
+      throw new Error('Missing createdInvoiceId from previous test');
 
     const response = await request(app.getHttpServer() as string)
       .patch(`/invoices/issued/${createdInvoiceId}`)
@@ -161,8 +163,6 @@ describe('InvoicesController (e2e)', () => {
   });
 
   it('/invoices/issued/:id/transition (POST) - Should transition state to ISSUED', async () => {
-    if (!jwtToken || !createdInvoiceId) return;
-
     const response = await request(app.getHttpServer() as string)
       .post(`/invoices/issued/${createdInvoiceId}/transition`)
       .set('Authorization', `Bearer ${jwtToken}`)
@@ -170,11 +170,7 @@ describe('InvoicesController (e2e)', () => {
         businessId,
         newStatus: InvoiceStatus.ISSUED,
       })
-      .expect(201); // Controller says HttpCode(HttpStatus.OK) but @Post defaults to 201?
-    // Actually @Post @HttpCode(HttpStatus.OK) is often used, let's check controller.
-    // Line 264: @Post('issued/:id/transition') ... (no HttpCode explicitly set to OK)
-    // Wait, @HttpCode(HttpStatus.CREATED) is 201.
-    // If none set, it's 201.
+      .expect(201);
 
     expect((response.body as { status: string }).status).toBe(
       InvoiceStatus.ISSUED

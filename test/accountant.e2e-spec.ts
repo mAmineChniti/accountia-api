@@ -59,8 +59,6 @@ describe('Accountant (e2e)', () => {
   });
 
   it('/accountant/jobs (GET) - Should attempt to list jobs (handling unconfigured state)', async () => {
-    if (!jwtToken) return;
-
     const response = await request(app.getHttpServer() as string)
       .get(`/accountant/jobs?businessId=${businessId}`)
       .set('Authorization', `Bearer ${jwtToken}`);
@@ -73,12 +71,18 @@ describe('Accountant (e2e)', () => {
     } else {
       expect(response.status).toBe(200);
       expect((response.body as { success: boolean }).success).toBe(true);
+      expect(Array.isArray((response.body as { data?: unknown }).data)).toBe(
+        true
+      );
+      if ((response.body as { meta?: { total?: number } }).meta) {
+        expect(
+          typeof (response.body as { meta: { total: number } }).meta.total
+        ).toBe('number');
+      }
     }
   });
 
   it('/accountant/history (GET) - Should return 404 for non-existent business', async () => {
-    if (!jwtToken) return;
-
     const otherBusinessId = '600000000000000000000000';
     await request(app.getHttpServer() as string)
       .get(`/accountant/history?businessId=${otherBusinessId}`)
