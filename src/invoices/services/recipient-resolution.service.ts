@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import { Model, Connection } from 'mongoose';
+import type { Model, Connection } from 'mongoose';
 import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 
 /**
