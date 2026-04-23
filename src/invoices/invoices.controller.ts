@@ -554,6 +554,7 @@ export class InvoicesController {
   }
 
   @Post('payments/confirm')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: '[PLATFORM] Confirm payment status (JSON)',
@@ -569,12 +570,17 @@ export class InvoicesController {
   })
   async confirmPayment(
     @Query('session_id') sessionId: string,
-    @Query('receipt_id') receiptId: string
+    @Query('receipt_id') receiptId: string,
+    @CurrentUser() user: UserPayload
   ): Promise<{ success: boolean; status: string }> {
     if (!sessionId || !receiptId) {
       throw new BadRequestException('session_id and receipt_id are required');
     }
-    return await this.paymentService.confirmPaymentStatus(sessionId, receiptId);
+    return await this.paymentService.confirmPaymentStatus(
+      sessionId,
+      receiptId,
+      user
+    );
   }
 
   @Get('payments/return')

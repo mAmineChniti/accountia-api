@@ -187,13 +187,11 @@ export class ChatService {
     // 3) Reduce recent invoices list size by keeping only header and first 3 entries
     const recentHeaderIdx = trimmed.indexOf('\nRecent Issued Invoices:');
     if (recentHeaderIdx !== -1) {
-      const before = trimmed.slice(
-        0,
-        recentHeaderIdx + '\nRecent Issued Invoices:'.length
-      );
-      // capture first 3 invoice lines
+      const headerText = '\nRecent Issued Invoices:';
+      const before = trimmed.slice(0, recentHeaderIdx + headerText.length);
+      // extract lines after the header to avoid duplicating the header
       const invoiceLines = trimmed
-        .slice(recentHeaderIdx)
+        .slice(recentHeaderIdx + headerText.length)
         .split('\n')
         .filter((l) => l.trim().length > 0)
         .slice(0, 15); // a few lines per invoice

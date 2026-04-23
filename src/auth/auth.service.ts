@@ -64,6 +64,20 @@ const getQrcode = async () => {
   return qrcodeModule;
 };
 
+function ensureFrontendUrl(): string {
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (!frontendUrl) {
+    throw new InternalServerErrorException(
+      'Service is temporarily unavailable'
+    );
+  }
+  return frontendUrl;
+}
+
+function isLock(val?: string): boolean {
+  return !!val && val.startsWith('creating:');
+}
+
 interface TokenPayload {
   sub?: string;
   id: string;
@@ -142,7 +156,11 @@ export class AuthService {
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService
   ) {
-    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '');
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (!stripeKey) {
+      throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+    }
+    this.stripe = new Stripe(stripeKey);
   }
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -1989,53 +2007,148 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    if (!(user as User & { stripeConnectId?: string }).stripeConnectId) {
-      const account = await this.stripe.accounts.create({
-        type: 'express',
-        email: user.email,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-      });
-      (user as User & { stripeConnectId?: string }).stripeConnectId =
-        account.id;
-      await user.save();
+    // Attempt to obtain an atomic lock so only one process creates the Stripe account.
+    const lockId = `creating:${randomUUID()}`;
+    const locked = await this.userModel.findOneAndUpdate(
+      { _id: userId, stripeConnectId: { $exists: false } },
+      { $setOnInsert: { stripeConnectId: lockId } },
+      { new: true, upsert: false }
+    );
+
+    const lang = 'en';
+    const frontendUrl = ensureFrontendUrl();
+    const invoicesPath = new URL(`/${lang}/invoices`, frontendUrl).toString();
+
+    if (locked) {
+      // We acquired the lock; create the Stripe account and replace the lock.
+      try {
+        const account = await this.stripe.accounts.create({
+          type: 'express',
+          email: user.email,
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+        });
+
+        await this.userModel.updateOne(
+          { _id: userId, stripeConnectId: lockId },
+          { $set: { stripeConnectId: account.id } }
+        );
+
+        const accountLink = await this.stripe.accountLinks.create({
+          account: account.id,
+          refresh_url: invoicesPath,
+          return_url: invoicesPath,
+          type: 'account_onboarding',
+        });
+
+        await this.userModel.updateOne(
+          { _id: userId },
+          { $set: { stripeOnboardingUrl: accountLink.url } }
+        );
+
+        return {
+          message: 'Stripe onboarding link generated',
+          onboardingUrl: accountLink.url,
+        };
+      } catch (error: unknown) {
+        this.logger.error(
+          'Failed to create Stripe account or account link',
+          error as Error
+        );
+        // Clear lock if still present
+        try {
+          await this.userModel.updateOne(
+            { _id: userId, stripeConnectId: lockId },
+            { $unset: { stripeConnectId: '' } }
+          );
+        } catch (error_) {
+          this.logger.error(
+            'Failed to clear stripeConnectId lock',
+            error_ as Error
+          );
+        }
+
+        throw new InternalServerErrorException(
+          'Failed to create Stripe onboarding link'
+        );
+      }
     }
 
-    const accountLink = await this.stripe.accountLinks.create({
-      account: (user as User & { stripeConnectId?: string }).stripeConnectId!,
-      refresh_url: `${process.env.FRONTEND_URL}/en/invoices`,
-      return_url: `${process.env.FRONTEND_URL}/en/invoices`,
-      type: 'account_onboarding',
-    });
+    // Another process already set stripeConnectId; reload user and act accordingly.
+    let reloaded = await this.userModel.findById(userId);
+    if (!reloaded) throw new NotFoundException('User not found');
 
-    return {
-      message: 'Stripe onboarding link generated',
-      onboardingUrl: accountLink.url,
-    };
+    // If stripeConnectId is still a lock placeholder, wait briefly for the winner to finish.
+    if (isLock(reloaded.stripeConnectId)) {
+      const maxAttempts = 8;
+      let attempts = 0;
+      while (attempts < maxAttempts && isLock(reloaded.stripeConnectId)) {
+        await new Promise((r) => setTimeout(r, 400));
+        reloaded = await this.userModel.findById(userId);
+        if (!reloaded) throw new NotFoundException('User not found');
+        attempts += 1;
+      }
+    }
+
+    if (!reloaded.stripeConnectId || isLock(reloaded.stripeConnectId)) {
+      this.logger.error(
+        'Unable to obtain stripeConnectId after concurrent creation attempt'
+      );
+      throw new InternalServerErrorException(
+        'Failed to obtain Stripe connect ID'
+      );
+    }
+
+    try {
+      const accountLink = await this.stripe.accountLinks.create({
+        account: reloaded.stripeConnectId,
+        refresh_url: invoicesPath,
+        return_url: invoicesPath,
+        type: 'account_onboarding',
+      });
+
+      await this.userModel.updateOne(
+        { _id: userId },
+        { $set: { stripeOnboardingUrl: accountLink.url } }
+      );
+
+      return {
+        message: 'Stripe onboarding link generated',
+        onboardingUrl: accountLink.url,
+      };
+    } catch (error: unknown) {
+      this.logger.error(
+        'Failed to create Stripe account link for existing connect id',
+        error as Error
+      );
+      throw new InternalServerErrorException(
+        'Failed to create Stripe onboarding link'
+      );
+    }
   }
 
   async getStripeConnectStatus(
     userId: string
   ): Promise<UserStripeConnectStatusDto> {
     const user = await this.userModel.findById(userId);
-    if (!user) return { isConnected: false, message: 'Account not found' };
+    if (!user) throw new NotFoundException('User not found');
 
     let isConnected = false;
     let message = 'Connect your Stripe account to start receiving payments.';
 
-    if ((user as User & { stripeConnectId?: string }).stripeConnectId) {
+    if (user.stripeConnectId) {
       try {
         const account = await this.stripe.accounts.retrieve(
-          (user as User & { stripeConnectId?: string }).stripeConnectId!
+          user.stripeConnectId
         );
         isConnected = account.charges_enabled;
         message = isConnected ? 'Connected' : 'Setup incomplete';
       } catch (error: unknown) {
-        console.error(
-          'Stripe error:',
-          error instanceof Error ? error.message : String(error)
+        this.logger.error(
+          'Stripe error while retrieving account status',
+          error as Error
         );
         message = 'Stripe verification failed';
       }
@@ -2043,8 +2156,7 @@ export class AuthService {
 
     return {
       isConnected,
-      stripeConnectId: (user as User & { stripeConnectId?: string })
-        .stripeConnectId,
+      stripeConnectId: user.stripeConnectId,
       message,
     };
   }

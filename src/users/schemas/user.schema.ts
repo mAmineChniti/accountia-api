@@ -110,6 +110,8 @@ export class User extends Document {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+UserSchema.index({ stripeConnectId: 1 }, { unique: true, sparse: true });
+
 UserSchema.pre('save', function () {
   if (
     this.refreshTokens &&

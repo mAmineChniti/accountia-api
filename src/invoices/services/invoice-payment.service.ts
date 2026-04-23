@@ -438,7 +438,8 @@ export class InvoicePaymentService {
 
   async confirmPaymentStatus(
     sessionId: string,
-    receiptId: string
+    receiptId: string,
+    user?: UserPayload
   ): Promise<{ success: boolean; status: string }> {
     this.logger.log(
       `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`
@@ -446,33 +447,60 @@ export class InvoicePaymentService {
     const stripe = this.ensureStripeEnabled();
     let session: { payment_status?: string } | undefined;
 
-    for (let i = 0; i < 5; i++) {
-      // Increase to 5 retries
+    // Reduced retries with exponential backoff. If a non-retryable Stripe error
+    // is encountered, stop and return 'pending' so webhooks remain the source
+    // of truth for final payment state.
+    const attempts = 2;
+    const backoffs = [200, 500];
+
+    for (let i = 0; i < attempts; i++) {
       try {
         session = (await stripe.checkout.sessions.retrieve(sessionId)) as {
           payment_status?: string;
         };
         this.logger.debug(
-          `Retry ${i + 1}: Stripe session status is "${session.payment_status}"`
+          `Attempt ${i + 1}: Stripe session status is "${session.payment_status}"`
         );
         if (session.payment_status === 'paid') {
           break;
         }
       } catch (error) {
-        this.logger.error(
-          `Error retrieving session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`
-        );
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Error retrieving session ${sessionId}: ${errMsg}`);
+
+        // Detect non-retryable Stripe errors and stop trying.
+        const errAny = error as unknown as { type?: string; code?: string };
+        const nonRetryable =
+          errAny?.type === 'StripeInvalidRequestError' ||
+          errAny?.type === 'StripeAuthenticationError' ||
+          errAny?.code === 'resource_missing' ||
+          errAny?.code === 'authentication_required';
+
+        if (nonRetryable) {
+          this.logger.error(
+            `Non-retryable Stripe error for session ${sessionId}: ${errMsg}`
+          );
+          return { success: false, status: 'pending' };
+        }
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Only wait before next attempt when there is another attempt left.
+      if (i < attempts - 1) {
+        const delay = backoffs[Math.min(i, backoffs.length - 1)];
+        // Small non-blocking sleep
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
 
     if (session?.payment_status !== 'paid') {
       this.logger.warn(
         `Payment not confirmed for session ${sessionId}. Final status: ${session?.payment_status}`
       );
+      // Return 'pending' so that the Stripe webhook handler remains authoritative
+      // for final payment state instead of blocking the request here.
       return {
         success: false,
-        status: session?.payment_status ?? 'not_found',
+        status: session?.payment_status ?? 'pending',
       };
     }
 
@@ -480,6 +508,11 @@ export class InvoicePaymentService {
     if (!receipt) {
       this.logger.error(`Receipt ${receiptId} not found during confirmation`);
       throw new NotFoundException('Invoice receipt not found');
+    }
+
+    if (user) {
+      // Enforce that the authenticated user is allowed to pay this receipt
+      this.assertRecipientCanPay(receipt, user);
     }
 
     this.logger.log(
