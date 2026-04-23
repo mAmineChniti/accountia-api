@@ -96,7 +96,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret,
       });
 
-      const user = await this.userModel.findById(payload.sub).lean();
+      const user = await this.userModel
+        .findById(payload.sub, { email: 1, role: 1 })
+        .lean();
       if (!user) {
         this.logger.warn('User from token not found');
         client.disconnect(true);

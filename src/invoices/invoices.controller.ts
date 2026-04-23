@@ -561,6 +561,22 @@ export class InvoicesController {
     description:
       'Verifies Stripe session status and updates invoice. Returns JSON.',
   })
+  @ApiQuery({
+    name: 'session_id',
+    required: true,
+    type: 'string',
+    description: 'Stripe Checkout session ID',
+  })
+  @ApiQuery({
+    name: 'receipt_id',
+    required: true,
+    type: 'string',
+    description: 'Invoice receipt ID',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Missing or invalid query parameters: session_id and receipt_id are required',
+  })
   @ApiOkResponse({
     description: 'Payment status confirmed',
     schema: {
