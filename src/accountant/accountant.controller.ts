@@ -9,7 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  BadRequestException,
+  HttpException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,8 +20,9 @@ import {
   ApiBadRequestResponse,
   ApiInternalServerErrorResponse,
   ApiBody,
-  ApiParam,
   ApiQuery,
+  ApiParam,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
@@ -30,38 +31,14 @@ import { AccountantService } from './accountant.service';
 import { CreateAccountingJobDto } from './dto';
 import type { InternalCreateAccountingJobPayload } from './dto';
 import type { TenantContext } from '@/common/tenant/tenant.types';
-
-/**
- * Parse and validate positive integer query parameter
- * @param value - Raw query string value
- * @param defaultValue - Default if value is undefined/empty
- * @param maxValue - Maximum allowed value (default: 100)
- * @returns Validated integer
- * @throws BadRequestException on invalid input
- */
-function parsePositiveInt(
-  value: string | undefined,
-  defaultValue: number,
-  maxValue = 100
-): number {
-  if (value === undefined || value === '') {
-    return defaultValue;
-  }
-  const trimmed = value.trim();
-  const parsed = Number.parseInt(trimmed, 10);
-  if (Number.isNaN(parsed) || parsed.toString() !== trimmed) {
-    throw new BadRequestException(`Invalid integer value: ${value}`);
-  }
-  if (parsed < 1) {
-    throw new BadRequestException(`Value must be at least 1, got: ${parsed}`);
-  }
-  if (parsed > maxValue) {
-    throw new BadRequestException(
-      `Value exceeds maximum of ${maxValue}, got: ${parsed}`
-    );
-  }
-  return parsed;
-}
+import type {
+  AccountingJobResponse,
+  AccountingJobStatus,
+  AccountingJobSummary,
+  AccountingResults,
+  BusinessWorkResponse,
+  TaxSummaryResponse,
+} from './types';
 
 /**
  * Accountant Controller
@@ -97,17 +74,17 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: {
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        job: {
           type: 'object',
           properties: {
-            task_id: { type: 'string' },
+            taskId: { type: 'string' },
             status: { type: 'string' },
             message: { type: 'string' },
-            estimated_completion: { type: 'string' },
+            estimatedCompletion: { type: 'string' },
           },
         },
-        message: { type: 'string' },
       },
     },
   })
@@ -120,27 +97,30 @@ export class AccountantController {
   async createJob(
     @Body() dto: CreateAccountingJobDto,
     @CurrentTenant() tenantCtx: TenantContext
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    job: AccountingJobResponse;
+  }> {
     const businessId = dto.businessId ?? tenantCtx.businessId;
     const payload: InternalCreateAccountingJobPayload = {
-      period_start: dto.periodStart.toISOString(),
-      period_end: dto.periodEnd.toISOString(),
-      business_id: businessId,
+      periodStart: dto.periodStart.toISOString(),
+      periodEnd: dto.periodEnd.toISOString(),
+      businessId,
     };
     const job = await this.accountantService.createAccountingJob(payload);
 
     return {
-      success: true,
-      data: job,
       message: 'Accounting job created. Processing will begin shortly.',
+      timestamp: new Date().toISOString(),
+      job,
     };
   }
-
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
 
   /**
    * List all accounting jobs for the current business
    */
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
   @Get('jobs')
   @ApiOperation({
     summary: 'List accounting jobs',
@@ -169,14 +149,8 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'array' },
-        meta: {
-          type: 'object',
-          properties: {
-            total: { type: 'number' },
-          },
-        },
+        jobs: { type: 'array' },
+        total: { type: 'number' },
       },
     },
   })
@@ -185,17 +159,22 @@ export class AccountantController {
     @Query('businessId') businessId: string,
     @Query('status') status?: string,
     @Query('limit') limit?: string
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    jobs: AccountingJobStatus[];
+    total: number;
+  }> {
     const result = await this.accountantService.listBusinessJobs(
       businessId || tenantCtx.businessId,
       status,
-      parsePositiveInt(limit, 10)
+      limit
     );
-
     return {
-      success: true,
-      data: result.jobs,
-      meta: { total: result.total },
+      message: 'Accounting jobs retrieved successfully',
+      timestamp: new Date().toISOString(),
+      jobs: result.jobs,
+      total: result.total,
     };
   }
 
@@ -224,8 +203,9 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'object' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        job: { type: 'object' },
       },
     },
   })
@@ -233,15 +213,15 @@ export class AccountantController {
     @Param('taskId') taskId: string,
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string
-  ) {
+  ): Promise<{ message: string; timestamp: string; job: AccountingJobStatus }> {
     const jobStatus = await this.accountantService.getJobStatus(
       taskId,
       businessId || tenantCtx.businessId
     );
-
     return {
-      success: true,
-      data: jobStatus,
+      message: 'Job status retrieved successfully',
+      timestamp: new Date().toISOString(),
+      job: jobStatus,
     };
   }
 
@@ -272,8 +252,9 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'object' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        results: { type: 'object' },
       },
     },
   })
@@ -281,15 +262,19 @@ export class AccountantController {
     @Param('taskId') taskId: string,
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    results: AccountingResults;
+  }> {
     const results = await this.accountantService.getJobResults(
       taskId,
       businessId || tenantCtx.businessId
     );
-
     return {
-      success: true,
-      data: results,
+      message: 'Job results retrieved successfully',
+      timestamp: new Date().toISOString(),
+      results,
     };
   }
 
@@ -319,14 +304,15 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: {
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        result: {
           type: 'object',
           properties: {
-            task_id: { type: 'string' },
+            taskId: { type: 'string' },
             status: { type: 'string' },
             message: { type: 'string' },
-            previous_status: { type: 'string' },
+            previousStatus: { type: 'string' },
           },
         },
       },
@@ -336,15 +322,24 @@ export class AccountantController {
     @Param('taskId') taskId: string,
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    result: {
+      taskId: string;
+      status: string;
+      message: string;
+      previousStatus: string;
+    };
+  }> {
     const result = await this.accountantService.cancelJob(
       taskId,
       businessId || tenantCtx.businessId
     );
-
     return {
-      success: true,
-      data: result,
+      message: 'Job cancelled successfully',
+      timestamp: new Date().toISOString(),
+      result,
     };
   }
 
@@ -374,8 +369,10 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'object' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        businessId: { type: 'string' },
+        tasks: { type: 'array' },
       },
     },
   })
@@ -383,15 +380,21 @@ export class AccountantController {
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string,
     @Query('limit') limit?: string
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    businessId: string;
+    tasks: AccountingJobSummary[];
+  }> {
     const history = await this.accountantService.getBusinessHistory(
       businessId || tenantCtx.businessId,
-      parsePositiveInt(limit, 10)
+      limit
     );
-
     return {
-      success: true,
-      data: history,
+      message: 'Accounting history retrieved successfully',
+      timestamp: new Date().toISOString(),
+      businessId: history.businessId,
+      tasks: history.tasks,
     };
   }
 
@@ -411,13 +414,13 @@ export class AccountantController {
     description: 'Business ID (required as query parameter)',
   })
   @ApiQuery({
-    name: 'start_date',
+    name: 'startDate',
     type: String,
     required: false,
     description: 'Filter from date (ISO 8601)',
   })
   @ApiQuery({
-    name: 'end_date',
+    name: 'endDate',
     type: String,
     required: false,
     description: 'Filter to date (ISO 8601)',
@@ -433,60 +436,70 @@ export class AccountantController {
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'object' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        work: { type: 'object' },
       },
     },
   })
   async getWork(
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string,
-    @Query('start_date') startDate?: string,
-    @Query('end_date') endDate?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
     @Query('status') status?: string
-  ) {
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    work: BusinessWorkResponse;
+  }> {
+    // Convert camelCase API params to snake_case for upstream service
     const work = await this.accountantService.getBusinessWork(
       businessId || tenantCtx.businessId,
       startDate,
       endDate,
       status
     );
-
     return {
-      success: true,
-      data: work,
+      message: 'Work log retrieved successfully',
+      timestamp: new Date().toISOString(),
+      work,
     };
   }
 
+  // Tax endpoints: GET /accountant/taxes and POST /accountant/taxes/calculate
+  // Note: businessId is passed as a query parameter, not a path parameter
+
   /**
-   * Get Tunisian tax summary for the business
+   * Get tax summary (accepts businessId as query param)
    */
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @Get('taxes')
   @ApiOperation({
     summary: 'Get tax summary',
     description:
-      'Calculate taxes per Tunisian tax law (VAT, corporate tax, withholding)',
+      'Get persisted tax summary for a business (returns 404 if not found)',
   })
   @ApiQuery({
     name: 'businessId',
     type: String,
     required: true,
-    description: 'Business ID (required as query parameter)',
+    description: 'Business ID',
   })
   @ApiQuery({
     name: 'year',
     type: String,
     required: false,
-    description: 'Tax year (e.g., 2024). Defaults to current year.',
+    description: 'Tax year (defaults to current year)',
   })
   @ApiOkResponse({
-    description: 'Tax summary retrieved',
+    description: 'Tax summary retrieved successfully',
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        data: { type: 'object' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        taxes: { type: 'object' },
       },
     },
   })
@@ -494,15 +507,72 @@ export class AccountantController {
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string,
     @Query('year') year?: string
-  ) {
-    const taxes = await this.accountantService.getTaxSummary(
-      businessId || tenantCtx.businessId,
-      parsePositiveInt(year, new Date().getFullYear(), new Date().getFullYear())
-    );
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    taxes: TaxSummaryResponse;
+  }> {
+    const id = businessId || tenantCtx.businessId;
+    const taxes = await this.accountantService.getTaxSummary(id, year);
+    return {
+      message: 'Tax summary retrieved successfully',
+      timestamp: new Date().toISOString(),
+      taxes,
+    };
+  }
+
+  /**
+   * Calculate and persist tax summary for a given business and year (businessId as query param)
+   */
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @Post('taxes/calculate')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Calculate and persist tax summary',
+    description:
+      'Calculate taxes for a year and persist the result in the tenant DB',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    type: String,
+    required: true,
+    description: 'Business ID',
+  })
+  @ApiQuery({
+    name: 'year',
+    type: String,
+    required: false,
+    description: 'Tax year (defaults to current year)',
+  })
+  @ApiCreatedResponse({
+    description: 'Tax calculated and persisted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        result: { type: 'object' },
+      },
+    },
+  })
+  async calculateTaxes(
+    @CurrentTenant() tenantCtx: TenantContext,
+    @Query('businessId') businessId: string,
+    @Query('year') year?: string
+  ): Promise<{
+    message: string;
+    timestamp: string;
+    result:
+      | TaxSummaryResponse
+      | { message: string; businessId: string; year: number };
+  }> {
+    const id = businessId || tenantCtx.businessId;
+    const result = await this.accountantService.calculateTax(id, year);
 
     return {
-      success: true,
-      data: taxes,
+      message: 'Tax calculation result',
+      timestamp: new Date().toISOString(),
+      result,
     };
   }
 
@@ -510,29 +580,60 @@ export class AccountantController {
    * Health check - verify AI Accountant is available
    */
   @Get('health')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Health check',
     description: 'Check if AI Accountant service is available',
   })
   @ApiOkResponse({
-    description: 'Health status',
+    description: 'Health status - service available',
     schema: {
       type: 'object',
       properties: {
-        success: { type: 'boolean' },
-        service: { type: 'string' },
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
         status: { type: 'string' },
+        service: { type: 'string' },
       },
     },
   })
-  async healthCheck() {
+  @ApiResponse({
+    status: HttpStatus.SERVICE_UNAVAILABLE,
+    description: 'Health status - service unavailable',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        timestamp: { type: 'string' },
+        status: { type: 'string' },
+        service: { type: 'string' },
+      },
+    },
+  })
+  async healthCheck(): Promise<{
+    message: string;
+    timestamp: string;
+    status: 'available';
+    service: string;
+  }> {
     const isHealthy = await this.accountantService.healthCheck();
 
+    if (!isHealthy) {
+      throw new HttpException(
+        {
+          message: 'AI Accountant service is unavailable',
+          timestamp: new Date().toISOString(),
+          status: 'unavailable',
+          service: 'ai-accountant',
+        },
+        HttpStatus.SERVICE_UNAVAILABLE
+      );
+    }
+
     return {
-      success: isHealthy,
+      message: 'AI Accountant service is available',
+      timestamp: new Date().toISOString(),
+      status: 'available',
       service: 'ai-accountant',
-      status: isHealthy ? 'available' : 'unavailable',
     };
   }
 }

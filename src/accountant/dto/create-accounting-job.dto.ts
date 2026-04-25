@@ -1,6 +1,6 @@
-import { IsString, IsDate, IsOptional } from 'class-validator';
+import { IsString, IsDate, IsOptional, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type, Transform } from 'class-transformer';
+import { Type } from 'class-transformer';
 
 export class CreateAccountingJobDto {
   @ApiPropertyOptional({
@@ -9,11 +9,7 @@ export class CreateAccountingJobDto {
   })
   @IsOptional()
   @IsString()
-  @Transform(
-    ({ value, obj }: { value: unknown; obj: Record<string, unknown> }) => {
-      return value ?? obj?.business_id ?? obj?.businessId;
-    }
-  )
+  @IsNotEmpty()
   businessId?: string;
 
   @ApiProperty({
@@ -22,12 +18,6 @@ export class CreateAccountingJobDto {
     format: 'date-time',
   })
   @IsDate()
-  @Transform(
-    ({ value, obj }: { value: unknown; obj: Record<string, unknown> }) => {
-      const raw = value ?? obj?.period_start ?? obj?.periodStart;
-      return raw ? new Date(raw as string) : raw;
-    }
-  )
   @Type(() => Date)
   periodStart!: Date;
 
@@ -37,18 +27,12 @@ export class CreateAccountingJobDto {
     format: 'date-time',
   })
   @IsDate()
-  @Transform(
-    ({ value, obj }: { value: unknown; obj: Record<string, unknown> }) => {
-      const raw = value ?? obj?.period_end ?? obj?.periodEnd;
-      return raw ? new Date(raw as string) : raw;
-    }
-  )
   @Type(() => Date)
   periodEnd!: Date;
 }
 
 export interface InternalCreateAccountingJobPayload {
-  business_id: string;
-  period_start: string;
-  period_end: string;
+  businessId: string;
+  periodStart: string;
+  periodEnd: string;
 }

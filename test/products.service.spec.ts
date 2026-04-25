@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { type CreateProductDto } from '../src/products/dto/create-product.dto';
+import { type UpdateProductDto } from '@/products/dto/update-product.dto';
 // Mock the AI mapper utility
 jest.mock('@/common/utils/ai-mapper.util', () => ({
   mapColumnsUsingAi: jest
@@ -214,7 +215,7 @@ describe('ProductsService', () => {
     it('should update a product', async () => {
       const productId = new Types.ObjectId().toString();
       const mockProduct = { _id: productId, businessId, name: 'Old Name' };
-      const dto = { name: 'New Name' };
+      const dto: UpdateProductDto = { businessId, name: 'New Name' };
 
       mockProductModel.findById.mockResolvedValue(mockProduct);
       mockProductModel.findByIdAndUpdate.mockResolvedValue({
@@ -226,7 +227,7 @@ describe('ProductsService', () => {
         productId,
         businessId,
         databaseName,
-        dto as Partial<CreateProductDto>
+        dto
       );
 
       expect(result.name).toBe('New Name');
