@@ -69,13 +69,17 @@ export class CreateRecurringInvoiceDto {
   @IsEnum(RecurringEndCondition)
   endCondition!: RecurringEndCondition;
 
-  @ApiPropertyOptional({ description: 'Max number of generations (for AFTER_OCCURRENCES)' })
+  @ApiPropertyOptional({
+    description: 'Max number of generations (for AFTER_OCCURRENCES)',
+  })
   @IsOptional()
   @IsNumber()
   @Min(1)
   maxOccurrences?: number;
 
-  @ApiPropertyOptional({ description: 'End date (ISO 8601) for BY_DATE condition' })
+  @ApiPropertyOptional({
+    description: 'End date (ISO 8601) for BY_DATE condition',
+  })
   @IsOptional()
   @IsDateString()
   endDate?: string;
@@ -96,13 +100,18 @@ export class CreateRecurringInvoiceDto {
   @IsString()
   currency?: string;
 
-  @ApiPropertyOptional({ default: 30, description: 'Days from issue date until due' })
+  @ApiPropertyOptional({
+    default: 30,
+    description: 'Days from issue date until due',
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   dueDaysFromIssue?: number;
 
-  @ApiProperty({ description: 'Recipient object (same shape as invoice recipient)' })
+  @ApiProperty({
+    description: 'Recipient object (same shape as invoice recipient)',
+  })
   @IsObject()
   recipient!: Record<string, unknown>;
 
@@ -116,7 +125,10 @@ export class CreateRecurringInvoiceDto {
   @IsString()
   paymentTerms?: string;
 
-  @ApiPropertyOptional({ default: false, description: 'Auto-issue generated invoices' })
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Auto-issue generated invoices',
+  })
   @IsOptional()
   @IsBoolean()
   autoIssue?: boolean;

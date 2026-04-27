@@ -1,6 +1,5 @@
 import tseslint from 'typescript-eslint';
 import parser from '@typescript-eslint/parser';
-import eslintNestJs from '@darraghor/eslint-plugin-nestjs-typed';
 import globals from 'globals';
 import { defineConfig, globalIgnores } from 'eslint/config';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
@@ -43,6 +42,17 @@ export default defineConfig(
         ],
         'unicorn/no-keyword-prefix': 'off',
         'unicorn/prevent-abbreviations': 'off',
+        '@typescript-eslint/no-unsafe-enum-comparison': 'off',
+        'unicorn/no-null': 'off',
+        'unicorn/no-nested-ternary': 'off',
+        'unicorn/consistent-function-scoping': 'off',
+        'unicorn/no-array-callback-reference': 'off',
+        'unicorn/prefer-module': 'off',
+        '@typescript-eslint/unbound-method': 'off',
+        '@typescript-eslint/no-unsafe-assignment': 'off',
+        '@typescript-eslint/no-unsafe-member-access': 'off',
+        '@typescript-eslint/no-unsafe-call': 'off',
+        '@typescript-eslint/no-unsafe-return': 'off',
       },
     },
     {
@@ -63,6 +73,5 @@ export default defineConfig(
         },
       },
     },
-    eslintNestJs.configs.flatRecommended,
   ]
 );

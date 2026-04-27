@@ -31,7 +31,10 @@ import {
 import { CommentEntityType } from './schemas/comment.schema';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
-import { BusinessRolesGuard, BusinessRoles } from '@/business/guards/business-roles.guard';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -42,20 +45,27 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @Controller('comments')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+@BusinessRoles(
+  BusinessUserRole.OWNER,
+  BusinessUserRole.ADMIN,
+  BusinessUserRole.MEMBER
+)
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Add a comment to an entity (invoice, expense, PO)' })
+  @ApiOperation({
+    summary: 'Add a comment to an entity (invoice, expense, PO)',
+  })
   @ApiCreatedResponse({ type: CommentResponseDto })
   async create(
     @Body() dto: CreateCommentDto,
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<CommentResponseDto> {
-    const authorName = `${user.firstName} ${user.lastName}`.trim() || user.username;
+    const authorName =
+      `${user.firstName} ${user.lastName}`.trim() || user.username;
     return this.commentsService.create(
       tenant.businessId,
       tenant.databaseName,

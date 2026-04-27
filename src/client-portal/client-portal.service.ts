@@ -5,9 +5,9 @@ import {
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
-import * as crypto from 'crypto';
-import { PortalToken, PortalTokenSchema } from './schemas/portal-token.schema';
-import { InvoiceReceipt, InvoiceReceiptSchema } from '@/invoices/schemas/invoice-receipt.schema';
+import * as crypto from 'node:crypto';
+import { PortalToken } from './schemas/portal-token.schema';
+import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
 
 export interface PortalInvoiceSummary {
@@ -38,13 +38,17 @@ export class ClientPortalService {
   constructor(
     @InjectConnection() private connection: Connection,
     @InjectModel(PortalToken.name) private portalTokenModel: Model<PortalToken>,
-    @InjectModel(InvoiceReceipt.name) private receiptModel: Model<InvoiceReceipt>,
+    @InjectModel(InvoiceReceipt.name)
+    private receiptModel: Model<InvoiceReceipt>
   ) {}
 
   private getInvoiceModel(databaseName: string): Model<Invoice> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    try { return tenantDb.model<Invoice>(Invoice.name); }
-    catch { return tenantDb.model<Invoice>(Invoice.name, InvoiceSchema); }
+    try {
+      return tenantDb.model<Invoice>(Invoice.name);
+    } catch {
+      return tenantDb.model<Invoice>(Invoice.name, InvoiceSchema);
+    }
   }
 
   async generatePortalToken(
@@ -102,14 +106,21 @@ export class ClientPortalService {
       issuerBusinessName: r.issuerBusinessName,
       totalAmount: r.totalAmount,
       currency: r.currency,
-      issuedDate: r.issuedDate instanceof Date ? r.issuedDate.toISOString() : String(r.issuedDate),
-      dueDate: r.dueDate instanceof Date ? r.dueDate.toISOString() : String(r.dueDate),
+      issuedDate:
+        r.issuedDate instanceof Date
+          ? r.issuedDate.toISOString()
+          : String(r.issuedDate),
+      dueDate:
+        r.dueDate instanceof Date ? r.dueDate.toISOString() : String(r.dueDate),
       status: r.invoiceStatus,
       amountPaid: 0,
     }));
   }
 
-  async getClientInvoiceDetail(token: string, invoiceId: string): Promise<PortalInvoiceDetail> {
+  async getClientInvoiceDetail(
+    token: string,
+    invoiceId: string
+  ): Promise<PortalInvoiceDetail> {
     const portalToken = await this.validateToken(token);
     const normalizedEmail = portalToken.clientEmail.toLowerCase().trim();
 
@@ -147,7 +158,12 @@ export class ClientPortalService {
     };
   }
 
-  async getPortalInfo(token: string): Promise<{ clientEmail: string; clientName?: string; businessId: string; expiresAt: Date }> {
+  async getPortalInfo(token: string): Promise<{
+    clientEmail: string;
+    clientName?: string;
+    businessId: string;
+    expiresAt: Date;
+  }> {
     const portalToken = await this.validateToken(token);
     return {
       clientEmail: portalToken.clientEmail,

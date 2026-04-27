@@ -26,7 +26,9 @@ export class VatReportQueryDto {
   @IsEnum(VatReportPeriod)
   period!: VatReportPeriod;
 
-  @ApiPropertyOptional({ description: 'Start date (ISO 8601) for custom range' })
+  @ApiPropertyOptional({
+    description: 'Start date (ISO 8601) for custom range',
+  })
   @IsOptional()
   @IsDateString()
   startDate?: string;
@@ -41,12 +43,16 @@ export class VatReportQueryDto {
   @IsString()
   year?: string;
 
-  @ApiPropertyOptional({ description: 'Month number 1–12 (for monthly period)' })
+  @ApiPropertyOptional({
+    description: 'Month number 1–12 (for monthly period)',
+  })
   @IsOptional()
   @IsString()
   month?: string;
 
-  @ApiPropertyOptional({ description: 'Quarter number 1–4 (for quarterly period)' })
+  @ApiPropertyOptional({
+    description: 'Quarter number 1–4 (for quarterly period)',
+  })
   @IsOptional()
   @IsString()
   quarter?: string;

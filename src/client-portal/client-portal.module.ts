@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ClientPortalService } from './client-portal.service';
 import { ClientPortalController } from './client-portal.controller';
 import { PortalToken, PortalTokenSchema } from './schemas/portal-token.schema';
-import { InvoiceReceipt, InvoiceReceiptSchema } from '@/invoices/schemas/invoice-receipt.schema';
+import {
+  InvoiceReceipt,
+  InvoiceReceiptSchema,
+} from '@/invoices/schemas/invoice-receipt.schema';
 import { BusinessModule } from '@/business/business.module';
 
 @Module({

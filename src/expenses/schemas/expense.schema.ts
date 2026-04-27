@@ -24,7 +24,12 @@ export enum ExpenseCategory {
 
 @Schema({ collection: 'expenses', timestamps: true })
 export class Expense extends Document {
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business', index: true })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+    index: true,
+  })
   businessId!: string;
 
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'User' })

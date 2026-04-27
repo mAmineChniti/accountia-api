@@ -128,7 +128,11 @@ export class InvoicesController {
 
   @Get('issued')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] List invoices issued by this business',
     description:
@@ -181,7 +185,11 @@ export class InvoicesController {
 
   @Get('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] Get a specific invoice issued by this business',
     description:
@@ -651,7 +659,6 @@ export class InvoicesController {
         ];
 
         if (allowedMimes.includes(file.mimetype)) {
-          // eslint-disable-next-line unicorn/no-null
           cb(null, true);
         } else {
           cb(

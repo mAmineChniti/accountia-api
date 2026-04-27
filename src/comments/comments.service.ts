@@ -5,7 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
-import { Comment, CommentEntityType, CommentSchema } from './schemas/comment.schema';
+import {
+  Comment,
+  CommentEntityType,
+  CommentSchema,
+} from './schemas/comment.schema';
 import {
   CreateCommentDto,
   UpdateCommentDto,

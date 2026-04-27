@@ -1,5 +1,4 @@
-import { IsString, IsNumber, IsArray, IsDate, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AnalyticsQueryDto {
@@ -16,7 +15,10 @@ export class AnalyticsQueryDto {
   @IsString()
   endDate?: string;
 
-  @ApiPropertyOptional({ default: 'monthly', enum: ['monthly', 'weekly', 'yearly'] })
+  @ApiPropertyOptional({
+    default: 'monthly',
+    enum: ['monthly', 'weekly', 'yearly'],
+  })
   @IsOptional()
   @IsString()
   groupBy?: string;

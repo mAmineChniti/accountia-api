@@ -14,7 +14,11 @@ export enum PurchaseOrderStatus {
 
 @Schema({ _id: true })
 export class POLineItem extends Document {
-  @Prop({ required: false, type: MongooseSchema.Types.ObjectId, ref: 'Product' })
+  @Prop({
+    required: false,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Product',
+  })
   productId?: string;
 
   @Prop({ required: true })
@@ -40,7 +44,12 @@ export const POLineItemSchema = SchemaFactory.createForClass(POLineItem);
 
 @Schema({ collection: 'purchase_orders', timestamps: true })
 export class PurchaseOrder extends Document {
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business', index: true })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+    index: true,
+  })
   businessId!: string;
 
   @Prop({ required: true })
@@ -52,7 +61,11 @@ export class PurchaseOrder extends Document {
   @Prop({ required: true })
   vendorName!: string;
 
-  @Prop({ required: true, enum: PurchaseOrderStatus, default: PurchaseOrderStatus.DRAFT })
+  @Prop({
+    required: true,
+    enum: PurchaseOrderStatus,
+    default: PurchaseOrderStatus.DRAFT,
+  })
   status!: PurchaseOrderStatus;
 
   @Prop({ type: [POLineItemSchema], default: [] })

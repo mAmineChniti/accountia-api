@@ -1,7 +1,9 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import OpenAI from 'openai';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse') as (buffer: Buffer) => Promise<{ text: string }>;
+const pdfParse = require('pdf-parse') as (
+  buffer: Buffer
+) => Promise<{ text: string }>;
 import { ExpenseCategory } from '../schemas/expense.schema';
 
 export interface ExtractedReceiptData {
@@ -44,7 +46,9 @@ export class ReceiptExtractionService {
     return new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
   }
 
-  async extractFromFile(file: Express.Multer.File): Promise<ExtractedReceiptData> {
+  async extractFromFile(
+    file: Express.Multer.File
+  ): Promise<ExtractedReceiptData> {
     const mime = file.mimetype;
 
     if (mime === 'application/pdf') {
@@ -93,11 +97,15 @@ export class ReceiptExtractionService {
       const parsed = await pdfParse(buffer);
       text = parsed.text?.trim();
     } catch {
-      throw new BadRequestException('Failed to read PDF. Make sure it is not password protected.');
+      throw new BadRequestException(
+        'Failed to read PDF. Make sure it is not password protected.'
+      );
     }
 
     if (!text || text.length < 10) {
-      throw new BadRequestException('PDF appears to be empty or image-only. Please upload a text-based PDF or an image instead.');
+      throw new BadRequestException(
+        'PDF appears to be empty or image-only. Please upload a text-based PDF or an image instead.'
+      );
     }
 
     const client = this.getGroqClient();
@@ -122,7 +130,7 @@ export class ReceiptExtractionService {
 
   private parseGroqResponse(raw: string): ExtractedReceiptData {
     try {
-      const cleaned = raw.replace(/```json|```/g, '').trim();
+      const cleaned = raw.replaceAll(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned) as Partial<ExtractedReceiptData>;
 
       const today = new Date().toISOString().split('T')[0];
@@ -131,22 +139,30 @@ export class ReceiptExtractionService {
       return {
         title: String(parsed.title ?? 'Untitled Expense').slice(0, 100),
         amount: Math.max(0, Number(parsed.amount) || 0),
-        currency: String(parsed.currency ?? 'TND').toUpperCase().slice(0, 3),
-        expenseDate: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.expenseDate ?? ''))
+        currency: String(parsed.currency ?? 'TND')
+          .toUpperCase()
+          .slice(0, 3),
+        expenseDate: /^\d{4}-\d{2}-\d{2}$/.test(
+          String(parsed.expenseDate ?? '')
+        )
           ? String(parsed.expenseDate)
           : today,
         vendor: String(parsed.vendor ?? '').slice(0, 100),
-        category: validCategories.has(parsed.category as ExpenseCategory)
-          ? (parsed.category as ExpenseCategory)
+        category: validCategories.has(parsed.category!)
+          ? parsed.category!
           : ExpenseCategory.OTHER,
         description: String(parsed.description ?? '').slice(0, 500),
-        confidence: (['high', 'medium', 'low'].includes(String(parsed.confidence))
+        confidence: (['high', 'medium', 'low'].includes(
+          String(parsed.confidence)
+        )
           ? parsed.confidence
-          : 'medium') as ExtractedReceiptData['confidence'],
+          : 'medium')!,
       };
-    } catch (err) {
+    } catch {
       this.logger.error('Failed to parse Groq response', raw);
-      throw new BadRequestException('AI could not extract data from this document. Please fill the form manually.');
+      throw new BadRequestException(
+        'AI could not extract data from this document. Please fill the form manually.'
+      );
     }
   }
 }

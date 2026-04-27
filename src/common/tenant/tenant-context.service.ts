@@ -86,6 +86,24 @@ export class TenantContextService {
   }
 
   /**
+   * Find the business this user is linked to. Returns the businessId when the
+   * user has exactly one membership, otherwise null (zero memberships, or
+   * multiple — caller must disambiguate by passing businessId explicitly).
+   */
+  async resolveUserBusinessId(userId: string): Promise<string | null> {
+    const memberships = await this.businessUserModel
+      .find({ userId })
+      .select('businessId')
+      .limit(2);
+
+    if (memberships.length !== 1) {
+      return null;
+    }
+
+    return memberships[0].businessId;
+  }
+
+  /**
    * Invalidate cached tenant context for a user
    * Call this when user roles change or business membership changes
    */

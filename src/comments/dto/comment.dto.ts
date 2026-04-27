@@ -32,7 +32,10 @@ export class CreateCommentDto {
   @IsString()
   parentId?: string;
 
-  @ApiPropertyOptional({ type: [String], description: 'User IDs mentioned with @' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'User IDs mentioned with @',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

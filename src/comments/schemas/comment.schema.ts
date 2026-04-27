@@ -51,4 +51,9 @@ export class Comment extends Document {
 export const CommentSchema = SchemaFactory.createForClass(Comment);
 
 CommentSchema.index({ businessId: 1, entityType: 1, entityId: 1 });
-CommentSchema.index({ businessId: 1, entityType: 1, entityId: 1, createdAt: 1 });
+CommentSchema.index({
+  businessId: 1,
+  entityType: 1,
+  entityId: 1,
+  createdAt: 1,
+});

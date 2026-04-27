@@ -45,7 +45,6 @@ interface AuthenticatedSocket extends Socket {
 
       // Allow requests with no origin (e.g., mobile apps, Postman)
       if (!origin || allowed.includes(origin)) {
-        // eslint-disable-next-line unicorn/no-null -- Socket.IO CORS callback type requires null
         callback(null, true);
       } else {
         callback(new Error('Origin not allowed by CORS'), false);

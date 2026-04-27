@@ -29,7 +29,10 @@ import {
 } from './dto/recurring-invoice.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
-import { BusinessRolesGuard, BusinessRoles } from '@/business/guards/business-roles.guard';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -40,9 +43,15 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @Controller('recurring-invoices')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+@BusinessRoles(
+  BusinessUserRole.OWNER,
+  BusinessUserRole.ADMIN,
+  BusinessUserRole.MEMBER
+)
 export class RecurringInvoicesController {
-  constructor(private readonly recurringInvoicesService: RecurringInvoicesService) {}
+  constructor(
+    private readonly recurringInvoicesService: RecurringInvoicesService
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -89,11 +98,17 @@ export class RecurringInvoicesController {
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
   ): Promise<RecurringInvoiceResponseDto> {
-    return this.recurringInvoicesService.findById(id, tenant.businessId, tenant.databaseName);
+    return this.recurringInvoicesService.findById(
+      id,
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a recurring invoice schedule (pause, cancel, etc.)' })
+  @ApiOperation({
+    summary: 'Update a recurring invoice schedule (pause, cancel, etc.)',
+  })
   @ApiOkResponse({ type: RecurringInvoiceResponseDto })
   @ApiParam({ name: 'id', type: String })
   async update(
@@ -101,7 +116,12 @@ export class RecurringInvoicesController {
     @Body() dto: UpdateRecurringInvoiceDto,
     @CurrentTenant() tenant: TenantContext
   ): Promise<RecurringInvoiceResponseDto> {
-    return this.recurringInvoicesService.update(id, tenant.businessId, tenant.databaseName, dto);
+    return this.recurringInvoicesService.update(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      dto
+    );
   }
 
   @Delete(':id')
@@ -113,6 +133,10 @@ export class RecurringInvoicesController {
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
   ): Promise<void> {
-    return this.recurringInvoicesService.delete(id, tenant.businessId, tenant.databaseName);
+    return this.recurringInvoicesService.delete(
+      id,
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 }

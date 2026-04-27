@@ -1,12 +1,27 @@
 import {
-  Controller, Get, Post, Body, Param, UseGuards, Query, HttpCode, HttpStatus,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiOkResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
 import { IsString, IsOptional, IsEmail, IsNumber, Min } from 'class-validator';
 import { ClientPortalService } from './client-portal.service';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
-import { BusinessRolesGuard, BusinessRoles } from '@/business/guards/business-roles.guard';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import type { TenantContext } from '@/common/tenant/tenant.types';

@@ -564,7 +564,8 @@ export class BusinessService {
   }
 
   async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
-    // Find all businesses where user is OWNER or ADMIN at the business level
+    // Include all business-level roles (CLIENT included) so customers of a
+    // business also see it in their sidebar with a restricted nav set.
     let businessUsers = (await this.businessUserModel
       .find({
         userId,
@@ -573,6 +574,7 @@ export class BusinessService {
             BusinessUserRole.OWNER,
             BusinessUserRole.ADMIN,
             BusinessUserRole.MEMBER,
+            BusinessUserRole.CLIENT,
           ],
         },
       })
@@ -604,13 +606,20 @@ export class BusinessService {
             { upsert: true }
           );
 
-          businessUsers = [{ businessId: approvedApplication.businessId, role: BusinessUserRole.OWNER }];
+          businessUsers = [
+            {
+              businessId: approvedApplication.businessId,
+              role: BusinessUserRole.OWNER,
+            },
+          ];
         }
       }
     }
 
     const businessIds = businessUsers.map((bu) => bu.businessId);
-    const roleMap = new Map(businessUsers.map((bu) => [bu.businessId.toString(), bu.role]));
+    const roleMap = new Map(
+      businessUsers.map((bu) => [bu.businessId.toString(), bu.role])
+    );
 
     if (businessIds.length === 0) {
       return {
@@ -1122,7 +1131,6 @@ export class BusinessService {
       },
       {
         $group: {
-          // eslint-disable-next-line unicorn/no-null -- MongoDB requires null for grouping all docs
           _id: null,
           paidAmount: {
             $sum: {
@@ -1270,7 +1278,7 @@ export class BusinessService {
     }
 
     const allProducts = await productsCol
-      // eslint-disable-next-line unicorn/no-array-callback-reference
+
       .find({
         $or: [
           { businessId: new ObjectId(businessId) as unknown as string },

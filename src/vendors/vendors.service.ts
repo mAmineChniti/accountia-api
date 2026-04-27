@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import { Vendor, VendorSchema } from './schemas/vendor.schema';
@@ -15,8 +19,11 @@ export class VendorsService {
 
   private getVendorModel(databaseName: string): Model<Vendor> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    try { return tenantDb.model<Vendor>(Vendor.name); }
-    catch { return tenantDb.model<Vendor>(Vendor.name, VendorSchema); }
+    try {
+      return tenantDb.model<Vendor>(Vendor.name);
+    } catch {
+      return tenantDb.model<Vendor>(Vendor.name, VendorSchema);
+    }
   }
 
   async create(
@@ -46,11 +53,13 @@ export class VendorsService {
     let countFilter: Record<string, unknown> = { ...conditions };
 
     if (search) {
-      const searchConditions = { $or: [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { contactName: { $regex: search, $options: 'i' } },
-      ]};
+      const searchConditions = {
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { contactName: { $regex: search, $options: 'i' } },
+        ],
+      };
       query = query.or([
         { name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
@@ -61,7 +70,11 @@ export class VendorsService {
 
     const [total, vendors] = await Promise.all([
       model.countDocuments(countFilter),
-      query.sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      query
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
     ]);
 
     return {
@@ -73,39 +86,64 @@ export class VendorsService {
     };
   }
 
-  async findById(id: string, businessId: string, databaseName: string): Promise<VendorResponseDto> {
+  async findById(
+    id: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<VendorResponseDto> {
     const model = this.getVendorModel(databaseName);
     const vendor = await model.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (String(vendor.businessId) !== businessId) throw new ForbiddenException('Access denied');
+    if (String(vendor.businessId) !== businessId)
+      throw new ForbiddenException('Access denied');
     return this.formatResponse(vendor);
   }
 
-  async update(id: string, businessId: string, databaseName: string, dto: UpdateVendorDto): Promise<VendorResponseDto> {
+  async update(
+    id: string,
+    businessId: string,
+    databaseName: string,
+    dto: UpdateVendorDto
+  ): Promise<VendorResponseDto> {
     const model = this.getVendorModel(databaseName);
     const vendor = await model.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (String(vendor.businessId) !== businessId) throw new ForbiddenException('Access denied');
+    if (String(vendor.businessId) !== businessId)
+      throw new ForbiddenException('Access denied');
     const { businessId: _, ...updateData } = dto;
     void _;
-    const updated = await model.findByIdAndUpdate(id, updateData, { returnDocument: 'after', runValidators: true });
+    const updated = await model.findByIdAndUpdate(id, updateData, {
+      returnDocument: 'after',
+      runValidators: true,
+    });
     if (!updated) throw new NotFoundException('Vendor not found');
     return this.formatResponse(updated);
   }
 
-  async delete(id: string, businessId: string, databaseName: string): Promise<void> {
+  async delete(
+    id: string,
+    businessId: string,
+    databaseName: string
+  ): Promise<void> {
     const model = this.getVendorModel(databaseName);
     const vendor = await model.findById(id);
     if (!vendor) throw new NotFoundException('Vendor not found');
-    if (String(vendor.businessId) !== businessId) throw new ForbiddenException('Access denied');
+    if (String(vendor.businessId) !== businessId)
+      throw new ForbiddenException('Access denied');
     await model.findByIdAndDelete(id);
   }
 
-  async incrementStats(id: string, databaseName: string, amount: number): Promise<void> {
+  async incrementStats(
+    id: string,
+    databaseName: string,
+    amount: number
+  ): Promise<void> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
     try {
       const model = tenantDb.model<Vendor>(Vendor.name);
-      await model.findByIdAndUpdate(id, { $inc: { totalOrders: 1, totalSpend: amount } });
+      await model.findByIdAndUpdate(id, {
+        $inc: { totalOrders: 1, totalSpend: amount },
+      });
     } catch {
       // Vendor model may not be registered yet
     }

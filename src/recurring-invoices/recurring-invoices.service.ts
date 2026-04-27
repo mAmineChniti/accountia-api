@@ -31,7 +31,10 @@ export class RecurringInvoicesService {
     try {
       return tenantDb.model<RecurringInvoice>(RecurringInvoice.name);
     } catch {
-      return tenantDb.model<RecurringInvoice>(RecurringInvoice.name, RecurringInvoiceSchema);
+      return tenantDb.model<RecurringInvoice>(
+        RecurringInvoice.name,
+        RecurringInvoiceSchema
+      );
     }
   }
 
@@ -87,7 +90,9 @@ export class RecurringInvoicesService {
     ]);
 
     return {
-      schedules: (schedules as RecurringInvoice[]).map((s) => this.formatResponse(s)),
+      schedules: (schedules as RecurringInvoice[]).map((s) =>
+        this.formatResponse(s)
+      ),
       total,
       page,
       limit,
@@ -102,7 +107,8 @@ export class RecurringInvoicesService {
   ): Promise<RecurringInvoiceResponseDto> {
     const model = this.getRecurringModel(databaseName);
     const schedule = await model.findById(id);
-    if (!schedule) throw new NotFoundException('Recurring invoice schedule not found');
+    if (!schedule)
+      throw new NotFoundException('Recurring invoice schedule not found');
     this.verifyAccess(String(schedule.businessId), businessId);
     return this.formatResponse(schedule);
   }
@@ -115,7 +121,8 @@ export class RecurringInvoicesService {
   ): Promise<RecurringInvoiceResponseDto> {
     const model = this.getRecurringModel(databaseName);
     const schedule = await model.findById(id);
-    if (!schedule) throw new NotFoundException('Recurring invoice schedule not found');
+    if (!schedule)
+      throw new NotFoundException('Recurring invoice schedule not found');
     this.verifyAccess(String(schedule.businessId), businessId);
 
     const { businessId: _, ...updateData } = dto;
@@ -124,7 +131,8 @@ export class RecurringInvoicesService {
       returnDocument: 'after',
       runValidators: true,
     });
-    if (!updated) throw new NotFoundException('Recurring invoice schedule not found');
+    if (!updated)
+      throw new NotFoundException('Recurring invoice schedule not found');
     return this.formatResponse(updated);
   }
 
@@ -135,7 +143,8 @@ export class RecurringInvoicesService {
   ): Promise<void> {
     const model = this.getRecurringModel(databaseName);
     const schedule = await model.findById(id);
-    if (!schedule) throw new NotFoundException('Recurring invoice schedule not found');
+    if (!schedule)
+      throw new NotFoundException('Recurring invoice schedule not found');
     this.verifyAccess(String(schedule.businessId), businessId);
     await model.findByIdAndDelete(id);
   }
@@ -145,7 +154,10 @@ export class RecurringInvoicesService {
     const mainDb = this.connection.useDb('Accountia', { useCache: true });
     let BusinessModel: Model<{ databaseName: string; status: string }>;
     try {
-      BusinessModel = mainDb.model('Business') as unknown as Model<{ databaseName: string; status: string }>;
+      BusinessModel = mainDb.model('Business') as unknown as Model<{
+        databaseName: string;
+        status: string;
+      }>;
     } catch {
       return;
     }
@@ -207,12 +219,17 @@ export class RecurringInvoicesService {
       issuedDate,
       dueDate,
       lineItems: schedule.lineItems,
-      description: schedule.description ?? `Auto-generated from schedule: ${schedule.name}`,
+      description:
+        schedule.description ??
+        `Auto-generated from schedule: ${schedule.name}`,
       paymentTerms: schedule.paymentTerms,
     });
     await invoice.save();
 
-    const nextRun = this.calculateNextRun(schedule.nextRunAt, schedule.frequency);
+    const nextRun = this.calculateNextRun(
+      schedule.nextRunAt,
+      schedule.frequency
+    );
     const newCount = schedule.occurrenceCount + 1;
 
     let newStatus: RecurringStatus = RecurringStatus.ACTIVE;
@@ -242,51 +259,66 @@ export class RecurringInvoicesService {
     );
   }
 
-  private calculateNextRun(currentRun: Date, frequency: RecurringFrequency): Date {
+  private calculateNextRun(
+    currentRun: Date,
+    frequency: RecurringFrequency
+  ): Date {
     const next = new Date(currentRun);
     switch (frequency) {
-      case RecurringFrequency.DAILY:
+      case RecurringFrequency.DAILY: {
         next.setDate(next.getDate() + 1);
         break;
-      case RecurringFrequency.WEEKLY:
+      }
+      case RecurringFrequency.WEEKLY: {
         next.setDate(next.getDate() + 7);
         break;
-      case RecurringFrequency.MONTHLY:
+      }
+      case RecurringFrequency.MONTHLY: {
         next.setMonth(next.getMonth() + 1);
         break;
-      case RecurringFrequency.QUARTERLY:
+      }
+      case RecurringFrequency.QUARTERLY: {
         next.setMonth(next.getMonth() + 3);
         break;
-      case RecurringFrequency.YEARLY:
+      }
+      case RecurringFrequency.YEARLY: {
         next.setFullYear(next.getFullYear() + 1);
         break;
+      }
     }
     return next;
   }
 
-  private verifyAccess(scheduleBusinessId: string, currentBusinessId: string): void {
+  private verifyAccess(
+    scheduleBusinessId: string,
+    currentBusinessId: string
+  ): void {
     if (scheduleBusinessId !== currentBusinessId) {
       throw new ForbiddenException('Access denied');
     }
   }
 
-  private formatResponse(schedule: RecurringInvoice): RecurringInvoiceResponseDto {
+  private formatResponse(
+    schedule: RecurringInvoice
+  ): RecurringInvoiceResponseDto {
     return {
       id: String(schedule._id),
       businessId: String(schedule.businessId),
       name: schedule.name,
       frequency: schedule.frequency,
       status: schedule.status,
-      startDate: schedule.startDate instanceof Date
-        ? schedule.startDate.toISOString()
-        : String(schedule.startDate),
+      startDate:
+        schedule.startDate instanceof Date
+          ? schedule.startDate.toISOString()
+          : String(schedule.startDate),
       endCondition: schedule.endCondition,
       maxOccurrences: schedule.maxOccurrences,
       occurrenceCount: schedule.occurrenceCount,
       endDate: schedule.endDate?.toISOString(),
-      nextRunAt: schedule.nextRunAt instanceof Date
-        ? schedule.nextRunAt.toISOString()
-        : String(schedule.nextRunAt),
+      nextRunAt:
+        schedule.nextRunAt instanceof Date
+          ? schedule.nextRunAt.toISOString()
+          : String(schedule.nextRunAt),
       lastRunAt: schedule.lastRunAt?.toISOString(),
       lineItems: schedule.lineItems as never[],
       totalAmount: schedule.totalAmount,

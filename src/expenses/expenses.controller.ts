@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -12,7 +13,6 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-  Query as QueryParam,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -38,7 +38,10 @@ import {
 } from './dto/expense.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
-import { BusinessRolesGuard, BusinessRoles } from '@/business/guards/business-roles.guard';
+import {
+  BusinessRolesGuard,
+  BusinessRoles,
+} from '@/business/guards/business-roles.guard';
 import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -49,7 +52,11 @@ import type { UserPayload } from '@/auth/types/auth.types';
 @Controller('expenses')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+@BusinessRoles(
+  BusinessUserRole.OWNER,
+  BusinessUserRole.ADMIN,
+  BusinessUserRole.MEMBER
+)
 export class ExpensesController {
   constructor(
     private readonly expensesService: ExpensesService,
@@ -57,22 +64,23 @@ export class ExpensesController {
   ) {}
 
   @Post('extract-receipt')
-  @ApiOperation({ summary: 'Extract expense data from a receipt image or PDF using AI' })
+  @ApiOperation({
+    summary: 'Extract expense data from a receipt image or PDF using AI',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
-        businessId: { type: 'string' },
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
-  async extractReceipt(
-    @UploadedFile() file: Express.Multer.File
-  ) {
-    if (!file) throw new Error('No file uploaded');
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } })
+  )
+  async extractReceipt(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file uploaded');
     return this.receiptExtractionService.extractFromFile(file);
   }
 
@@ -85,7 +93,8 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<ExpenseResponseDto> {
-    const userName = `${user.firstName} ${user.lastName}`.trim() || user.username;
+    const userName =
+      `${user.firstName} ${user.lastName}`.trim() || user.username;
     return this.expensesService.create(
       tenant.businessId,
       tenant.databaseName,
@@ -127,7 +136,10 @@ export class ExpensesController {
   async getSummary(
     @CurrentTenant() tenant: TenantContext
   ): Promise<ExpenseSummaryDto> {
-    return this.expensesService.getSummary(tenant.businessId, tenant.databaseName);
+    return this.expensesService.getSummary(
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Get(':id')
@@ -139,7 +151,11 @@ export class ExpensesController {
     @Param('id') id: string,
     @CurrentTenant() tenant: TenantContext
   ): Promise<ExpenseResponseDto> {
-    return this.expensesService.findById(id, tenant.businessId, tenant.databaseName);
+    return this.expensesService.findById(
+      id,
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Patch(':id')
@@ -152,7 +168,13 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<ExpenseResponseDto> {
-    return this.expensesService.update(id, tenant.businessId, tenant.databaseName, dto, user.id);
+    return this.expensesService.update(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      dto,
+      user.id
+    );
   }
 
   @Patch(':id/submit')
@@ -165,7 +187,12 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<ExpenseResponseDto> {
-    return this.expensesService.submit(id, tenant.businessId, tenant.databaseName, user.id);
+    return this.expensesService.submit(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      user.id
+    );
   }
 
   @Patch(':id/review')
@@ -179,7 +206,13 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<ExpenseResponseDto> {
-    return this.expensesService.review(id, tenant.businessId, tenant.databaseName, dto, user.id);
+    return this.expensesService.review(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      dto,
+      user.id
+    );
   }
 
   @Patch(':id/reimburse')
@@ -194,7 +227,11 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext
   ): Promise<ExpenseResponseDto> {
     void _businessId;
-    return this.expensesService.markReimbursed(id, tenant.businessId, tenant.databaseName);
+    return this.expensesService.markReimbursed(
+      id,
+      tenant.businessId,
+      tenant.databaseName
+    );
   }
 
   @Delete(':id')
@@ -207,6 +244,11 @@ export class ExpensesController {
     @CurrentTenant() tenant: TenantContext,
     @CurrentUser() user: UserPayload
   ): Promise<void> {
-    return this.expensesService.delete(id, tenant.businessId, tenant.databaseName, user.id);
+    return this.expensesService.delete(
+      id,
+      tenant.businessId,
+      tenant.databaseName,
+      user.id
+    );
   }
 }

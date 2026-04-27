@@ -188,7 +188,9 @@ export class ExpensesService {
     this.verifyAccess(String(expense.businessId), businessId);
 
     if (expense.status !== ExpenseStatus.APPROVED) {
-      throw new BadRequestException('Only approved expenses can be marked as reimbursed');
+      throw new BadRequestException(
+        'Only approved expenses can be marked as reimbursed'
+      );
     }
 
     expense.status = ExpenseStatus.REIMBURSED;
@@ -228,11 +230,23 @@ export class ExpensesService {
     const [categoryAgg, statusAgg] = await Promise.all([
       model.aggregate([
         { $match: { businessId: businessObjectId } },
-        { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        {
+          $group: {
+            _id: '$category',
+            total: { $sum: '$amount' },
+            count: { $sum: 1 },
+          },
+        },
       ]),
       model.aggregate([
         { $match: { businessId: businessObjectId } },
-        { $group: { _id: '$status', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        {
+          $group: {
+            _id: '$status',
+            total: { $sum: '$amount' },
+            count: { $sum: 1 },
+          },
+        },
       ]),
     ]);
 
@@ -260,7 +274,10 @@ export class ExpensesService {
     };
   }
 
-  private verifyAccess(expenseBusinessId: string, currentBusinessId: string): void {
+  private verifyAccess(
+    expenseBusinessId: string,
+    currentBusinessId: string
+  ): void {
     if (expenseBusinessId !== currentBusinessId) {
       throw new ForbiddenException('Access denied');
     }
@@ -276,9 +293,10 @@ export class ExpensesService {
       amount: expense.amount,
       currency: expense.currency ?? 'TND',
       category: expense.category,
-      expenseDate: expense.expenseDate instanceof Date
-        ? expense.expenseDate.toISOString()
-        : String(expense.expenseDate),
+      expenseDate:
+        expense.expenseDate instanceof Date
+          ? expense.expenseDate.toISOString()
+          : String(expense.expenseDate),
       description: expense.description,
       vendor: expense.vendor,
       receiptBase64: expense.receiptBase64,
@@ -289,7 +307,9 @@ export class ExpensesService {
       reviewedAt: expense.reviewedAt?.toISOString(),
       reimbursedAt: expense.reimbursedAt?.toISOString(),
       isBillable: expense.isBillable ?? false,
-      linkedInvoiceId: expense.linkedInvoiceId ? String(expense.linkedInvoiceId) : undefined,
+      linkedInvoiceId: expense.linkedInvoiceId
+        ? String(expense.linkedInvoiceId)
+        : undefined,
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt,
     };

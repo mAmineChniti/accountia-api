@@ -14,7 +14,6 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { type Multer } from 'multer';
 import {
   ApiTags,
   ApiOperation,
@@ -89,7 +88,11 @@ export class ProductsController {
   }
 
   @Get()
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: 'Get all products for the business',
     description:
@@ -187,7 +190,11 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN, BusinessUserRole.MEMBER)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: 'Get a product by ID',
     description:
@@ -379,7 +386,7 @@ export class ProductsController {
     description: 'Business identifier for tenant resolution',
   })
   async importProducts(
-    @UploadedFile() file: Multer.File,
+    @UploadedFile() file: Express.Multer.File,
     @CurrentTenant() tenant: TenantContext,
     @Query('businessId') businessId: string
   ): Promise<{ imported: number; failed: number; errors: string[] }> {

@@ -9,7 +9,12 @@ export enum VendorStatus {
 
 @Schema({ collection: 'vendors', timestamps: true })
 export class Vendor extends Document {
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business', index: true })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+    index: true,
+  })
   businessId!: string;
 
   @Prop({ required: true })

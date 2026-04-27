@@ -37,14 +37,24 @@ export class ReportsService {
     const invoices = await invoiceModel
       .find({
         issuerBusinessId: businessId,
-        status: { $in: [InvoiceStatus.PAID, InvoiceStatus.PARTIAL, InvoiceStatus.ISSUED, InvoiceStatus.OVERDUE] },
+        status: {
+          $in: [
+            InvoiceStatus.PAID,
+            InvoiceStatus.PARTIAL,
+            InvoiceStatus.ISSUED,
+            InvoiceStatus.OVERDUE,
+          ],
+        },
         issuedDate: { $gte: startDate, $lte: endDate },
       })
       .sort({ issuedDate: -1 })
       .lean();
 
     const vatInvoices: VatInvoiceDto[] = [];
-    const rateMap = new Map<number, { netAmount: number; vatAmount: number; count: number }>();
+    const rateMap = new Map<
+      number,
+      { netAmount: number; vatAmount: number; count: number }
+    >();
 
     let totalOutputVat = 0;
     let totalTaxableRevenue = 0;
@@ -61,7 +71,11 @@ export class ReportsService {
         invVat += vat;
         invGross += item.amount;
 
-        const existing = rateMap.get(VAT_RATE * 100) ?? { netAmount: 0, vatAmount: 0, count: 0 };
+        const existing = rateMap.get(VAT_RATE * 100) ?? {
+          netAmount: 0,
+          vatAmount: 0,
+          count: 0,
+        };
         rateMap.set(VAT_RATE * 100, {
           netAmount: existing.netAmount + net,
           vatAmount: existing.vatAmount + vat,
@@ -81,7 +95,8 @@ export class ReportsService {
       totalTaxableRevenue += invNet;
 
       const recipientName =
-        (inv.recipient as { displayName?: string; email?: string })?.displayName ??
+        (inv.recipient as { displayName?: string; email?: string })
+          ?.displayName ??
         (inv.recipient as { displayName?: string; email?: string })?.email ??
         'Unknown';
 
@@ -98,12 +113,14 @@ export class ReportsService {
       });
     }
 
-    const byRate: VatRateSummaryDto[] = Array.from(rateMap.entries()).map(([rate, data]) => ({
-      rate,
-      netAmount: Math.round(data.netAmount * 100) / 100,
-      vatAmount: Math.round(data.vatAmount * 100) / 100,
-      count: data.count,
-    }));
+    const byRate: VatRateSummaryDto[] = [...rateMap.entries()].map(
+      ([rate, data]) => ({
+        rate,
+        netAmount: Math.round(data.netAmount * 100) / 100,
+        vatAmount: Math.round(data.vatAmount * 100) / 100,
+        count: data.count,
+      })
+    );
 
     return {
       businessId,
@@ -119,17 +136,27 @@ export class ReportsService {
     };
   }
 
-  private resolveDateRange(query: VatReportQueryDto): { startDate: Date; endDate: Date } {
+  private resolveDateRange(query: VatReportQueryDto): {
+    startDate: Date;
+    endDate: Date;
+  } {
     const now = new Date();
 
     if (query.period === VatReportPeriod.CUSTOM) {
       if (!query.startDate || !query.endDate) {
-        throw new BadRequestException('startDate and endDate are required for custom period');
+        throw new BadRequestException(
+          'startDate and endDate are required for custom period'
+        );
       }
-      return { startDate: new Date(query.startDate), endDate: new Date(query.endDate) };
+      return {
+        startDate: new Date(query.startDate),
+        endDate: new Date(query.endDate),
+      };
     }
 
-    const year = query.year ? parseInt(query.year, 10) : now.getFullYear();
+    const year = query.year
+      ? Number.parseInt(query.year, 10)
+      : now.getFullYear();
 
     if (query.period === VatReportPeriod.YEARLY) {
       return {
@@ -139,7 +166,9 @@ export class ReportsService {
     }
 
     if (query.period === VatReportPeriod.QUARTERLY) {
-      const quarter = query.quarter ? parseInt(query.quarter, 10) : Math.ceil((now.getMonth() + 1) / 3);
+      const quarter = query.quarter
+        ? Number.parseInt(query.quarter, 10)
+        : Math.ceil((now.getMonth() + 1) / 3);
       const startMonth = (quarter - 1) * 3;
       return {
         startDate: new Date(year, startMonth, 1),
@@ -148,7 +177,9 @@ export class ReportsService {
     }
 
     // MONTHLY
-    const month = query.month ? parseInt(query.month, 10) - 1 : now.getMonth();
+    const month = query.month
+      ? Number.parseInt(query.month, 10) - 1
+      : now.getMonth();
     return {
       startDate: new Date(year, month, 1),
       endDate: new Date(year, month + 1, 0, 23, 59, 59),

@@ -24,7 +24,11 @@ export enum RecurringEndCondition {
 
 @Schema({ _id: false })
 export class RecurringLineItem {
-  @Prop({ required: false, type: MongooseSchema.Types.ObjectId, ref: 'Product' })
+  @Prop({
+    required: false,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Product',
+  })
   productId?: string;
 
   @Prop({ required: true })
@@ -43,11 +47,17 @@ export class RecurringLineItem {
   description?: string;
 }
 
-export const RecurringLineItemSchema = SchemaFactory.createForClass(RecurringLineItem);
+export const RecurringLineItemSchema =
+  SchemaFactory.createForClass(RecurringLineItem);
 
 @Schema({ collection: 'recurring_invoices', timestamps: true })
 export class RecurringInvoice extends Document {
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business', index: true })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+    index: true,
+  })
   businessId!: string;
 
   @Prop({ required: true })
@@ -56,13 +66,21 @@ export class RecurringInvoice extends Document {
   @Prop({ required: true, enum: RecurringFrequency })
   frequency!: RecurringFrequency;
 
-  @Prop({ required: true, enum: RecurringStatus, default: RecurringStatus.ACTIVE })
+  @Prop({
+    required: true,
+    enum: RecurringStatus,
+    default: RecurringStatus.ACTIVE,
+  })
   status!: RecurringStatus;
 
   @Prop({ required: true, type: Date })
   startDate!: Date;
 
-  @Prop({ required: true, enum: RecurringEndCondition, default: RecurringEndCondition.NEVER })
+  @Prop({
+    required: true,
+    enum: RecurringEndCondition,
+    default: RecurringEndCondition.NEVER,
+  })
   endCondition!: RecurringEndCondition;
 
   @Prop({ type: Number })
@@ -114,7 +132,8 @@ export class RecurringInvoice extends Document {
   updatedAt!: Date;
 }
 
-export const RecurringInvoiceSchema = SchemaFactory.createForClass(RecurringInvoice);
+export const RecurringInvoiceSchema =
+  SchemaFactory.createForClass(RecurringInvoice);
 
 RecurringInvoiceSchema.index({ businessId: 1, status: 1 });
 RecurringInvoiceSchema.index({ status: 1, nextRunAt: 1 });

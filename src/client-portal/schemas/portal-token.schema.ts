@@ -6,7 +6,11 @@ export class PortalToken extends Document {
   @Prop({ required: true, unique: true, index: true })
   token!: string;
 
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Business' })
+  @Prop({
+    required: true,
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Business',
+  })
   businessId!: string;
 
   @Prop({ required: true })
