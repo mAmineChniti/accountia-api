@@ -9,12 +9,14 @@ import {
   HttpException,
   HttpStatus,
   InternalServerErrorException,
+  ServiceUnavailableException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import Stripe from 'stripe';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import type { Connection, Model } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 import { JwtService } from '@nestjs/jwt';
 import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
 import { hash, compare } from 'bcrypt';
@@ -128,9 +130,18 @@ export class AuthService {
     refreshMs: 7 * 24 * 60 * 60 * 1000, // 7 days
   };
 
-  private readonly stripe: InstanceType<typeof Stripe>;
+  private readonly stripe?: InstanceType<typeof Stripe>;
 
   private oauthIndexesInitialized = false;
+
+  private ensureStripeEnabled(): InstanceType<typeof Stripe> {
+    if (!this.stripe) {
+      throw new ServiceUnavailableException(
+        'Stripe Connect is not configured. Please contact support.'
+      );
+    }
+    return this.stripe;
+  }
 
   private static readonly GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
   private static readonly GOOGLE_AUTH_CODE_TTL_MS = 2 * 60 * 1000;
@@ -154,13 +165,19 @@ export class AuthService {
     private auditEmitter: AuditEmitter,
     private tenantConnectionService: TenantConnectionService,
     @Inject(forwardRef(() => BusinessService))
-    private businessService: BusinessService
+    private businessService: BusinessService,
+    private configService: ConfigService
   ) {
-    const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeKey) {
-      throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+    const stripeKey =
+      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      process.env.STRIPE_SECRET_KEY?.trim();
+    if (stripeKey && stripeKey.length > 0) {
+      this.stripe = new Stripe(stripeKey);
+    } else {
+      this.logger.warn(
+        'Stripe not initialized: STRIPE_SECRET_KEY environment variable is missing. Stripe Connect features will be unavailable.'
+      );
     }
-    this.stripe = new Stripe(stripeKey);
   }
 
   async buildGoogleOAuthState(params: GoogleOAuthInitParams): Promise<string> {
@@ -2007,6 +2024,9 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
+    // Check Stripe is enabled before acquiring lock
+    const stripe = this.ensureStripeEnabled();
+
     // Attempt to obtain an atomic lock so only one process creates the Stripe account.
     const lockId = `creating:${randomUUID()}`;
     const locked = await this.userModel.findOneAndUpdate(
@@ -2022,7 +2042,7 @@ export class AuthService {
     if (locked) {
       // We acquired the lock; create the Stripe account and replace the lock.
       try {
-        const account = await this.stripe.accounts.create({
+        const account = await stripe.accounts.create({
           type: 'express',
           email: user.email,
           capabilities: {
@@ -2036,7 +2056,7 @@ export class AuthService {
           { $set: { stripeConnectId: account.id } }
         );
 
-        const accountLink = await this.stripe.accountLinks.create({
+        const accountLink = await stripe.accountLinks.create({
           account: account.id,
           refresh_url: invoicesPath,
           return_url: invoicesPath,
@@ -2057,7 +2077,7 @@ export class AuthService {
           'Failed to create Stripe account or account link',
           error as Error
         );
-        // Clear lock if still present
+        // Clear lock if still present (before rethrowing)
         try {
           await this.userModel.updateOne(
             { _id: userId, stripeConnectId: lockId },
@@ -2068,6 +2088,11 @@ export class AuthService {
             'Failed to clear stripeConnectId lock',
             error_ as Error
           );
+        }
+
+        // Rethrow HttpException unchanged, otherwise throw new exception
+        if (error instanceof HttpException) {
+          throw error;
         }
 
         throw new InternalServerErrorException(
@@ -2102,7 +2127,7 @@ export class AuthService {
     }
 
     try {
-      const accountLink = await this.stripe.accountLinks.create({
+      const accountLink = await stripe.accountLinks.create({
         account: reloaded.stripeConnectId,
         refresh_url: invoicesPath,
         return_url: invoicesPath,
@@ -2123,6 +2148,10 @@ export class AuthService {
         'Failed to create Stripe account link for existing connect id',
         error as Error
       );
+      // Rethrow HttpException unchanged
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new InternalServerErrorException(
         'Failed to create Stripe onboarding link'
       );
@@ -2139,13 +2168,17 @@ export class AuthService {
     let message = 'Connect your Stripe account to start receiving payments.';
 
     if (user.stripeConnectId) {
+      // Call ensureStripeEnabled outside try to let ServiceUnavailableException propagate
+      const stripe = this.ensureStripeEnabled();
       try {
-        const account = await this.stripe.accounts.retrieve(
-          user.stripeConnectId
-        );
+        const account = await stripe.accounts.retrieve(user.stripeConnectId);
         isConnected = account.charges_enabled;
         message = isConnected ? 'Connected' : 'Setup incomplete';
       } catch (error: unknown) {
+        // Rethrow HttpException/ServiceUnavailableException unchanged
+        if (error instanceof HttpException) {
+          throw error;
+        }
         this.logger.error(
           'Stripe error while retrieving account status',
           error as Error

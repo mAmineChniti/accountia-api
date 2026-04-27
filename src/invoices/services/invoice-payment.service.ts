@@ -161,6 +161,30 @@ export class InvoicePaymentService {
     return rates;
   }
 
+  /**
+   * Resolve the Stripe Connect account ID from a Business document
+   * @param business - The Business document
+   * @returns The stripeConnectId if found, undefined otherwise
+   */
+  private resolveStripeAccountFromBusiness(business: {
+    stripeConnectId?: string | null;
+  }): string | undefined {
+    const connectId = business?.stripeConnectId?.trim();
+    return connectId && connectId.length > 0 ? connectId : undefined;
+  }
+
+  /**
+   * Resolve the Stripe Connect account ID for a business (with DB lookup)
+   * @param businessId - The business ID to look up
+   * @returns The stripeConnectId if found, undefined otherwise
+   */
+  private async resolveStripeAccount(
+    businessId: string
+  ): Promise<string | undefined> {
+    const business = await this.businessModel.findById(businessId).exec();
+    return this.resolveStripeAccountFromBusiness(business ?? {});
+  }
+
   private convertToFallbackCurrency(
     amount: number,
     invoiceCurrency: string
@@ -216,14 +240,15 @@ export class InvoicePaymentService {
       throw new BadRequestException('Invoice is already fully paid');
     }
 
-    // Retrieve business from platform DB to get Stripe Connect account ID
+    // Retrieve business from platform DB to enforce 404
     const business = await this.businessModel
       .findById(receipt.issuerBusinessId)
       .exec();
     if (!business) {
       throw new NotFoundException('Business not found');
     }
-    const connectedAccountId = business.stripeConnectId?.trim();
+    // Use the already-loaded business to get connect ID (avoid duplicate DB lookup)
+    const connectedAccountId = this.resolveStripeAccountFromBusiness(business);
     if (!connectedAccountId) {
       this.logger.warn(
         `Business "${receipt.issuerBusinessName}" has no Stripe Connect account. Falling back to platform Stripe account for checkout.`
@@ -246,7 +271,10 @@ export class InvoicePaymentService {
       amount: number,
       metadata: Record<string, string>
     ) => {
-      const requestOptions = undefined; // Quick override to bypass connect onboarding issues during testing
+      // Use Stripe Connect to route payments to the business's connected account
+      const requestOptions = connectedAccountId
+        ? { stripeAccount: connectedAccountId }
+        : undefined;
       const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
 
       return stripe.checkout.sessions.create(
@@ -449,6 +477,22 @@ export class InvoicePaymentService {
       `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`
     );
     const stripe = this.ensureStripeEnabled();
+
+    // Get receipt first to resolve the connected account
+    const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
+    if (!receipt) {
+      this.logger.error(`Receipt ${receiptId} not found during confirmation`);
+      throw new NotFoundException('Invoice receipt not found');
+    }
+
+    // Resolve the Stripe Connect account for the issuer business
+    const stripeConnectId = await this.resolveStripeAccount(
+      receipt.issuerBusinessId.toString()
+    );
+    const requestOptions = stripeConnectId
+      ? { stripeAccount: stripeConnectId }
+      : undefined;
+
     let session: StripeCheckoutSession | undefined;
 
     // Retries with exponential backoff. If a non-retryable Stripe error is
@@ -458,10 +502,16 @@ export class InvoicePaymentService {
     const attempts = 3;
     const backoffs = [200, 500];
 
+    // Track if we fell back to platform account and pin the working requestOptions
+    let effectiveRequestOptions = requestOptions;
+    let usingPlatformAccount = false;
+
     for (let i = 0; i < attempts; i++) {
       try {
         session = (await stripe.checkout.sessions.retrieve(
-          sessionId
+          sessionId,
+          undefined,
+          effectiveRequestOptions
         )) as StripeCheckoutSession;
         this.logger.debug(
           `Attempt ${i + 1}: Stripe session status is "${session.payment_status}"`
@@ -486,11 +536,44 @@ export class InvoicePaymentService {
         const isInvalidRequest = errAny?.type === 'StripeInvalidRequestError';
 
         if (isResourceMissing) {
-          this.logger.error(
-            `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
-          );
-          // Missing resource indicates a bad request from the client
-          throw new BadRequestException(`Stripe resource missing: ${errMsg}`);
+          // If we were using a connected account, try platform account as fallback
+          if (stripeConnectId && !usingPlatformAccount) {
+            this.logger.log(
+              `Retrying session retrieval on platform account for session ${sessionId}`
+            );
+            try {
+              session = (await stripe.checkout.sessions.retrieve(
+                sessionId
+              )) as StripeCheckoutSession;
+              this.logger.debug(
+                `Platform account retry: Stripe session status is "${session.payment_status}"`
+              );
+              // Pin the working requestOptions for subsequent attempts
+              effectiveRequestOptions = undefined;
+              usingPlatformAccount = true;
+              if (session.payment_status === 'paid') {
+                break;
+              }
+              // Fall through to normal loop flow (with backoff) if not paid
+            } catch (platformError) {
+              const platformErrMsg =
+                platformError instanceof Error
+                  ? platformError.message
+                  : String(platformError);
+              this.logger.error(
+                `Platform account retry failed for session ${sessionId}: ${platformErrMsg}`
+              );
+              throw new BadRequestException(
+                `Stripe resource missing: ${platformErrMsg}`
+              );
+            }
+          } else {
+            this.logger.error(
+              `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+            );
+            // Missing resource indicates a bad request from the client
+            throw new BadRequestException(`Stripe resource missing: ${errMsg}`);
+          }
         }
 
         if (isAuthError || isInvalidRequest) {
@@ -522,12 +605,6 @@ export class InvoicePaymentService {
       };
     }
 
-    const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
-    if (!receipt) {
-      this.logger.error(`Receipt ${receiptId} not found during confirmation`);
-      throw new NotFoundException('Invoice receipt not found');
-    }
-
     // Enforce that the authenticated user is allowed to pay this receipt
     this.assertRecipientCanPay(receipt, user);
 
@@ -557,12 +634,15 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    const _businessId = receipt.issuerBusinessId;
-    void _businessId;
-    // Connected account logic skipped for this fix
+    // Resolve the Stripe Connect account for the issuer business
+    const stripeConnectId = await this.resolveStripeAccount(
+      receipt.issuerBusinessId.toString()
+    );
+    const requestOptions = stripeConnectId
+      ? { stripeAccount: stripeConnectId }
+      : undefined;
 
     let session: StripeCheckoutSession;
-    const requestOptions = undefined; // Force platform account testing
 
     try {
       session = await stripe.checkout.sessions.retrieve(
@@ -570,9 +650,28 @@ export class InvoicePaymentService {
         undefined,
         requestOptions
       );
-    } catch {
-      // Fallback to platform account retrieval if connected-account retrieval fails.
-      session = await stripe.checkout.sessions.retrieve(sessionId);
+    } catch (error) {
+      const errAny = error as {
+        type?: string;
+        code?: string;
+        message?: string;
+      };
+      const isResourceMissing = errAny?.code === 'resource_missing';
+
+      this.logger.error(
+        `Stripe session retrieval failed (sessionId=${sessionId}, stripeConnectId=${stripeConnectId ?? 'none'}): type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'}, message=${errAny?.message ?? 'unknown'}`
+      );
+
+      // Only retry on platform account if resource is missing on connected account
+      if (isResourceMissing && stripeConnectId) {
+        this.logger.log(
+          `Retrying session retrieval on platform account for session ${sessionId}`
+        );
+        session = await stripe.checkout.sessions.retrieve(sessionId);
+      } else {
+        // Re-throw errors to maintain consistent error handling
+        throw error;
+      }
     }
 
     const sessionObj = session;
