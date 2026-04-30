@@ -54,11 +54,14 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
+    "pdf2pic": "^3.2.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.34.5",
     "socket.io": "^4.8.3",
     "stripe": "^22.0.1",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -120,10 +123,8 @@
   },
   "trustedDependencies": [
     "@nestjs/core",
-    "@openrouter/sdk",
-    "@scarf/scarf",
-    "bcrypt",
     "core-js",
+    "tesseract.js",
     "unrs-resolver"
   ]
 }

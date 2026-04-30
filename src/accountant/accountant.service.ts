@@ -51,8 +51,10 @@ export class AccountantService {
     // Create ky instance with default config
     const headers = this.apiKey ? { 'X-API-Key': this.apiKey } : undefined;
 
+    const normalizedPrefix = this.baseUrl.replace(/\/+$/, '') + '/';
+
     this.httpClient = ky.create({
-      prefix: this.baseUrl,
+      prefix: normalizedPrefix,
       timeout: this.timeoutMs,
       headers,
     });
@@ -453,9 +455,22 @@ export class AccountantService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      // Call the service health endpoint (no API key required by the service)
+      // Prefer the readiness probe which performs deep checks.
+      // Use non-throwing requests so we can interpret 503 readiness responses.
+      const readyResp = await this.httpClient.get('api/health/ready', {
+        timeout: 5000,
+        throwHttpErrors: false,
+      });
+
+      if (readyResp.status === 200) {
+        const readyBody: { status?: string } = await readyResp.json();
+        return !!(readyBody?.status === 'ready');
+      }
+
+      // Fallback to the quick health endpoint if readiness isn't available.
       const response = await this.httpClient.get('api/health', {
         timeout: 5000,
+        throwHttpErrors: false,
       });
       const body: { status?: string } = await response.json();
       return !!(body && (body.status === 'healthy' || body.status === 'ready'));

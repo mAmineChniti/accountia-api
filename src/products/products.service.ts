@@ -21,6 +21,7 @@ import {
 } from './dto/stock-insights.dto';
 import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
 import { CacheService } from '@/redis/cache.service';
+import { extractFromDocument } from '@/common/utils/ocr-document-extraction.util';
 
 @Injectable()
 export class ProductsService {
@@ -635,6 +636,47 @@ export class ProductsService {
       failed: errors.length,
       errors,
     };
+  }
+
+  /**
+   * Import a product from an image or PDF document using AI extraction
+   */
+  async importFromDocument(
+    businessId: string,
+    databaseName: string,
+    fileBuffer: Buffer,
+    filename: string
+  ): Promise<ProductResponseDto> {
+    const extracted = await extractFromDocument(fileBuffer, filename, {
+      documentType: 'product',
+    });
+
+    if (extracted?.type !== 'product') {
+      throw new BadRequestException(
+        'Could not extract product information from the document. ' +
+          'Please ensure the image contains clear product details.'
+      );
+    }
+
+    // Validate required fields
+    if (!extracted.name) {
+      throw new BadRequestException(
+        'Extracted data is missing required field: name. ' +
+          'Please provide a clearer image or enter manually.'
+      );
+    }
+
+    // Build create DTO from extracted data
+    const createProductDto: CreateProductDto = {
+      businessId,
+      name: extracted.name ?? 'Unnamed Product',
+      description: extracted.description ?? 'No description available',
+      unitPrice: extracted.unitPrice ?? 0,
+      quantity: extracted.quantity ?? 0,
+      cost: extracted.cost ?? 0,
+    };
+
+    return this.create(businessId, databaseName, createProductDto);
   }
 
   private verifyBusinessAccess(
