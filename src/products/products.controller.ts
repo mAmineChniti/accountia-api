@@ -12,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { type Multer } from 'multer';
@@ -389,6 +390,70 @@ export class ProductsController {
       businessId || tenant.businessId,
       tenant.databaseName,
       records
+    );
+  }
+
+  @Post('import/document')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          'image/png',
+          'image/jpeg',
+          'image/jpg',
+          'image/gif',
+          'image/webp',
+          'application/pdf',
+        ];
+
+        if (allowedMimes.includes(file.mimetype)) {
+          // eslint-disable-next-line unicorn/no-null
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              'Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed'
+            ),
+            false
+          );
+        }
+      },
+    })
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Import a product from an image or PDF document',
+    description:
+      'Extract product information from an image (invoice, product catalog, receipt) or PDF using AI. ' +
+      'The AI will analyze the document and extract product details like name, description, price, and quantity. ' +
+      'businessId is REQUIRED as a query parameter.',
+  })
+  @ApiCreatedResponse({
+    description: 'Product extracted and imported successfully',
+    type: ProductResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid file format or extraction failed',
+  })
+  @ApiForbiddenResponse({ description: 'Insufficient permissions' })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description: 'Business identifier for tenant resolution',
+  })
+  async importProductFromDocument(
+    @UploadedFile() file: Multer.File,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessId') businessId: string
+  ): Promise<ProductResponseDto> {
+    return this.productsService.importFromDocument(
+      businessId || tenant.businessId,
+      tenant.databaseName,
+      (file as unknown as { buffer: Buffer; originalname: string }).buffer,
+      (file as unknown as { buffer: Buffer; originalname: string }).originalname
     );
   }
 }
