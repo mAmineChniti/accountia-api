@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '@/app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConflictExceptionFilter } from '@/common/filters/conflict-exception.filter';
 
@@ -30,6 +31,9 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new ConflictExceptionFilter());
+
+  // global logging interceptor: logs incoming request and outgoing response
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
