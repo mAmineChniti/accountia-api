@@ -44,7 +44,7 @@
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "ky": "^2.0.1",
-    "mongodb": "^7.1.1",
+    "mongodb": "^7.2.0",
     "mongoose": "^9.3.1",
     "multer": "^2.1.0",
     "node-cron": "^4.2.1",
