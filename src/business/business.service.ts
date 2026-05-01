@@ -9,7 +9,7 @@ import {
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-import type { Connection, Model } from 'mongoose';
+import { Connection, Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
 import { AuditEmitter } from '@/audit/audit.emitter';
 import { AuditAction } from '@/audit/schemas/audit-log.schema';
@@ -564,7 +564,8 @@ export class BusinessService {
   }
 
   async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
-    // Find all businesses where user is OWNER or ADMIN at the business level
+    // Include all business-level roles (CLIENT included) so customers of a
+    // business also see it in their sidebar with a restricted nav set.
     let businessUsers = (await this.businessUserModel
       .find({
         userId,
@@ -573,11 +574,12 @@ export class BusinessService {
             BusinessUserRole.OWNER,
             BusinessUserRole.ADMIN,
             BusinessUserRole.MEMBER,
+            BusinessUserRole.CLIENT,
           ],
         },
       })
-      .select('businessId')
-      .lean()) as Array<{ businessId: string }>;
+      .select('businessId role')
+      .lean()) as Array<{ businessId: string; role: string }>;
 
     // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
@@ -604,12 +606,20 @@ export class BusinessService {
             { upsert: true }
           );
 
-          businessUsers = [{ businessId: approvedApplication.businessId }];
+          businessUsers = [
+            {
+              businessId: approvedApplication.businessId,
+              role: BusinessUserRole.OWNER,
+            },
+          ];
         }
       }
     }
 
     const businessIds = businessUsers.map((bu) => bu.businessId);
+    const roleMap = new Map(
+      businessUsers.map((bu) => [bu.businessId.toString(), bu.role])
+    );
 
     if (businessIds.length === 0) {
       return {
@@ -632,6 +642,7 @@ export class BusinessService {
         phone: business.phone,
         status: business.status,
         createdAt: business.createdAt,
+        role: roleMap.get(business._id.toString()) ?? BusinessUserRole.MEMBER,
       })),
     };
   }
@@ -1120,7 +1131,6 @@ export class BusinessService {
       },
       {
         $group: {
-          // eslint-disable-next-line unicorn/no-null -- MongoDB requires null for grouping all docs
           _id: null,
           paidAmount: {
             $sum: {
@@ -1268,7 +1278,7 @@ export class BusinessService {
     }
 
     const allProducts = await productsCol
-      // eslint-disable-next-line unicorn/no-array-callback-reference
+
       .find({
         $or: [
           { businessId: new ObjectId(businessId) as unknown as string },

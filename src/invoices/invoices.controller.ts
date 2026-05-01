@@ -51,7 +51,10 @@ import {
   InvoiceListResponseDto,
   InvoiceReceiptListResponseDto,
 } from '@/invoices/dto/invoice.dto';
-import { BulkImportInvoicesResponseDto } from '@/invoices/dto/invoice-import.dto';
+import {
+  BulkImportInvoicesResponseDto,
+  ImportTemplateResponseDto,
+} from '@/invoices/dto/invoice-import.dto';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -125,7 +128,11 @@ export class InvoicesController {
 
   @Get('issued')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] List invoices issued by this business',
     description:
@@ -178,7 +185,11 @@ export class InvoicesController {
 
   @Get('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] Get a specific invoice issued by this business',
     description:
@@ -550,52 +561,6 @@ export class InvoicesController {
     return { received: true };
   }
 
-  @Post('payments/confirm')
-  @UseGuards(JwtAuthGuard)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '[PLATFORM] Confirm payment status (JSON)',
-    description:
-      'Verifies Stripe session status and updates invoice. Returns JSON.',
-  })
-  @ApiQuery({
-    name: 'session_id',
-    required: true,
-    type: 'string',
-    description: 'Stripe Checkout session ID',
-  })
-  @ApiQuery({
-    name: 'receipt_id',
-    required: true,
-    type: 'string',
-    description: 'Invoice receipt ID',
-  })
-  @ApiBadRequestResponse({
-    description:
-      'Missing or invalid query parameters: session_id and receipt_id are required',
-  })
-  @ApiOkResponse({
-    description: 'Payment status confirmed',
-    schema: {
-      type: 'object',
-      properties: { success: { type: 'boolean' }, status: { type: 'string' } },
-    },
-  })
-  async confirmPayment(
-    @Query('session_id') sessionId: string,
-    @Query('receipt_id') receiptId: string,
-    @CurrentUser() user: UserPayload
-  ): Promise<{ success: boolean; status: string }> {
-    if (!sessionId || !receiptId) {
-      throw new BadRequestException('session_id and receipt_id are required');
-    }
-    return await this.paymentService.confirmPaymentStatus(
-      sessionId,
-      receiptId,
-      user
-    );
-  }
-
   @Get('payments/return')
   @HttpCode(HttpStatus.FOUND)
   @ApiOperation({
@@ -656,6 +621,30 @@ export class InvoicesController {
    * Data Storage: Tenant-specific MongoDB database (e.g., evenix_mn9fsurc_d1c76f)
    */
 
+  @Get('import/template')
+  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
+  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @ApiOperation({
+    summary: '[TENANT DB] Get import template and example',
+    description:
+      'Retrieve a CSV/Excel template and example format for bulk importing invoices. businessId is REQUIRED as a query parameter. ' +
+      'Data invoices will be created in: Tenant-specific MongoDB database.',
+  })
+  @ApiQuery({
+    name: 'businessId',
+    required: true,
+    type: String,
+    description:
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+  })
+  @ApiOkResponse({
+    description: 'Import template with examples and column definitions',
+    type: ImportTemplateResponseDto,
+  })
+  getImportTemplate(): ImportTemplateResponseDto {
+    return this.importService.getImportTemplate();
+  }
+
   @Post('import')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
@@ -670,7 +659,6 @@ export class InvoicesController {
         ];
 
         if (allowedMimes.includes(file.mimetype)) {
-          // eslint-disable-next-line unicorn/no-null
           cb(null, true);
         } else {
           cb(
@@ -688,6 +676,7 @@ export class InvoicesController {
     description:
       'Import multiple invoices at once from a CSV or XLSX file. ' +
       'Each row represents one invoice. Supports multiple recipient types and line item formats. ' +
+      'Use GET /invoices/import/template to get the required format. ' +
       'businessId is REQUIRED as a query parameter. ' +
       'Data is created in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
   })
@@ -726,81 +715,6 @@ export class InvoicesController {
       `Import completed: ${result.successCount} success, ${result.failedCount} failed, ${result.warningCount} warnings, ${result.generalErrors?.length ?? 0} general errors`
     );
     this.logger.debug(`Import results: ${JSON.stringify(result.results)}`);
-    return result;
-  }
-
-  @Post('import/document')
-  @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images
-      fileFilter: (req, file, cb) => {
-        const allowedMimes = [
-          'image/png',
-          'image/jpeg',
-          'image/jpg',
-          'image/gif',
-          'image/webp',
-          'application/pdf',
-        ];
-
-        if (allowedMimes.includes(file.mimetype)) {
-          // eslint-disable-next-line unicorn/no-null
-          cb(null, true);
-        } else {
-          cb(
-            new BadRequestException(
-              'Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed'
-            ),
-            false
-          );
-        }
-      },
-    })
-  )
-  @HttpCode(HttpStatus.CREATED)
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary: '[TENANT DB] Import an invoice from an image or PDF document',
-    description:
-      'Extract invoice information from an image (invoice photo, scanned document) or PDF using AI. ' +
-      'The AI will analyze the document and extract invoice details like invoice number, recipient, items, and amounts. ' +
-      'The extracted invoice is created in DRAFT state for review before issuing. ' +
-      'businessId is REQUIRED as a query parameter.',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    required: true,
-    type: String,
-    description:
-      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
-  })
-  @ApiCreatedResponse({
-    description: 'Invoice extracted and imported successfully as DRAFT',
-    type: InvoiceResponseDto,
-  })
-  @ApiBadRequestResponse({
-    description: 'Invalid file format or extraction failed',
-  })
-  async importInvoiceFromDocument(
-    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
-    @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload
-  ): Promise<InvoiceResponseDto> {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-    this.logger.log(
-      `Importing invoice from document: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`
-    );
-    const result = await this.importService.importInvoiceFromDocument(
-      file,
-      tenant.businessId,
-      tenant.databaseName,
-      user.id
-    );
-    this.logger.log(`Invoice imported from document: ${result.id}`);
     return result;
   }
 }

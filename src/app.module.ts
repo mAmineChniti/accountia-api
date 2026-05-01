@@ -12,6 +12,15 @@ import { ChatModule } from '@/chat/chat.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
+import { ReportsModule } from '@/reports/reports.module';
+import { CommentsModule } from '@/comments/comments.module';
+import { ExpensesModule } from '@/expenses/expenses.module';
+import { RecurringInvoicesModule } from '@/recurring-invoices/recurring-invoices.module';
+import { AnalyticsModule } from '@/analytics/analytics.module';
+import { VendorsModule } from '@/vendors/vendors.module';
+import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
+import { ClientPortalModule } from '@/client-portal/client-portal.module';
+import { CollectionsModule } from '@/collections/collections.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AccountantModule } from '@/accountant/accountant.module';
 
@@ -45,7 +54,6 @@ import { AccountantModule } from '@/accountant/accountant.module';
         STRIPE_FX_RATES: Joi.string().required(),
         MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
         REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
-        REDIS_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
         // AI Accountant Service (optional - will warn if not configured)
         AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
         AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),
@@ -68,6 +76,15 @@ import { AccountantModule } from '@/accountant/accountant.module';
     ProductsModule,
     RedisModule,
     InvoicesModule,
+    ReportsModule,
+    CommentsModule,
+    ExpensesModule,
+    RecurringInvoicesModule,
+    AnalyticsModule,
+    VendorsModule,
+    PurchaseOrdersModule,
+    ClientPortalModule,
+    CollectionsModule,
     AccountantModule,
   ],
   controllers: [],

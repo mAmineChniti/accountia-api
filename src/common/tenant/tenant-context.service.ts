@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import { Model } from 'mongoose';
 import { Role } from '@/auth/enums/role.enum';
 import { type UserPayload } from '@/auth/types/auth.types';
 import { Business } from '@/business/schemas/business.schema';
@@ -83,6 +83,24 @@ export class TenantContextService {
     // Cache the result
     await this.cacheService.set(cacheKey, result, CACHE_TTL_SECONDS);
     return result;
+  }
+
+  /**
+   * Find the business this user is linked to. Returns the businessId when the
+   * user has exactly one membership, otherwise null (zero memberships, or
+   * multiple — caller must disambiguate by passing businessId explicitly).
+   */
+  async resolveUserBusinessId(userId: string): Promise<string | null> {
+    const memberships = await this.businessUserModel
+      .find({ userId })
+      .select('businessId')
+      .limit(2);
+
+    if (memberships.length !== 1) {
+      return null;
+    }
+
+    return memberships[0].businessId;
   }
 
   /**

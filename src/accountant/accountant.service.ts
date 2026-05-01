@@ -2,13 +2,9 @@ import {
   Injectable,
   Logger,
   ServiceUnavailableException,
-  BadRequestException,
-  BadGatewayException,
-  NotFoundException,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import ky, { HTTPError, type KyInstance } from 'ky';
+import ky, { HTTPError } from 'ky';
 import type {
   CreateAccountingJobDto,
   InternalCreateAccountingJobPayload,
@@ -18,8 +14,6 @@ import type {
   AccountingJobStatus,
   AccountingResults,
   BusinessJobsResponse,
-  BusinessWorkResponse,
-  TaxSummaryResponse,
   AccountingJobSummary,
 } from './types';
 
@@ -29,7 +23,7 @@ export class AccountantService {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
-  private readonly httpClient: KyInstance;
+  private readonly httpClient: typeof ky;
 
   constructor(private configService: ConfigService) {
     this.baseUrl = this.configService.get<string>(
@@ -49,14 +43,12 @@ export class AccountantService {
     }
 
     // Create ky instance with default config
-    const headers = this.apiKey ? { 'X-API-Key': this.apiKey } : undefined;
-
-    const normalizedPrefix = this.baseUrl.replace(/\/+$/, '') + '/';
-
     this.httpClient = ky.create({
-      prefix: normalizedPrefix,
+      prefix: this.baseUrl,
       timeout: this.timeoutMs,
-      headers,
+      headers: {
+        'X-API-Key': this.apiKey,
+      },
     });
   }
 
@@ -76,38 +68,11 @@ export class AccountantService {
    */
   private handleHttpError(error: unknown, operation: string): never {
     if (error instanceof HTTPError) {
-      const status = error.response.status;
       const cid = error.response.headers.get('x-correlation-id') ?? 'unknown';
       this.logger.error(
-        `AI Accountant error: ${status} cid=${cid} during ${operation}`
+        `AI Accountant error: ${error.response.status} cid=${cid}`
       );
-
-      // Map common upstream HTTP errors to Nest exceptions
-      if (status === 400)
-        throw new BadRequestException(
-          `AI Accountant: bad request when trying to ${operation}`
-        );
-      if (status === 401)
-        throw new BadGatewayException(
-          `AI Accountant: upstream returned 401 (unauthorized) when trying to ${operation}`
-        );
-      if (status === 403)
-        throw new BadGatewayException(
-          `AI Accountant: upstream returned 403 (forbidden) when trying to ${operation}`
-        );
-      if (status === 404)
-        throw new NotFoundException(
-          `AI Accountant: resource not found when trying to ${operation}`
-        );
-      // 5xx -> service unavailable / internal
-      if (status >= 500)
-        throw new ServiceUnavailableException(
-          `AI Accountant service error (${status}) when trying to ${operation}`
-        );
-
-      throw new InternalServerErrorException(
-        `AI Accountant error (${status}) when trying to ${operation}`
-      );
+      throw new Error(`Failed to ${operation}`);
     }
     if (error instanceof Error && error.name === 'TimeoutError') {
       throw new ServiceUnavailableException(
@@ -126,14 +91,19 @@ export class AccountantService {
   ): Promise<AccountingJobResponse> {
     this.ensureEnabled();
 
-    // debug logging removed
+    const businessId = 'business_id' in dto ? dto.business_id : undefined;
+    this.logger.log(
+      businessId
+        ? `Creating accounting job for business ${businessId}`
+        : 'Creating accounting job'
+    );
 
     try {
-      const response = await this.httpClient.post('api/accounting/jobs', {
-        json: dto,
-      });
-      const data = await response.json<AccountingJobResponse>();
-      return data;
+      return await this.httpClient
+        .post('api/accounting/jobs', {
+          json: dto,
+        })
+        .json<AccountingJobResponse>();
     } catch (error) {
       this.handleHttpError(error, 'create accounting job');
     }
@@ -148,19 +118,14 @@ export class AccountantService {
   ): Promise<AccountingJobStatus> {
     this.ensureEnabled();
 
-    // debug logging removed
-
     try {
-      const response = await this.httpClient.get(
-        `api/accounting/jobs/${encodeURIComponent(taskId)}`,
-        {
+      return await this.httpClient
+        .get(`api/accounting/jobs/${encodeURIComponent(taskId)}`, {
           searchParams: {
-            businessId: businessId,
+            business_id: businessId,
           },
-        }
-      );
-      const data = await response.json<AccountingJobStatus>();
-      return data;
+        })
+        .json<AccountingJobStatus>();
     } catch (error) {
       this.handleHttpError(error, 'get job status');
     }
@@ -175,19 +140,14 @@ export class AccountantService {
   ): Promise<AccountingResults> {
     this.ensureEnabled();
 
-    // debug logging removed
-
     try {
-      const response = await this.httpClient.get(
-        `api/accounting/jobs/${encodeURIComponent(taskId)}/results`,
-        {
+      return await this.httpClient
+        .get(`api/accounting/jobs/${encodeURIComponent(taskId)}/results`, {
           searchParams: {
-            businessId: businessId,
+            business_id: businessId,
           },
-        }
-      );
-      const data = await response.json<AccountingResults>();
-      return data;
+        })
+        .json<AccountingResults>();
     } catch (error) {
       this.handleHttpError(error, 'get job results');
     }
@@ -199,27 +159,21 @@ export class AccountantService {
   async listBusinessJobs(
     businessId: string,
     status?: string,
-    limitInput?: string
+    limit = 10
   ): Promise<BusinessJobsResponse> {
     this.ensureEnabled();
 
-    const limit = this.parsePositiveInt(limitInput, 10);
-    const searchParams: Record<string, string> = {
-      businessId: businessId,
-      limit: limit.toString(),
-    };
+    const url = new URL(`${this.baseUrl}/api/accounting/jobs`);
+    url.searchParams.append('business_id', businessId);
+    url.searchParams.append('limit', limit.toString());
     if (status) {
-      searchParams.status = status;
+      url.searchParams.append('status', status);
     }
 
-    // debug logging removed
-
     try {
-      const response = await this.httpClient.get('api/accounting/jobs', {
-        searchParams,
-      });
-      const data = await response.json<BusinessJobsResponse>();
-      return data;
+      return await this.httpClient
+        .get(url.pathname + url.search)
+        .json<BusinessJobsResponse>();
     } catch (error) {
       this.handleHttpError(error, 'list jobs');
     }
@@ -230,26 +184,26 @@ export class AccountantService {
    */
   async getBusinessHistory(
     businessId: string,
-    limitInput?: string
-  ): Promise<{ businessId: string; tasks: AccountingJobSummary[] }> {
+    limit = 10
+  ): Promise<{ business_id: string; tasks: AccountingJobSummary[] }> {
     this.ensureEnabled();
 
-    const limit = this.parsePositiveInt(limitInput, 10);
-
-    // debug logging removed
+    const url = new URL(
+      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
+        businessId
+      )}/history`
+    );
+    url.searchParams.append('limit', limit.toString());
 
     try {
-      const response = await this.httpClient.get(
-        `api/accounting/business/${encodeURIComponent(businessId)}/history`,
-        {
-          searchParams: { limit: limit.toString() },
-        }
-      );
-      const data = await response.json<{
-        businessId: string;
-        tasks: AccountingJobSummary[];
-      }>();
-      return data;
+      return await this.httpClient
+        .get(
+          `api/accounting/business/${encodeURIComponent(businessId)}/history`,
+          {
+            searchParams: { limit: limit.toString() },
+          }
+        )
+        .json<{ business_id: string; tasks: AccountingJobSummary[] }>();
     } catch (error) {
       this.handleHttpError(error, 'get history');
     }
@@ -263,94 +217,31 @@ export class AccountantService {
     startDate?: string,
     endDate?: string,
     status?: string
-  ): Promise<BusinessWorkResponse> {
+  ): Promise<Record<string, unknown>> {
     this.ensureEnabled();
 
-    // Note: start_date and end_date are intentionally snake_case to match the upstream AI Accountant API contract
-    const searchParams: Record<string, string> = {
-      ...(startDate && { start_date: startDate }),
-      ...(endDate && { end_date: endDate }),
-      ...(status && { status }),
-    };
-    // debug logging removed
+    const url = new URL(
+      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
+        businessId
+      )}/work`
+    );
+    if (startDate) url.searchParams.append('start_date', startDate);
+    if (endDate) url.searchParams.append('end_date', endDate);
+    if (status) url.searchParams.append('status', status);
 
     try {
-      const response = await this.httpClient.get(
-        `api/accounting/business/${encodeURIComponent(businessId)}/work`,
-        {
-          searchParams,
-        }
-      );
-      const data = await response.json<BusinessWorkResponse>();
-      return data;
+      return await this.httpClient
+        .get(`api/accounting/business/${encodeURIComponent(businessId)}/work`, {
+          searchParams: {
+            ...(startDate && { start_date: startDate }),
+            ...(endDate && { end_date: endDate }),
+            ...(status && { status }),
+          },
+        })
+        .json<Record<string, unknown>>();
     } catch (error) {
       this.handleHttpError(error, 'get work log');
     }
-  }
-
-  /**
-   * Parse and validate tax year with reasonable range bounds
-   * @param value - Raw year string value
-   * @param defaultValue - Default if value is undefined/empty
-   * @returns Validated year number
-   * @throws BadRequestException on invalid year
-   */
-  private parseTaxYear(
-    value: string | undefined,
-    defaultValue: number
-  ): number {
-    if (value === undefined || value === '') {
-      return defaultValue;
-    }
-    const trimmed = value.trim();
-    const parsed = Number.parseInt(trimmed, 10);
-    if (Number.isNaN(parsed) || parsed.toString() !== trimmed) {
-      throw new BadRequestException(`Invalid year value: ${value}`);
-    }
-
-    const currentYear = new Date().getFullYear();
-    // Fixed lower bound allows historical data from year 2000; upper bound allows next tax year
-    const minYear = 2000;
-    const maxYear = currentYear + 1;
-
-    if (parsed < minYear || parsed > maxYear) {
-      throw new BadRequestException(
-        `Year must be between ${minYear} and ${maxYear}, got: ${parsed}`
-      );
-    }
-    return parsed;
-  }
-
-  /**
-   * Parse and validate positive integer parameter
-   * @param value - Raw string value
-   * @param defaultValue - Default if value is undefined/empty
-   * @param maxValue - Maximum allowed value (default: 100)
-   * @returns Validated integer
-   * @throws BadRequestException on invalid input
-   */
-  private parsePositiveInt(
-    value: string | undefined,
-    defaultValue: number,
-    maxValue = 100
-  ): number {
-    if (value === undefined || value === '') {
-      return defaultValue;
-    }
-    const trimmed = value.trim();
-    const parsed = Number.parseInt(trimmed, 10);
-    if (Number.isNaN(parsed) || parsed.toString() !== trimmed) {
-      throw new BadRequestException(`Invalid integer value: ${value}`);
-    }
-    if (parsed < 1) {
-      throw new BadRequestException(`Value must be at least 1, got: ${parsed}`);
-    }
-    if (parsed > maxValue) {
-      throw new BadRequestException(
-        `Value exceeds maximum of ${maxValue}, got: ${parsed}`
-      );
-    }
-    return parsed;
   }
 
   /**
@@ -358,95 +249,28 @@ export class AccountantService {
    */
   async getTaxSummary(
     businessId: string,
-    yearInput?: string
-  ): Promise<TaxSummaryResponse> {
+    year?: number
+  ): Promise<Record<string, unknown>> {
     this.ensureEnabled();
 
-    const year = this.parseTaxYear(yearInput, new Date().getFullYear());
+    const url = new URL(
+      `${this.baseUrl}/api/accounting/business/${encodeURIComponent(
+        businessId
+      )}/taxes`
+    );
+    if (year) url.searchParams.append('year', year.toString());
 
     try {
-      const searchParams = { year: year.toString() };
-
-      const response = await this.httpClient.get(
-        `api/accounting/business/${encodeURIComponent(businessId)}/taxes`,
-        {
-          searchParams,
-        }
-      );
-      const data = await response.json<TaxSummaryResponse>();
-      return data;
+      return await this.httpClient
+        .get(
+          `api/accounting/business/${encodeURIComponent(businessId)}/taxes`,
+          {
+            searchParams: year ? { year: year.toString() } : undefined,
+          }
+        )
+        .json<Record<string, unknown>>();
     } catch (error) {
       this.handleHttpError(error, 'get tax summary');
-    }
-  }
-
-  /**
-   * Calculate and persist tax summary for a business and year.
-   * Calls POST /api/accounting/business/{businessId}/taxes/calculate
-   */
-  async calculateTax(
-    businessId: string,
-    yearInput?: string
-  ): Promise<
-    TaxSummaryResponse | { message: string; businessId: string; year: number }
-  > {
-    this.ensureEnabled();
-
-    const year = this.parseTaxYear(yearInput, new Date().getFullYear());
-
-    try {
-      const searchParams = { year: year.toString() };
-
-      const response = await this.httpClient.post(
-        `api/accounting/business/${encodeURIComponent(businessId)}/taxes/calculate`,
-        {
-          searchParams,
-        }
-      );
-      const data = await response.json<
-        | TaxSummaryResponse
-        | { message: string; businessId: string; year: number }
-      >();
-      return data;
-    } catch (error) {
-      this.handleHttpError(error, 'calculate tax summary');
-    }
-  }
-
-  /**
-   * Cancel an accounting job
-   */
-  async cancelJob(
-    taskId: string,
-    businessId: string
-  ): Promise<{
-    taskId: string;
-    status: string;
-    message: string;
-    previousStatus: string;
-  }> {
-    this.ensureEnabled();
-
-    // debug logging removed
-
-    try {
-      const response = await this.httpClient.delete(
-        `api/accounting/jobs/${encodeURIComponent(taskId)}`,
-        {
-          searchParams: {
-            businessId: businessId,
-          },
-        }
-      );
-      const data = await response.json<{
-        taskId: string;
-        status: string;
-        message: string;
-        previousStatus: string;
-      }>();
-      return data;
-    } catch (error) {
-      this.handleHttpError(error, 'cancel accounting job');
     }
   }
 
@@ -454,26 +278,16 @@ export class AccountantService {
    * Check if AI Accountant is available
    */
   async healthCheck(): Promise<boolean> {
+    // Return false immediately if API key is not configured
+    if (!this.apiKey) {
+      this.logger.warn('AI Accountant health check: API key not configured');
+      return false;
+    }
+
     try {
-      // Prefer the readiness probe which performs deep checks.
-      // Use non-throwing requests so we can interpret 503 readiness responses.
-      const readyResp = await this.httpClient.get('api/health/ready', {
-        timeout: 5000,
-        throwHttpErrors: false,
-      });
-
-      if (readyResp.status === 200) {
-        const readyBody: { status?: string } = await readyResp.json();
-        return !!(readyBody?.status === 'ready');
-      }
-
-      // Fallback to the quick health endpoint if readiness isn't available.
-      const response = await this.httpClient.get('api/health', {
-        timeout: 5000,
-        throwHttpErrors: false,
-      });
-      const body: { status?: string } = await response.json();
-      return !!(body && (body.status === 'healthy' || body.status === 'ready'));
+      // Use shorter timeout for health check
+      await this.httpClient.get('', { timeout: 5000 });
+      return true;
     } catch (error) {
       this.logger.warn('AI Accountant health check failed', error);
       return false;

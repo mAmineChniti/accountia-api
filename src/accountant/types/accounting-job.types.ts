@@ -1,52 +1,52 @@
 export interface AccountingJobResponse {
-  taskId: string;
+  task_id: string;
   status: string;
   message: string;
-  estimatedCompletion?: string;
+  estimated_completion?: string;
 }
 
 export interface AccountingJobStatus {
-  taskId: string;
-  businessId: string;
-  periodStart: string;
-  periodEnd: string;
+  task_id: string;
+  business_id: string;
+  period_start: string;
+  period_end: string;
   status: string;
-  progressPercent: number;
-  startedAt?: string;
-  completedAt?: string;
-  errorMessage?: string;
-  journalEntriesCount: number;
-  reportsGenerated: number;
+  progress_percent: number;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  journal_entries_count: number;
+  reports_generated: number;
 }
 
 export interface AccountingResults {
-  taskId: string;
-  businessId: string;
-  periodStart: string;
-  periodEnd: string;
+  task_id: string;
+  business_id: string;
+  period_start: string;
+  period_end: string;
   status: string;
-  totalRevenue: number;
-  totalExpenses: number;
-  grossProfit: number;
-  netProfit: number;
-  accountsReceivable: number;
-  accountsPayable: number;
-  cashPosition: number;
-  taxCalculations: TaxCalculation[];
-  aiInsights: string;
+  total_revenue: number;
+  total_expenses: number;
+  gross_profit: number;
+  net_profit: number;
+  accounts_receivable: number;
+  accounts_payable: number;
+  cash_position: number;
+  tax_calculations: TaxCalculation[];
+  ai_insights: string;
   recommendations: string[];
-  anomaliesDetected: Anomaly[];
+  anomalies_detected: Anomaly[];
   reports: Report[];
-  journalEntriesPreview: JournalEntry[];
-  totalJournalEntries: number;
+  journal_entries_preview: JournalEntry[];
+  total_journal_entries: number;
 }
 
 export interface TaxCalculation {
-  taxType: string;
+  tax_type: string;
   jurisdiction: string;
-  taxableAmount: number;
-  taxRate: number;
-  taxAmount: number;
+  taxable_amount: number;
+  tax_rate: number;
+  tax_amount: number;
   notes?: string;
 }
 
@@ -57,9 +57,9 @@ export interface Anomaly {
 }
 
 export interface Report {
-  reportType: string;
-  periodStart: string;
-  periodEnd: string;
+  report_type: string;
+  period_start: string;
+  period_end: string;
   data: Record<string, unknown>;
 }
 
@@ -72,96 +72,14 @@ export interface JournalEntry {
 }
 
 export interface AccountingJobSummary {
-  taskId: string;
-  periodStart: string;
-  periodEnd: string;
+  task_id: string;
+  period_start: string;
+  period_end: string;
   status: string;
-  completedAt?: string;
+  completed_at?: string;
 }
 
 export interface BusinessJobsResponse {
   jobs: AccountingJobStatus[];
   total: number;
-}
-
-export interface FinancialSummary {
-  totalRevenue: number;
-  totalExpenses: number;
-  grossProfit: number;
-  netProfit: number;
-  accountsReceivable: number;
-  accountsPayable: number;
-  cashPosition: number;
-}
-
-export interface AccountingPeriodDetail {
-  taskId: string;
-  periodStart: string;
-  periodEnd: string;
-  status: string;
-  createdAt?: string;
-  startedAt?: string;
-  completedAt?: string;
-  journalEntriesCount: number;
-  taxCalculationsCount: number;
-  reportsCount: number;
-  hasAiInsights: boolean;
-  recommendationsCount: number;
-  financialSummary: FinancialSummary;
-}
-
-export interface BusinessWorkResponse {
-  businessId: string;
-  databaseName: string;
-  summary: {
-    totalAccountingPeriods: number;
-    completed: number;
-    pending: number;
-    processing: number;
-    failed: number;
-    totalJournalEntriesGenerated: number;
-    totalRevenueProcessed: number;
-  };
-  accountingPeriods: AccountingPeriodDetail[];
-}
-
-export interface MonthlyTaxDetail {
-  month: number;
-  period: string;
-  vatStandard19: number;
-  vatReduced13: number;
-  vatReduced7: number;
-  vatTotal: number;
-  taxableIncome: number;
-  corporateTaxDue: number;
-  withholdingTax: number;
-  totalTaxLiability: number;
-  dueDate: string;
-}
-
-export interface TaxDeadline {
-  period: string;
-  dueDate: string;
-  description: string;
-}
-
-export interface TaxSummaryResponse {
-  businessId: string;
-  businessName: string;
-  year: number;
-  currency: string;
-  summary: {
-    annualVatTotal: number;
-    annualCorporateTax: number;
-    annualWithholdingTax: number;
-    totalTaxLiability: number;
-  };
-  vatBreakdown: {
-    standardRate19Percent: number;
-    reducedRate13Percent: number;
-    reducedRate7Percent: number;
-  };
-  monthlyDetails: MonthlyTaxDetail[];
-  taxCalendar: TaxDeadline[];
-  notes: string[];
 }

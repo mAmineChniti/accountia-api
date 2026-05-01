@@ -68,9 +68,22 @@ export class TenantContextGuard implements CanActivate {
         };
         return true;
       }
-      throw new BadRequestException(
-        'Business context is required (provide businessId in body or query)'
+
+      // Auto-resolve from the user's business membership when not provided.
+      // Multipart endpoints can't read body fields at guard-time (FileInterceptor
+      // runs after guards), so falling back to the user's membership keeps those
+      // endpoints working without forcing the client to send businessId.
+      const resolved = await this.tenantContextService.resolveUserBusinessId(
+        user.id
       );
+
+      if (!resolved) {
+        throw new BadRequestException(
+          'Business context is required (provide businessId in body or query)'
+        );
+      }
+
+      businessId = resolved;
     }
 
     // Validate businessId format

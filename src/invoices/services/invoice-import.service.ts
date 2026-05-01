@@ -10,11 +10,8 @@ import {
   CreateInvoiceDto,
   CreateInvoiceRecipientDto,
 } from '@/invoices/dto/invoice.dto';
-import type { InvoiceResponseDto } from '@/invoices/dto/invoice.dto';
-import type { InvoiceExtractionResult } from '@/common/utils/ocr-document-extraction.util';
 import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
 import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
-import { extractFromDocument } from '@/common/utils/ocr-document-extraction.util';
 
 /**
  * Service for bulk importing invoices from CSV or Excel files
@@ -583,104 +580,6 @@ export class InvoiceImportService {
       throw new TypeError(`Row ${rowNumber}: Invalid ${fieldName}`);
     }
 
-    return date;
-  }
-
-  /**
-   * Import an invoice from an image or PDF document using AI extraction
-   */
-  async importInvoiceFromDocument(
-    file: FileUpload,
-    businessId: string,
-    databaseName: string,
-    userId: string
-  ): Promise<InvoiceResponseDto> {
-    const extracted = await extractFromDocument(
-      file.buffer,
-      file.originalname,
-      { documentType: 'invoice' }
-    );
-
-    if (extracted?.type !== 'invoice') {
-      throw new BadRequestException(
-        'Could not extract invoice information from the document. ' +
-          'Please ensure the image contains a clear invoice with readable text.'
-      );
-    }
-
-    // Build line items from extracted data
-    const lineItems =
-      extracted.lineItems?.map((item, index) => ({
-        productId: `extracted-${index}`, // Temporary ID, will be resolved by issuance service
-        productName: item.productName ?? 'Unknown Item',
-        quantity: item.quantity ?? 1,
-        unitPrice: item.unitPrice ?? 0,
-        description: item.description,
-      })) ?? [];
-
-    if (lineItems.length === 0) {
-      throw new BadRequestException(
-        'No line items could be extracted from the document. ' +
-          'Please ensure the invoice contains itemized products or services.'
-      );
-    }
-
-    // Build create DTO from extracted data
-    const createInvoiceDto: CreateInvoiceDto = {
-      businessId,
-      invoiceNumber: extracted.invoiceNumber, // Optional - will be auto-generated if not provided
-      recipient: this.buildRecipientFromExtracted(extracted),
-      lineItems,
-      issuedDate: extracted.issuedDate
-        ? new Date(extracted.issuedDate)
-        : new Date(),
-      dueDate: extracted.dueDate
-        ? new Date(extracted.dueDate)
-        : this.getDefaultDueDate(),
-      description: extracted.description,
-      paymentTerms: extracted.paymentTerms,
-      currency: extracted.currency ?? 'TND',
-    };
-
-    // Create the invoice using the issuance service
-    return this.issuanceService.createDraftInvoice(
-      businessId,
-      databaseName,
-      createInvoiceDto,
-      userId
-    );
-  }
-
-  /**
-   * Build recipient DTO from extracted invoice data
-   */
-  private buildRecipientFromExtracted(
-    extracted: InvoiceExtractionResult
-  ): CreateInvoiceRecipientDto {
-    // If we have an email that looks like it could be from our platform,
-    // we'll mark it as EXTERNAL for now and let the resolution service handle it
-    if (extracted.recipientEmail) {
-      return {
-        type: InvoiceRecipientType.EXTERNAL,
-        email: extracted.recipientEmail,
-        displayName: extracted.recipientName ?? extracted.recipientEmail,
-      };
-    }
-
-    // Fallback to a generic external recipient
-    return {
-      type: InvoiceRecipientType.EXTERNAL,
-      email: 'unknown@example.com',
-      displayName: extracted.recipientName ?? 'Unknown Recipient',
-    };
-  }
-
-  /**
-   * Get default due date (30 days from now)
-   */
-  private getDefaultDueDate(): Date {
-    const date = new Date();
-    date.setDate(date.getDate() + 30);
     return date;
   }
 
