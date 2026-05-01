@@ -23,6 +23,7 @@ interface StripeSessionMetadata {
   issuerTenantDatabaseName?: string;
   payerUserId?: string;
   payerEmail?: string;
+  stripeConnectedAccountId?: string;
 }
 import {
   CreateInvoiceCheckoutSessionDto,
@@ -264,6 +265,10 @@ export class InvoicePaymentService {
       payerEmail: user.email,
       originalInvoiceCurrency: invoice.currency,
       originalInvoiceAmount: remainingAmount.toFixed(2),
+      // Store the connected account used so confirmPaymentStatus can retrieve the session correctly
+      ...(connectedAccountId
+        ? { stripeConnectedAccountId: connectedAccountId }
+        : {}),
     };
 
     const createCheckoutSession = async (
@@ -277,9 +282,22 @@ export class InvoicePaymentService {
         : undefined;
       const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
 
+      if (connectedAccountId) {
+        try {
+          // Ensure the business profile name is set to avoid checkout errors
+          await stripe.accounts.update(connectedAccountId, {
+            business_profile: { name: business.name ?? 'Accountia Business' },
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Could not auto-fix business name for account ${connectedAccountId}: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded' as never,
+          ui_mode: 'embedded_page' as never,
           mode: 'payment',
           redirect_on_completion: 'never',
           ...(paymentMethodConfigurationId
@@ -355,6 +373,14 @@ export class InvoicePaymentService {
     }
 
     const sessionObj = session as StripeCheckoutSession;
+
+    // Persist the connected account used so confirmPaymentStatus can reliably retrieve the session
+    if (connectedAccountId) {
+      await this.invoiceReceiptModel.updateOne(
+        { _id: receiptId },
+        { $set: { stripeConnectedAccountId: connectedAccountId } }
+      );
+    }
 
     if (!sessionObj.url || !sessionObj.id) {
       const clientSecret = sessionObj.client_secret as string | undefined;
@@ -485,10 +511,11 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    // Resolve the Stripe Connect account for the issuer business
-    const stripeConnectId = await this.resolveStripeAccount(
-      receipt.issuerBusinessId.toString()
-    );
+    // Resolve the Stripe Connect account: prefer the value stored directly on the receipt
+    // (set when the checkout session was created) — it reflects the exact account used.
+    const stripeConnectId =
+      receipt.stripeConnectedAccountId?.trim() ??
+      (await this.resolveStripeAccount(receipt.issuerBusinessId.toString()));
     const requestOptions = stripeConnectId
       ? { stripeAccount: stripeConnectId }
       : undefined;
@@ -634,10 +661,10 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    // Resolve the Stripe Connect account for the issuer business
-    const stripeConnectId = await this.resolveStripeAccount(
-      receipt.issuerBusinessId.toString()
-    );
+    // Prefer the connected account stored on the receipt (set at session creation time)
+    const stripeConnectId =
+      receipt.stripeConnectedAccountId?.trim() ??
+      (await this.resolveStripeAccount(receipt.issuerBusinessId.toString()));
     const requestOptions = stripeConnectId
       ? { stripeAccount: stripeConnectId }
       : undefined;
