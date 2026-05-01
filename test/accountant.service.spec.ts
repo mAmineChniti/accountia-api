@@ -7,21 +7,36 @@ import { type InternalCreateAccountingJobPayload } from '../src/accountant/dto';
 
 type KyInstance = ReturnType<typeof ky.create>;
 
+const mockHttpClient = {
+  post: jest.fn(),
+  get: jest.fn(),
+  delete: jest.fn(),
+};
+
 // Mock ky
-jest.mock('ky', () => ({
-  create: jest.fn().mockReturnValue({
-    post: jest.fn(),
-    get: jest.fn(),
-  }),
-}));
+jest.mock('ky', () => {
+  return {
+    __esModule: true,
+    default: {
+      create: jest.fn(() => mockHttpClient),
+    },
+    create: jest.fn(() => mockHttpClient),
+    HTTPError: class HTTPError extends Error {
+      response: unknown;
+      constructor(response: unknown) {
+        super('HTTPError');
+        this.response = response;
+      }
+    },
+  };
+});
 
 describe('AccountantService', () => {
   let service: AccountantService;
   let mockConfigService: { get: jest.Mock };
-  let mockHttpClient: jest.Mocked<KyInstance>;
 
   beforeEach(async () => {
-    jest.resetAllMocks();
+    jest.clearAllMocks();
     mockConfigService = {
       get: jest.fn((key: string, defaultValue?: unknown) => {
         if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
@@ -41,10 +56,6 @@ describe('AccountantService', () => {
     }).compile();
 
     service = module.get<AccountantService>(AccountantService);
-    // Access the private httpClient for mocking calls
-    mockHttpClient = (
-      service as unknown as { httpClient: jest.Mocked<KyInstance> }
-    ).httpClient;
   });
 
   it('should be defined', () => {
@@ -170,8 +181,13 @@ describe('AccountantService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(true);
+      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health/ready', {
+        timeout: 5000,
+        throwHttpErrors: false,
+      });
       expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
         timeout: 5000,
+        throwHttpErrors: false,
       });
     });
 
@@ -188,8 +204,13 @@ describe('AccountantService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(false);
+      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health/ready', {
+        timeout: 5000,
+        throwHttpErrors: false,
+      });
       expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
         timeout: 5000,
+        throwHttpErrors: false,
       });
     });
 
@@ -199,8 +220,9 @@ describe('AccountantService', () => {
       const result = await service.healthCheck();
 
       expect(result).toBe(false);
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
+      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health/ready', {
         timeout: 5000,
+        throwHttpErrors: false,
       });
     });
   });
