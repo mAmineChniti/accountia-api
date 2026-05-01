@@ -32,6 +32,9 @@ async function bootstrap() {
 
   app.useGlobalFilters(new ConflictExceptionFilter());
 
+  // global logging interceptor: logs incoming request and outgoing response
+  app.useGlobalInterceptors(new LoggingInterceptor());
+
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
       .setTitle('Accountia API')
