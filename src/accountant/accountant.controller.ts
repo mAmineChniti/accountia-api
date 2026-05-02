@@ -2,14 +2,14 @@ import {
   Controller,
   Post,
   Get,
-  Delete,
   Body,
   Param,
   Query,
   UseGuards,
   HttpCode,
   HttpStatus,
-  HttpException,
+  BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,23 +22,25 @@ import {
   ApiBody,
   ApiQuery,
   ApiParam,
-  ApiResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
 import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
 import { AccountantService } from './accountant.service';
-import { CreateAccountingJobDto } from './dto';
-import type { InternalCreateAccountingJobPayload } from './dto';
 import type { TenantContext } from '@/common/tenant/tenant.types';
 import type {
-  AccountingJobResponse,
-  AccountingJobStatus,
-  AccountingJobSummary,
+  ServiceHealthResponse,
   AccountingResults,
-  BusinessWorkResponse,
-  TaxSummaryResponse,
-} from './types';
+  TaxResultsResponse,
+  TaxPersistResponse,
+  CreateJobResponse,
+  JobSummary,
+  JobsListResponse,
+} from './types/accountant-response';
+import {
+  CreateAccountingJobDto,
+  InternalCreateAccountingJobPayload,
+} from './dto/create-job.dto';
 
 /**
  * Accountant Controller
@@ -100,7 +102,7 @@ export class AccountantController {
   ): Promise<{
     message: string;
     timestamp: string;
-    job: AccountingJobResponse;
+    job: CreateJobResponse;
   }> {
     const businessId = dto.businessId ?? tenantCtx.businessId;
     const payload: InternalCreateAccountingJobPayload = {
@@ -133,12 +135,6 @@ export class AccountantController {
     description: 'Business ID (required as query parameter for GET requests)',
   })
   @ApiQuery({
-    name: 'status',
-    type: String,
-    required: false,
-    description: 'Filter by status (pending, processing, completed, failed)',
-  })
-  @ApiQuery({
     name: 'limit',
     type: String,
     required: false,
@@ -157,36 +153,37 @@ export class AccountantController {
   async listJobs(
     @CurrentTenant() tenantCtx: TenantContext,
     @Query('businessId') businessId: string,
-    @Query('status') status?: string,
     @Query('limit') limit?: string
   ): Promise<{
     message: string;
     timestamp: string;
-    jobs: AccountingJobStatus[];
+    jobs: JobSummary[];
     total: number;
   }> {
-    const result = await this.accountantService.listBusinessJobs(
-      businessId || tenantCtx.businessId,
-      status,
-      limit
-    );
+    const result: JobsListResponse =
+      await this.accountantService.listBusinessJobs(
+        businessId || tenantCtx.businessId,
+        limit
+      );
     return {
       message: 'Accounting jobs retrieved successfully',
       timestamp: new Date().toISOString(),
       jobs: result.jobs,
-      total: result.total,
+      total: result.jobs ? result.jobs.length : 0,
     };
   }
 
   /**
-   * Get status of a specific accounting job
+   * Get job status or results
    */
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @Get('jobs/:taskId')
   @ApiOperation({
-    summary: 'Get job status',
-    description: 'Check the processing status of an accounting job',
+    summary: 'Get job status or results',
+    description:
+      'Returns job status while processing and full results when the job is completed',
   })
+  @ApiOkResponse({ description: 'Job status or full results' })
   @ApiParam({
     name: 'taskId',
     type: String,
@@ -195,82 +192,22 @@ export class AccountantController {
   @ApiQuery({
     name: 'businessId',
     type: String,
-    required: true,
-    description: 'Business ID (required as query parameter)',
-  })
-  @ApiOkResponse({
-    description: 'Job status retrieved',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        job: { type: 'object' },
-      },
-    },
-  })
-  async getJobStatus(
-    @Param('taskId') taskId: string,
-    @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string
-  ): Promise<{ message: string; timestamp: string; job: AccountingJobStatus }> {
-    const jobStatus = await this.accountantService.getJobStatus(
-      taskId,
-      businessId || tenantCtx.businessId
-    );
-    return {
-      message: 'Job status retrieved successfully',
-      timestamp: new Date().toISOString(),
-      job: jobStatus,
-    };
-  }
-
-  /**
-   * Get full results of a completed accounting job
-   * Includes journal entries, tax calculations, reports
-   */
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Get('jobs/:taskId/results')
-  @ApiOperation({
-    summary: 'Get job results',
+    required: false,
     description:
-      'Retrieve complete accounting results including journal entries, tax calculations, financial reports, and AI insights',
-  })
-  @ApiParam({
-    name: 'taskId',
-    type: String,
-    description: 'Job task ID',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID (required as query parameter)',
-  })
-  @ApiOkResponse({
-    description: 'Job results retrieved',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        results: { type: 'object' },
-      },
-    },
+      'Business ID (query param; falls back to tenant businessId when omitted)',
   })
   async getJobResults(
     @Param('taskId') taskId: string,
     @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string
+    @Query('businessId') businessId?: string
   ): Promise<{
     message: string;
     timestamp: string;
     results: AccountingResults;
   }> {
-    const results = await this.accountantService.getJobResults(
-      taskId,
-      businessId || tenantCtx.businessId
-    );
+    const id = businessId ?? tenantCtx.businessId;
+    const results = await this.accountantService.getJobResults(taskId, id);
+
     return {
       message: 'Job results retrieved successfully',
       timestamp: new Date().toISOString(),
@@ -279,361 +216,116 @@ export class AccountantController {
   }
 
   /**
-   * Cancel a pending or processing accounting job
+   * Get tax summary for a business and year
    */
   @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Delete('jobs/:taskId')
-  @ApiOperation({
-    summary: 'Cancel accounting job',
+  @Get('taxes/:year')
+  @ApiOperation({ summary: 'Get tax summary by business and year' })
+  @ApiParam({ name: 'year', type: Number })
+  @ApiQuery({
+    name: 'businessId',
+    type: String,
+    required: false,
     description:
-      'Cancel a pending or processing accounting job. Cannot cancel completed, failed, or already cancelled jobs.',
+      'Business ID (query param; falls back to tenant businessId when omitted)',
   })
-  @ApiParam({
-    name: 'taskId',
-    type: String,
-    description: 'Job task ID',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID (required as query parameter)',
-  })
-  @ApiOkResponse({
-    description: 'Job cancelled successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        result: {
-          type: 'object',
-          properties: {
-            taskId: { type: 'string' },
-            status: { type: 'string' },
-            message: { type: 'string' },
-            previousStatus: { type: 'string' },
-          },
-        },
-      },
-    },
-  })
-  async cancelJob(
-    @Param('taskId') taskId: string,
+  @ApiOkResponse({ description: 'Tax summary retrieved' })
+  async getTaxesByYear(
     @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string
-  ): Promise<{
-    message: string;
-    timestamp: string;
-    result: {
-      taskId: string;
-      status: string;
-      message: string;
-      previousStatus: string;
-    };
-  }> {
-    const result = await this.accountantService.cancelJob(
-      taskId,
-      businessId || tenantCtx.businessId
-    );
-    return {
-      message: 'Job cancelled successfully',
-      timestamp: new Date().toISOString(),
-      result,
-    };
-  }
-
-  /**
-   * Get accounting history for the business
-   */
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Get('history')
-  @ApiOperation({
-    summary: 'Get accounting history',
-    description: 'Get history of all accounting periods',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID (required as query parameter)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    type: String,
-    required: false,
-    description: 'Maximum number of results (1-100, default: 10)',
-  })
-  @ApiOkResponse({
-    description: 'Accounting history retrieved',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        businessId: { type: 'string' },
-        tasks: { type: 'array' },
-      },
-    },
-  })
-  async getHistory(
-    @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string,
-    @Query('limit') limit?: string
-  ): Promise<{
-    message: string;
-    timestamp: string;
-    businessId: string;
-    tasks: AccountingJobSummary[];
-  }> {
-    const history = await this.accountantService.getBusinessHistory(
-      businessId || tenantCtx.businessId,
-      limit
-    );
-    return {
-      message: 'Accounting history retrieved successfully',
-      timestamp: new Date().toISOString(),
-      businessId: history.businessId,
-      tasks: history.tasks,
-    };
-  }
-
-  /**
-   * Get comprehensive work log for the business
-   */
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Get('work')
-  @ApiOperation({
-    summary: 'Get work log',
-    description: 'Get detailed work log with optional date/status filters',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID (required as query parameter)',
-  })
-  @ApiQuery({
-    name: 'startDate',
-    type: String,
-    required: false,
-    description: 'Filter from date (ISO 8601)',
-  })
-  @ApiQuery({
-    name: 'endDate',
-    type: String,
-    required: false,
-    description: 'Filter to date (ISO 8601)',
-  })
-  @ApiQuery({
-    name: 'status',
-    type: String,
-    required: false,
-    description: 'Filter by status (pending, processing, completed, failed)',
-  })
-  @ApiOkResponse({
-    description: 'Work log retrieved',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        work: { type: 'object' },
-      },
-    },
-  })
-  async getWork(
-    @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('status') status?: string
-  ): Promise<{
-    message: string;
-    timestamp: string;
-    work: BusinessWorkResponse;
-  }> {
-    // Convert camelCase API params to snake_case for upstream service
-    const work = await this.accountantService.getBusinessWork(
-      businessId || tenantCtx.businessId,
-      startDate,
-      endDate,
-      status
-    );
-    return {
-      message: 'Work log retrieved successfully',
-      timestamp: new Date().toISOString(),
-      work,
-    };
-  }
-
-  // Tax endpoints: GET /accountant/taxes and POST /accountant/taxes/calculate
-  // Note: businessId is passed as a query parameter, not a path parameter
-
-  /**
-   * Get tax summary (accepts businessId as query param)
-   */
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Get('taxes')
-  @ApiOperation({
-    summary: 'Get tax summary',
-    description:
-      'Get persisted tax summary for a business (returns 404 if not found)',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID',
-  })
-  @ApiQuery({
-    name: 'year',
-    type: String,
-    required: false,
-    description: 'Tax year (defaults to current year)',
-  })
-  @ApiOkResponse({
-    description: 'Tax summary retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        taxes: { type: 'object' },
-      },
-    },
-  })
-  async getTaxes(
-    @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string,
-    @Query('year') year?: string
-  ): Promise<{
-    message: string;
-    timestamp: string;
-    taxes: TaxSummaryResponse;
-  }> {
-    const id = businessId || tenantCtx.businessId;
-    const taxes = await this.accountantService.getTaxSummary(id, year);
-    return {
-      message: 'Tax summary retrieved successfully',
-      timestamp: new Date().toISOString(),
-      taxes,
-    };
-  }
-
-  /**
-   * Calculate and persist tax summary for a given business and year (businessId as query param)
-   */
-  @UseGuards(JwtAuthGuard, TenantContextGuard)
-  @Post('taxes/calculate')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Calculate and persist tax summary',
-    description:
-      'Calculate taxes for a year and persist the result in the tenant DB',
-  })
-  @ApiQuery({
-    name: 'businessId',
-    type: String,
-    required: true,
-    description: 'Business ID',
-  })
-  @ApiQuery({
-    name: 'year',
-    type: String,
-    required: false,
-    description: 'Tax year (defaults to current year)',
-  })
-  @ApiCreatedResponse({
-    description: 'Tax calculated and persisted successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        result: { type: 'object' },
-      },
-    },
-  })
-  async calculateTaxes(
-    @CurrentTenant() tenantCtx: TenantContext,
-    @Query('businessId') businessId: string,
-    @Query('year') year?: string
-  ): Promise<{
-    message: string;
-    timestamp: string;
-    result:
-      | TaxSummaryResponse
-      | { message: string; businessId: string; year: number };
-  }> {
-    const id = businessId || tenantCtx.businessId;
-    const result = await this.accountantService.calculateTax(id, year);
-
-    return {
-      message: 'Tax calculation result',
-      timestamp: new Date().toISOString(),
-      result,
-    };
-  }
-
-  /**
-   * Health check - verify AI Accountant is available
-   */
-  @Get('health')
-  @ApiOperation({
-    summary: 'Health check',
-    description: 'Check if AI Accountant service is available',
-  })
-  @ApiOkResponse({
-    description: 'Health status - service available',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        status: { type: 'string' },
-        service: { type: 'string' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: HttpStatus.SERVICE_UNAVAILABLE,
-    description: 'Health status - service unavailable',
-    schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string' },
-        timestamp: { type: 'string' },
-        status: { type: 'string' },
-        service: { type: 'string' },
-      },
-    },
-  })
-  async healthCheck(): Promise<{
-    message: string;
-    timestamp: string;
-    status: 'available';
-    service: string;
-  }> {
-    const isHealthy = await this.accountantService.healthCheck();
-
-    if (!isHealthy) {
-      throw new HttpException(
-        {
-          message: 'AI Accountant service is unavailable',
-          timestamp: new Date().toISOString(),
-          status: 'unavailable',
-          service: 'ai-accountant',
-        },
-        HttpStatus.SERVICE_UNAVAILABLE
+    @Param('year') year: string,
+    @Query('businessId') businessId?: string
+  ): Promise<TaxResultsResponse> {
+    const parsedYear = Number(year);
+    if (
+      !Number.isInteger(parsedYear) ||
+      Number.isNaN(parsedYear) ||
+      parsedYear < 2000 ||
+      parsedYear > 2100
+    ) {
+      throw new BadRequestException(
+        'Year must be a valid integer between 2000 and 2100'
       );
     }
+    const id = businessId ?? tenantCtx.businessId;
+    return this.accountantService.getTaxResults(id, parsedYear);
+  }
 
-    return {
-      message: 'AI Accountant service is available',
-      timestamp: new Date().toISOString(),
-      status: 'available',
-      service: 'ai-accountant',
-    };
+  /**
+   * Calculate and persist tax summary for a business and year
+   */
+  @UseGuards(JwtAuthGuard, TenantContextGuard)
+  @Post('taxes/:year')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Calculate and persist tax summary' })
+  @ApiParam({ name: 'year', type: Number })
+  @ApiQuery({
+    name: 'businessId',
+    type: String,
+    required: false,
+    description:
+      'Business ID (query param; falls back to tenant businessId when omitted)',
+  })
+  @ApiCreatedResponse({ description: 'Tax calculation initiated/persisted' })
+  async calculateTaxesByYear(
+    @CurrentTenant() tenantCtx: TenantContext,
+    @Param('year') year: string,
+    @Query('businessId') businessId?: string
+  ): Promise<TaxPersistResponse> {
+    const parsedYear = Number(year);
+    if (
+      !Number.isInteger(parsedYear) ||
+      Number.isNaN(parsedYear) ||
+      parsedYear < 2000 ||
+      parsedYear > 2100
+    ) {
+      throw new BadRequestException(
+        'Year must be a valid integer between 2000 and 2100'
+      );
+    }
+    const id = businessId ?? tenantCtx.businessId;
+    return this.accountantService.calculateTaxes(id, parsedYear);
+  }
+
+  /**
+   * Get AI Accountant service health
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('health')
+  @ApiOperation({
+    summary: 'AI Accountant health',
+    description:
+      'Get service health and version information from AI Accountant',
+  })
+  @ApiOkResponse({
+    description: 'AI Accountant health status',
+    schema: {
+      type: 'object',
+      properties: {
+        service: { type: 'string' },
+        status: { type: 'string' },
+        timestamp: { type: 'string' },
+      },
+    },
+  })
+  async health(): Promise<{
+    service: string;
+    status: string;
+    timestamp?: string;
+    details?: ServiceHealthResponse;
+  }> {
+    try {
+      const data = await this.accountantService.healthCheck();
+      return {
+        service: 'ai-accountant',
+        status: data.status === 'ready' ? 'available' : data.status,
+        timestamp: data.timestamp,
+        details: data,
+      };
+    } catch (error) {
+      throw new ServiceUnavailableException({
+        service: 'ai-accountant',
+        message: (error as Error).message ?? 'AI Accountant unavailable',
+      });
+    }
   }
 }
