@@ -1,207 +1,142 @@
-import { Test, type TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import type ky from 'ky';
-import { AccountantService } from '../src/accountant/accountant.service';
-import { ServiceUnavailableException } from '@nestjs/common';
-import { type InternalCreateAccountingJobPayload } from '../src/accountant/dto';
+import { type ConfigService } from '@nestjs/config';
+import { ServiceUnavailableException, NotFoundException } from '@nestjs/common';
+import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto/create-job.dto';
 
-type KyInstance = ReturnType<typeof ky.create>;
+// Shared mocked ky instance used by the service under test
+const mockKyInstance: { post: jest.Mock; get: jest.Mock } = {
+  post: jest.fn(),
+  get: jest.fn(),
+};
 
-// Mock ky
+// Simple HTTPError mock that matches shape used by AccountantService
+class MockHTTPError extends Error {
+  response: unknown;
+  constructor(response: unknown) {
+    super('HTTPError');
+    this.name = 'MockHTTPError';
+    this.response = response;
+  }
+}
+
+// Mock the `ky` module before importing the service so the constructor's
+// call to `ky.create()` returns our `mockKyInstance`.
 jest.mock('ky', () => ({
-  create: jest.fn().mockReturnValue({
-    post: jest.fn(),
-    get: jest.fn(),
-  }),
+  __esModule: true,
+  default: { create: jest.fn(() => mockKyInstance) },
+  HTTPError: MockHTTPError,
 }));
 
-describe('AccountantService', () => {
-  let service: AccountantService;
-  let mockConfigService: { get: jest.Mock };
-  let mockHttpClient: jest.Mocked<KyInstance>;
+import { AccountantService } from '../src/accountant/accountant.service';
 
-  beforeEach(async () => {
-    jest.resetAllMocks();
-    mockConfigService = {
-      get: jest.fn((key: string, defaultValue?: unknown) => {
-        if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
-        if (key === 'AI_ACCOUNTANT_API_KEY') return 'test-api-key';
+describe('AccountantService', () => {
+  let configService: Partial<ConfigService>;
+  let svc: AccountantService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    configService = {
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'AI_ACCOUNTANT_URL') return 'http://localhost:8000';
+        if (key === 'AI_ACCOUNTANT_API_KEY') return 'test-key';
+        if (key === 'AI_ACCOUNTANT_TIMEOUT_MS') return 1000;
         return defaultValue;
-      }),
+      },
     };
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AccountantService,
-        {
-          provide: ConfigService,
-          useValue: mockConfigService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<AccountantService>(AccountantService);
-    // Access the private httpClient for mocking calls
-    mockHttpClient = (
-      service as unknown as { httpClient: jest.Mocked<KyInstance> }
-    ).httpClient;
+    svc = new AccountantService(configService as ConfigService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('createAccountingJob', () => {
-    it('should call the AI service and return job info', async () => {
-      const mockResponse = { taskId: 'job_123', status: 'pending' };
-      const mockPostResp = {
-        json: jest
-          .fn<Promise<{ taskId: string; status: string }>, []>()
-          .mockResolvedValue(mockResponse),
-      };
-      mockHttpClient.post.mockImplementation(
-        () => mockPostResp as unknown as ReturnType<KyInstance['post']>
-      );
-
-      const dto: InternalCreateAccountingJobPayload = {
-        businessId: 'b1',
-        periodStart: '2024-01-01',
-        periodEnd: '2024-01-31',
-      };
-      const result = await service.createAccountingJob(dto);
-
-      expect(mockHttpClient.post).toHaveBeenCalledWith(
-        'api/accounting/jobs',
-        expect.objectContaining({
-          json: dto,
-        })
-      );
-      expect(result).toEqual(mockResponse);
+  it('createAccountingJob - returns upstream response on success', async () => {
+    const expected = { jobId: 'abc123' };
+    mockKyInstance.post.mockResolvedValueOnce({
+      json: () => Promise.resolve(expected),
     });
 
-    it('should throw ServiceUnavailableException if API key is missing', async () => {
-      // Re-instantiate service without API key
-      mockConfigService.get.mockImplementation(
-        (key: string, defaultValue?: unknown) => {
-          if (key === 'AI_ACCOUNTANT_API_KEY') return '';
-          if (key === 'AI_ACCOUNTANT_URL') return 'http://test-ai:8000';
-          return defaultValue;
-        }
-      );
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          AccountantService,
-          { provide: ConfigService, useValue: mockConfigService },
-        ],
-      }).compile();
-      const disabledService = module.get<AccountantService>(AccountantService);
-
-      const payload: InternalCreateAccountingJobPayload = {
-        businessId: 'b1',
-        periodStart: '2024-01-01',
-        periodEnd: '2024-01-31',
-      };
-
-      await expect(
-        disabledService.createAccountingJob(payload)
-      ).rejects.toThrow(ServiceUnavailableException);
+    const dto: InternalCreateAccountingJobPayload = {
+      businessId: 'b1',
+      periodStart: '2024-01-01T00:00:00Z',
+      periodEnd: '2024-01-31T23:59:59Z',
+    };
+    const res = await svc.createAccountingJob(dto);
+    expect(res).toEqual(expected);
+    expect(mockKyInstance.post).toHaveBeenCalledWith('api/accounting/jobs', {
+      json: dto,
     });
   });
 
-  describe('getJobStatus', () => {
-    it('should return the status of a job', async () => {
-      const mockStatus = { taskId: 'job_123', status: 'completed' };
-      const mockGetResp = {
-        json: jest
-          .fn<Promise<{ taskId: string; status: string }>, []>()
-          .mockResolvedValue(mockStatus),
-      };
-      mockHttpClient.get.mockImplementation(
-        () => mockGetResp as unknown as ReturnType<KyInstance['get']>
-      );
+  it('getJobResults - returns result on success', async () => {
+    const expected = { taskId: 't1', status: 'completed' };
+    mockKyInstance.get.mockResolvedValueOnce({
+      json: () => Promise.resolve(expected),
+    });
 
-      const result = await service.getJobStatus('job_123', 'b1');
-
-      expect(mockHttpClient.get).toHaveBeenCalledWith(
-        'api/accounting/jobs/job_123',
-        expect.objectContaining({
-          searchParams: { businessId: 'b1' },
-        })
-      );
-      expect(result).toEqual(mockStatus);
+    const res = await svc.getJobResults('t1', 'b1');
+    expect(res).toEqual(expected);
+    expect(mockKyInstance.get).toHaveBeenCalledWith('api/accounting/jobs/t1', {
+      searchParams: { businessId: 'b1' },
     });
   });
 
-  describe('getTaxSummary', () => {
-    it('should return tax summary for a year', async () => {
-      const mockTaxes = { vat: 1000, income_tax: 2000 };
-      const mockGetTaxesResp = {
-        json: jest
-          .fn<Promise<Record<string, number>>, []>()
-          .mockResolvedValue(mockTaxes),
-      };
-      mockHttpClient.get.mockImplementation(
-        () => mockGetTaxesResp as unknown as ReturnType<KyInstance['get']>
-      );
-
-      const result = await service.getTaxSummary('b1', '2024');
-
-      expect(mockHttpClient.get).toHaveBeenCalledWith(
-        'api/accounting/business/b1/taxes',
-        expect.objectContaining({
-          searchParams: { year: '2024' },
-        })
-      );
-      expect(result).toEqual(mockTaxes);
+  it('healthCheck - returns health response', async () => {
+    const expected = { status: 'ok' };
+    mockKyInstance.get.mockResolvedValueOnce({
+      json: () => Promise.resolve(expected),
     });
+
+    const res = await svc.healthCheck();
+    expect(res).toEqual(expected);
+    expect(mockKyInstance.get).toHaveBeenCalledWith('api/health');
   });
 
-  describe('healthCheck', () => {
-    it('should return true if AI service is healthy', async () => {
-      const mockHealthResp = {
-        json: jest
-          .fn<Promise<{ status: string }>, []>()
-          .mockResolvedValue({ status: 'healthy' }),
-      };
-      mockHttpClient.get.mockImplementation(
-        () => mockHealthResp as unknown as ReturnType<KyInstance['get']>
-      );
-
-      const result = await service.healthCheck();
-
-      expect(result).toBe(true);
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
-        timeout: 5000,
-      });
+  it('createAccountingJob - maps 404 to NotFoundException', async () => {
+    const err = new MockHTTPError({
+      status: 404,
+      headers: {
+        get: (h: string) => (h === 'x-correlation-id' ? 'cid-1' : undefined),
+      },
     });
+    mockKyInstance.post.mockRejectedValueOnce(err);
+    const payload: InternalCreateAccountingJobPayload = {
+      businessId: 'b1',
+      periodStart: '2024-01-01T00:00:00Z',
+      periodEnd: '2024-01-31T23:59:59Z',
+    };
 
-    it('should return false if AI service reports non-healthy status', async () => {
-      const mockHealthResp = {
-        json: jest
-          .fn<Promise<{ status: string }>, []>()
-          .mockResolvedValue({ status: 'unavailable' }),
-      };
-      mockHttpClient.get.mockImplementation(
-        () => mockHealthResp as unknown as ReturnType<KyInstance['get']>
-      );
+    await expect(svc.createAccountingJob(payload)).rejects.toBeInstanceOf(
+      NotFoundException
+    );
+  });
 
-      const result = await service.healthCheck();
+  it('createAccountingJob - maps TimeoutError to ServiceUnavailableException', async () => {
+    const timeoutErr = new Error('timeout');
+    timeoutErr.name = 'TimeoutError';
+    mockKyInstance.post.mockRejectedValueOnce(timeoutErr);
 
-      expect(result).toBe(false);
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
-        timeout: 5000,
-      });
-    });
+    const payload: InternalCreateAccountingJobPayload = {
+      businessId: 'b1',
+      periodStart: '2024-01-01T00:00:00Z',
+      periodEnd: '2024-01-31T23:59:59Z',
+    };
 
-    it('should return false if AI service is down', async () => {
-      mockHttpClient.get.mockRejectedValue(new Error('Down'));
+    await expect(svc.createAccountingJob(payload)).rejects.toBeInstanceOf(
+      ServiceUnavailableException
+    );
+  });
 
-      const result = await service.healthCheck();
+  it('ensureEnabled - methods throw when API key missing', async () => {
+    const cfgNoKey: Partial<ConfigService> = {
+      get: (k: string, d?: unknown) => {
+        if (k === 'AI_ACCOUNTANT_API_KEY') return '';
+        if (k === 'AI_ACCOUNTANT_TIMEOUT_MS') return 1000;
+        if (k === 'AI_ACCOUNTANT_URL') return 'http://localhost:8000';
+        return d;
+      },
+    };
 
-      expect(result).toBe(false);
-      expect(mockHttpClient.get).toHaveBeenCalledWith('api/health', {
-        timeout: 5000,
-      });
-    });
+    const svcNoKey = new AccountantService(cfgNoKey as ConfigService);
+    await expect(svcNoKey.healthCheck()).rejects.toBeInstanceOf(
+      ServiceUnavailableException
+    );
   });
 });

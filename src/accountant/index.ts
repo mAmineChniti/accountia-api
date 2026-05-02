@@ -3,14 +3,16 @@ export { AccountantController } from './accountant.controller';
 export { AccountantService } from './accountant.service';
 
 // DTOs
-export { CreateAccountingJobDto } from './dto';
-export type { InternalCreateAccountingJobPayload } from './dto';
+export { CreateAccountingJobDto } from './dto/create-job.dto';
+export type { InternalCreateAccountingJobPayload } from './dto/create-job.dto';
 
 // Types
 export type {
-  AccountingJobResponse,
-  AccountingJobStatus,
+  CreateJobResponse,
+  JobSummary,
+  JobsListResponse,
   AccountingResults,
-  AccountingJobSummary,
-  BusinessJobsResponse,
-} from './types';
+  TaxPersistResponse,
+  TaxResultsResponse,
+  ServiceHealthResponse,
+} from './types/accountant-response';
