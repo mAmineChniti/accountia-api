@@ -15,14 +15,14 @@ import { InvoicesModule } from '@/invoices/invoices.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AccountantModule } from '@/accountant/accountant.module';
 import { AnalyticsModule } from '@/analytics/analytics.module';
-import { ClientPortalModule } from './client-portal/client-portal.module';
-import { CollectionsModule } from './collections/collections.module';
-import { CommentsModule } from './comments/comments.module';
-import { ExpensesModule } from './expenses/expenses.module';
-import { PurchaseOrdersModule } from './purchase-orders/purchase-orders.module';
-import { RecurringInvoicesModule } from './recurring-invoices/recurring-invoices.module';
-import { ReportsModule } from './reports/reports.module';
-import { VendorsModule } from './vendors/vendors.module';
+import { ClientPortalModule } from '@/client-portal/client-portal.module';
+import { CollectionsModule } from '@/collections/collections.module';
+import { CommentsModule } from '@/comments/comments.module';
+import { ExpensesModule } from '@/expenses/expenses.module';
+import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
+import { RecurringInvoicesModule } from '@/recurring-invoices/recurring-invoices.module';
+import { ReportsModule } from '@/reports/reports.module';
+import { VendorsModule } from '@/vendors/vendors.module';
 
 @Module({
   imports: [
