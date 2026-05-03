@@ -15,7 +15,6 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { type Multer } from 'multer';
 import {
   ApiTags,
   ApiOperation,
@@ -378,7 +377,7 @@ export class ProductsController {
     description: 'Business identifier for tenant resolution',
   })
   async importProducts(
-    @UploadedFile() file: Multer.File,
+    @UploadedFile() file: Express.Multer.File,
     @CurrentTenant() tenant: TenantContext,
     @Query('businessId') businessId: string
   ): Promise<{ imported: number; failed: number; errors: string[] }> {
@@ -445,7 +444,7 @@ export class ProductsController {
     description: 'Business identifier for tenant resolution',
   })
   async importProductFromDocument(
-    @UploadedFile() file: Multer.File,
+    @UploadedFile() file: Express.Multer.File,
     @CurrentTenant() tenant: TenantContext,
     @Query('businessId') businessId: string
   ): Promise<ProductResponseDto> {
