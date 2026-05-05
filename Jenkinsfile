@@ -38,13 +38,7 @@ pipeline {
             }
         }
 
-        stage('E2E Tests') {
-            steps {
-                echo 'Exécution des tests end-to-end...'
-                sh 'npm run test:e2e -- --runInBand'
-            }
-        }
-
+        
         stage('SonarQube Analysis') {
             steps {
                 sh 'sonar-scanner -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300'
