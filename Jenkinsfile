@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs 'node'
-    }
-
     environment {
         DOCKER_IMAGE = 'mAmineChniti/accountia-api'
         IMAGE_TAG = '1.0'
