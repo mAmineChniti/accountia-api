@@ -10,22 +10,22 @@ import {
   IsBoolean,
   MinLength,
   Matches,
-} from "class-validator";
-import { ApiPropertyOptional, ApiProperty } from "@nestjs/swagger";
-import { Type, Transform } from "class-transformer";
-import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
+} from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { Type, Transform } from 'class-transformer';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
 import {
   InvoiceRecipientType,
   RecipientResolutionStatus,
-} from "@/invoices/enums/invoice-recipient.enum";
+} from '@/invoices/enums/invoice-recipient.enum';
 
 /**
  * Helper to convert MongoDB ObjectId to string
  */
 const ObjectIdToString = () =>
   Transform(({ value }: { value: unknown }) => {
-    if (typeof value === "string") return value;
-    if (value && typeof value === "object" && "toString" in value) {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object' && 'toString' in value) {
       return (value as { toString(): string }).toString();
     }
     return value;
@@ -37,8 +37,8 @@ const ObjectIdToString = () =>
 const TransformId = () =>
   Transform(({ obj }: { obj: Record<string, unknown> }) => {
     const id = obj._id ?? obj.id;
-    if (typeof id === "string") return id;
-    if (id && typeof id === "object" && "toString" in id) {
+    if (typeof id === 'string') return id;
+    if (id && typeof id === 'object' && 'toString' in id) {
       return (id as { toString(): string }).toString();
     }
     return id;
@@ -103,7 +103,7 @@ export class CreateInvoiceRecipientDto {
 
 export class CreateInvoiceDto {
   @ApiPropertyOptional({
-    description: "Tenant businessId used to resolve current business context.",
+    description: 'Tenant businessId used to resolve current business context.',
     type: String,
   })
   @IsOptional()
@@ -146,7 +146,7 @@ export class CreateInvoiceDto {
 
 export class UpdateInvoiceDto {
   @ApiPropertyOptional({
-    description: "Tenant businessId used to resolve current business context.",
+    description: 'Tenant businessId used to resolve current business context.',
     type: String,
   })
   @IsOptional()
@@ -172,7 +172,7 @@ export class UpdateInvoiceDto {
  */
 export class TransitionInvoiceStateDto {
   @ApiPropertyOptional({
-    description: "Tenant businessId used to resolve current business context.",
+    description: 'Tenant businessId used to resolve current business context.',
     type: String,
   })
   @IsOptional()
@@ -396,14 +396,14 @@ export class InvoiceListResponseDto {
   @IsNumber()
   @ApiProperty({
     description:
-      "Actual total count of ALL invoices for this business (unfiltered)",
+      'Actual total count of ALL invoices for this business (unfiltered)',
     example: 15,
   })
   total!: number;
 
   @IsNumber()
   @ApiProperty({
-    description: "Count of invoices matching the applied filters",
+    description: 'Count of invoices matching the applied filters',
     example: 5,
   })
   filteredTotal!: number;
@@ -426,14 +426,14 @@ export class InvoiceReceiptListResponseDto {
 
   @IsNumber()
   @ApiProperty({
-    description: "Actual total count of ALL invoices received (unfiltered)",
+    description: 'Actual total count of ALL invoices received (unfiltered)',
     example: 12,
   })
   total!: number;
 
   @IsNumber()
   @ApiProperty({
-    description: "Count of invoices matching the applied filters",
+    description: 'Count of invoices matching the applied filters',
     example: 4,
   })
   filteredTotal!: number;

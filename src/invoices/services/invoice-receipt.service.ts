@@ -3,18 +3,18 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
-} from "@nestjs/common";
-import { InjectModel, InjectConnection } from "@nestjs/mongoose";
-import { Model, Connection } from "mongoose";
-import { InvoiceReceipt } from "@/invoices/schemas/invoice-receipt.schema";
-import { Invoice, InvoiceSchema } from "@/invoices/schemas/invoice.schema";
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Model, Connection } from 'mongoose';
+import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
+import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
 import {
   InvoiceReceiptResponseDto,
   InvoiceReceiptListResponseDto,
   InvoiceResponseDto,
-} from "@/invoices/dto/invoice.dto";
-import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
-import { TenantConnectionService } from "@/common/tenant/tenant-connection.service";
+} from '@/invoices/dto/invoice.dto';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
 
 /**
  * InvoiceReceiptService
@@ -38,7 +38,7 @@ export class InvoiceReceiptService {
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectModel(Invoice.name) private invoiceModel: Model<Invoice>,
     @InjectConnection() private connection: Connection,
-    private tenantConnectionService: TenantConnectionService,
+    private tenantConnectionService: TenantConnectionService
   ) {}
 
   /**
@@ -63,11 +63,11 @@ export class InvoiceReceiptService {
     recipientBusinessId: string,
     page: number,
     limit: number,
-    filters?: Record<string, unknown>,
+    filters?: Record<string, unknown>
   ): Promise<InvoiceReceiptListResponseDto> {
     const skip = (page - 1) * limit;
     const statusFilter =
-      filters?.status && typeof filters.status === "string"
+      filters?.status && typeof filters.status === 'string'
         ? { invoiceStatus: filters.status }
         : {};
 
@@ -83,15 +83,15 @@ export class InvoiceReceiptService {
         recipientBusinessId,
       }),
       this.invoiceReceiptModel.countDocuments(
-        Object.assign({ recipientBusinessId }, statusFilter),
+        Object.assign({ recipientBusinessId }, statusFilter)
       ),
     ]);
 
     return {
       receipts: receipts.map((receipt) =>
         this.mapReceiptToListResponse(
-          receipt as unknown as Record<string, unknown>,
-        ),
+          receipt as unknown as Record<string, unknown>
+        )
       ),
       total,
       filteredTotal,
@@ -117,12 +117,12 @@ export class InvoiceReceiptService {
     email: string,
     page: number,
     limit: number,
-    filters?: Record<string, unknown>,
+    filters?: Record<string, unknown>
   ): Promise<InvoiceReceiptListResponseDto> {
     const normalizedEmail = this.normalizeEmail(email);
     const skip = (page - 1) * limit;
     const statusFilter =
-      filters?.status && typeof filters.status === "string"
+      filters?.status && typeof filters.status === 'string'
         ? { invoiceStatus: filters.status }
         : {};
 
@@ -140,15 +140,15 @@ export class InvoiceReceiptService {
         .exec(),
       this.invoiceReceiptModel.countDocuments(userOrEmailFilter),
       this.invoiceReceiptModel.countDocuments(
-        Object.assign({}, userOrEmailFilter, statusFilter),
+        Object.assign({}, userOrEmailFilter, statusFilter)
       ),
     ]);
 
     return {
       receipts: receipts.map((receipt) =>
         this.mapReceiptToListResponse(
-          receipt as unknown as Record<string, unknown>,
-        ),
+          receipt as unknown as Record<string, unknown>
+        )
       ),
       total,
       filteredTotal,
@@ -173,20 +173,20 @@ export class InvoiceReceiptService {
     receiptId: string,
     recipientBusinessId?: string,
     recipientUserId?: string,
-    recipientEmail?: string,
+    recipientEmail?: string
   ): Promise<InvoiceResponseDto> {
     // Find the receipt
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
 
     if (!receipt) {
-      throw new NotFoundException("Invoice not found");
+      throw new NotFoundException('Invoice not found');
     }
 
     // Check staleness: Receipt should be synced recently
     const lastSyncAge = Date.now() - receipt.lastSyncedAt.getTime();
     if (lastSyncAge > this.SYNC_STALENESS_MS) {
       this.logger.warn(
-        `Receipt ${receiptId} is stale (${Math.round(lastSyncAge / 1000)}s old). Using cached receipt status.`,
+        `Receipt ${receiptId} is stale (${Math.round(lastSyncAge / 1000)}s old). Using cached receipt status.`
       );
     }
 
@@ -207,7 +207,7 @@ export class InvoiceReceiptService {
     } else if (recipientEmail) {
       const normalizedEmail = this.normalizeEmail(recipientEmail);
       const receiptNormalizedEmail = this.normalizeEmail(
-        receipt.recipientEmail,
+        receipt.recipientEmail
       );
 
       // Allow access ONLY if:
@@ -228,16 +228,16 @@ export class InvoiceReceiptService {
       ) {
         // DENY: External recipient (email-only) without platform identity
         this.logger.warn(
-          `External recipient ${recipientEmail} attempted direct access to unresolved invoice ${receiptId}`,
+          `External recipient ${recipientEmail} attempted direct access to unresolved invoice ${receiptId}`
         );
         throw new ForbiddenException(
-          "External recipients must verify their email and create a platform account before accessing invoices.",
+          'External recipients must verify their email and create a platform account before accessing invoices.'
         );
       }
     }
 
     if (!hasAccess) {
-      throw new ForbiddenException("You do not have access to this invoice");
+      throw new ForbiddenException('You do not have access to this invoice');
     }
 
     // Fetch the full invoice from issuer's tenant database
@@ -250,7 +250,7 @@ export class InvoiceReceiptService {
         const issuerInvoiceModel =
           this.tenantConnectionService.getTenantModel<Invoice>({
             databaseName: receipt.issuerTenantDatabaseName,
-            modelName: "Invoice",
+            modelName: 'Invoice',
             schema: InvoiceSchema,
           });
         invoice = await issuerInvoiceModel.findById(receipt.invoiceId).exec();
@@ -260,16 +260,16 @@ export class InvoiceReceiptService {
       }
     } catch (error) {
       this.logger.error(
-        `Failed to fetch invoice ${receipt.invoiceId} from issuer ${receipt.issuerTenantDatabaseName}: ${error}`,
+        `Failed to fetch invoice ${receipt.invoiceId} from issuer ${receipt.issuerTenantDatabaseName}: ${error}`
       );
       throw new NotFoundException(
-        "Invoice not found in issuer database (sync failure)",
+        'Invoice not found in issuer database (sync failure)'
       );
     }
 
     if (invoice === null || invoice === undefined) {
       throw new NotFoundException(
-        "Invoice has been deleted or is no longer available",
+        'Invoice has been deleted or is no longer available'
       );
     }
 
@@ -281,7 +281,7 @@ export class InvoiceReceiptService {
           {
             recipientViewed: true,
             recipientViewedAt: new Date(),
-          },
+          }
         )
         .catch((error) => {
           this.logger.error(`Failed to mark receipt as viewed: ${error}`);
@@ -295,7 +295,7 @@ export class InvoiceReceiptService {
    * Map InvoiceReceipt to list response (summary view)
    */
   private mapReceiptToListResponse(
-    receipt: Record<string, unknown>,
+    receipt: Record<string, unknown>
   ): InvoiceReceiptResponseDto {
     const receiptId = receipt._id;
     const invoiceId = receipt.invoiceId;
@@ -308,22 +308,22 @@ export class InvoiceReceiptService {
     const createdAt = receipt.createdAt as Date;
 
     const id =
-      receiptId && typeof receiptId === "object" && "toString" in receiptId
+      receiptId && typeof receiptId === 'object' && 'toString' in receiptId
         ? (receiptId as { toString(): string }).toString()
         : String(receiptId);
     const invId =
-      invoiceId && typeof invoiceId === "object" && "toString" in invoiceId
+      invoiceId && typeof invoiceId === 'object' && 'toString' in invoiceId
         ? (invoiceId as { toString(): string }).toString()
         : String(invoiceId);
     const issuerBizIdStr =
       issuerBusinessId &&
-      typeof issuerBusinessId === "object" &&
-      "toString" in issuerBusinessId
+      typeof issuerBusinessId === 'object' &&
+      'toString' in issuerBusinessId
         ? (issuerBusinessId as { toString(): string }).toString()
         : String(issuerBusinessId);
 
     const invoiceStatusStr =
-      typeof receipt.invoiceStatus === "string"
+      typeof receipt.invoiceStatus === 'string'
         ? (receipt.invoiceStatus as InvoiceStatus)
         : (InvoiceStatus.DRAFT as InvoiceStatus);
     const createdAtDate = createdAt instanceof Date ? createdAt : new Date();
@@ -351,10 +351,10 @@ export class InvoiceReceiptService {
    * Safely extract and convert ObjectId to string
    */
   private objectIdToString(value: unknown): string {
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       return value;
     }
-    if (value && typeof value === "object" && "toString" in value) {
+    if (value && typeof value === 'object' && 'toString' in value) {
       return (value as { toString(): string }).toString();
     }
     return String(value);

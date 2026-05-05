@@ -1,7 +1,7 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
 
-@Schema({ collection: "businesses", timestamps: true })
+@Schema({ collection: 'businesses', timestamps: true })
 export class Business extends Document {
   @Prop({ required: true })
   name: string;
@@ -23,10 +23,10 @@ export class Business extends Document {
 
   @Prop({
     type: String,
-    enum: ["pending", "approved", "rejected", "suspended"],
-    default: "pending",
+    enum: ['pending', 'approved', 'rejected', 'suspended'],
+    default: 'pending',
   })
-  status: "pending" | "approved" | "rejected" | "suspended";
+  status: 'pending' | 'approved' | 'rejected' | 'suspended';
 
   @Prop()
   stripeConnectId?: string; // Stripe Connect account ID for receiving payments

@@ -1,16 +1,16 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectConnection } from "@nestjs/mongoose";
-import type { Connection } from "mongoose";
-import * as tf from "@tensorflow/tfjs-node";
-import { ObjectId } from "mongodb";
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectConnection } from '@nestjs/mongoose';
+import type { Connection } from 'mongoose';
+import * as tf from '@tensorflow/tfjs-node';
+import { ObjectId } from 'mongodb';
 import {
   MonthlyDataPointDto,
   TimeSeriesDataDto,
-} from "@/business/dto/business-statistics.dto";
-import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
-import { Invoice } from "@/invoices/schemas/invoice.schema";
-import { Product } from "@/products/schemas/product.schema";
-import { CacheService } from "@/redis/cache.service";
+} from '@/business/dto/business-statistics.dto';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { Product } from '@/products/schemas/product.schema';
+import { CacheService } from '@/redis/cache.service';
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ export class TensorflowPredictionService {
 
   constructor(
     @InjectConnection() private readonly connection: Connection,
-    private readonly cacheService: CacheService,
+    private readonly cacheService: CacheService
   ) {}
 
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ export class TensorflowPredictionService {
   async forecastBusinessMetrics(
     businessId: string,
     databaseName: string,
-    horizonMonths: number,
+    horizonMonths: number
   ): Promise<BusinessForecastResult> {
     const cacheKey = `tf:forecast:${businessId}:${databaseName}:${horizonMonths}`;
 
@@ -85,7 +85,7 @@ export class TensorflowPredictionService {
 
     // ── 1. Fetch real invoices (ONLY PAID/PARTIAL = real revenue) ─────────────
     const invoices = await tenantDb
-      .collection("invoices")
+      .collection('invoices')
       .find<Invoice>({
         $or: [
           { issuerBusinessId: new ObjectId(businessId) },
@@ -99,7 +99,7 @@ export class TensorflowPredictionService {
     // ── 2. Fetch real products for cost lookup ───────────────────────────────
 
     const products = await tenantDb
-      .collection("products")
+      .collection('products')
       // eslint-disable-next-line unicorn/no-array-callback-reference
       .find<Product>({
         $or: [
@@ -183,7 +183,7 @@ export class TensorflowPredictionService {
    */
   private buildMonthlyTimeSeries(
     invoices: Invoice[],
-    productCostMap: Map<string, number>,
+    productCostMap: Map<string, number>
   ): Map<string, MonthlyAggregate> {
     const monthly = new Map<string, MonthlyAggregate>();
 
@@ -212,7 +212,7 @@ export class TensorflowPredictionService {
         const lineRevenue =
           (line.amount ?? line.quantity * line.unitPrice) * paymentRatio;
         const unitCost =
-          productCostMap.get(line.productId?.toString() ?? "") ?? 0;
+          productCostMap.get(line.productId?.toString() ?? '') ?? 0;
         const lineCogs = line.quantity * unitCost * paymentRatio;
 
         monthRevenue += lineRevenue;
@@ -257,7 +257,7 @@ export class TensorflowPredictionService {
     if (Number.isNaN(d.getTime())) return undefined;
     const year = d.getFullYear();
     const month = d.getMonth() + 1;
-    return `${year}-${String(month).padStart(2, "0")}`;
+    return `${year}-${String(month).padStart(2, '0')}`;
   }
 
   // ─── Forecasting ────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ export class TensorflowPredictionService {
    */
   async forecastMetric(
     historical: MonthlyDataPointDto[],
-    horizonMonths: number,
+    horizonMonths: number
   ): Promise<MonthlyDataPointDto[]> {
     if (historical.length === 0 || horizonMonths <= 0) {
       return [];
@@ -283,7 +283,7 @@ export class TensorflowPredictionService {
       predictedValues = await this.tfPredict(values, horizonMonths);
     } else {
       this.logger.warn(
-        `Insufficient data (${values.length} points) for TF model, using linear extrapolation`,
+        `Insufficient data (${values.length} points) for TF model, using linear extrapolation`
       );
       predictedValues = this.linearExtrapolation(values, horizonMonths);
     }
@@ -302,7 +302,7 @@ export class TensorflowPredictionService {
    */
   private async tfPredict(
     values: number[],
-    horizonMonths: number,
+    horizonMonths: number
   ): Promise<number[]> {
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
@@ -369,26 +369,26 @@ export class TensorflowPredictionService {
       tf.layers.dense({
         inputShape: [inputSize],
         units: 16,
-        activation: "relu",
-      }),
+        activation: 'relu',
+      })
     );
 
     model.add(
       tf.layers.dense({
         units: 8,
-        activation: "relu",
-      }),
+        activation: 'relu',
+      })
     );
 
     model.add(
       tf.layers.dense({
         units: 1,
-      }),
+      })
     );
 
     model.compile({
       optimizer: tf.train.adam(LEARNING_RATE),
-      loss: "meanSquaredError",
+      loss: 'meanSquaredError',
     });
 
     return model;
@@ -433,7 +433,7 @@ export class TensorflowPredictionService {
   // ─── Date Helpers ──────────────────────────────────────────────────────────
 
   private addMonths(isoMonth: string, months: number): string {
-    const [yearStr, monthStr] = isoMonth.split("-");
+    const [yearStr, monthStr] = isoMonth.split('-');
     const year = Number.parseInt(yearStr, 10);
     const month = Number.parseInt(monthStr, 10);
 
@@ -441,6 +441,6 @@ export class TensorflowPredictionService {
     const newYear = Math.floor(totalMonths / 12) + 1;
     const newMonth = (totalMonths % 12) + 1;
 
-    return `${newYear}-${String(newMonth).padStart(2, "0")}`;
+    return `${newYear}-${String(newMonth).padStart(2, '0')}`;
   }
 }

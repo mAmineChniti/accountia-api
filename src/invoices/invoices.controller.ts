@@ -17,7 +17,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
-} from "@nestjs/common";
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -31,15 +31,15 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
-} from "@nestjs/swagger";
-import { FileInterceptor } from "@nestjs/platform-express";
-import type { Request, Response } from "express";
+} from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Response } from 'express';
 import {
   InvoiceIssuanceService,
   InvoiceReceiptService,
   InvoiceImportService,
   InvoicePaymentService,
-} from "@/invoices/services";
+} from '@/invoices/services';
 import {
   CreateInvoiceDto,
   CreateInvoiceCheckoutSessionDto,
@@ -50,23 +50,23 @@ import {
   InvoiceResponseDto,
   InvoiceListResponseDto,
   InvoiceReceiptListResponseDto,
-} from "@/invoices/dto/invoice.dto";
-import { BulkImportInvoicesResponseDto } from "@/invoices/dto/invoice-import.dto";
-import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
-import { CurrentTenant } from "@/common/tenant/current-tenant.decorator";
-import { CurrentUser } from "@/auth/decorators/current-user.decorator";
-import { TenantContextGuard } from "@/common/tenant/tenant-context.guard";
+} from '@/invoices/dto/invoice.dto';
+import { BulkImportInvoicesResponseDto } from '@/invoices/dto/invoice-import.dto';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
+import { CurrentUser } from '@/auth/decorators/current-user.decorator';
+import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
 import {
   BusinessRolesGuard,
   BusinessRoles,
-} from "@/business/guards/business-roles.guard";
-import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
-import type { TenantContext } from "@/common/tenant/tenant.types";
-import type { UserPayload } from "@/auth/types/auth.types";
+} from '@/business/guards/business-roles.guard';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import type { TenantContext } from '@/common/tenant/tenant.types';
+import type { UserPayload } from '@/auth/types/auth.types';
 
-@ApiTags("Invoices")
+@ApiTags('Invoices')
 @ApiBearerAuth()
-@Controller("invoices")
+@Controller('invoices')
 export class InvoicesController {
   private readonly logger = new Logger(InvoicesController.name);
 
@@ -74,7 +74,7 @@ export class InvoicesController {
     private readonly issuanceService: InvoiceIssuanceService,
     private readonly receiptService: InvoiceReceiptService,
     private readonly importService: InvoiceImportService,
-    private readonly paymentService: InvoicePaymentService,
+    private readonly paymentService: InvoicePaymentService
   ) {}
 
   /**
@@ -92,209 +92,209 @@ export class InvoicesController {
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: "[TENANT DB] Create a new invoice (draft)",
+    summary: '[TENANT DB] Create a new invoice (draft)',
     description:
-      "Create a new invoice in DRAFT state within the business tenant database. Invoice becomes visible to recipient when transitioned to ISSUED. " +
-      "Include businessId in the request body to resolve tenant context. " +
-      "Data is stored in: Tenant-specific MongoDB database.",
+      'Create a new invoice in DRAFT state within the business tenant database. Invoice becomes visible to recipient when transitioned to ISSUED. ' +
+      'Include businessId in the request body to resolve tenant context. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiBody({
     description:
-      "Create invoice payload with businessId to resolve tenant context.",
+      'Create invoice payload with businessId to resolve tenant context.',
     type: CreateInvoiceDto,
   })
   @ApiCreatedResponse({
-    description: "Invoice created successfully in tenant database",
+    description: 'Invoice created successfully in tenant database',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
-    description: "Invalid input or duplicate invoice number",
+    description: 'Invalid input or duplicate invoice number',
   })
   async createInvoice(
     @Body() dto: CreateInvoiceDto,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UserPayload
   ): Promise<InvoiceResponseDto> {
     return await this.issuanceService.createDraftInvoice(
       tenant.businessId,
       tenant.databaseName,
       dto,
-      user.id,
+      user.id
     );
   }
 
-  @Get("issued")
+  @Get('issued')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: "[TENANT DB] List invoices issued by this business",
+    summary: '[TENANT DB] List invoices issued by this business',
     description:
-      "Retrieve all invoices created and managed by this business from the tenant database. " +
-      "businessId is REQUIRED as a query parameter. Data is stored in: Tenant-specific MongoDB database.",
+      'Retrieve all invoices created and managed by this business from the tenant database. ' +
+      'businessId is REQUIRED as a query parameter. Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: "List of issued invoices from tenant database",
+    description: 'List of issued invoices from tenant database',
     type: InvoiceListResponseDto,
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiQuery({
-    name: "status",
+    name: 'status',
     required: false,
     description:
-      "Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)",
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
-    name: "page",
+    name: 'page',
     required: false,
     type: Number,
-    description: "Page number (default: 1)",
+    description: 'Page number (default: 1)',
   })
   @ApiQuery({
-    name: "limit",
+    name: 'limit',
     required: false,
     type: Number,
-    description: "Items per page (default: 10)",
+    description: 'Items per page (default: 10)',
   })
   async listIssuedInvoices(
     @CurrentTenant() tenant: TenantContext,
-    @Query("status") status?: string,
-    @Query("page") page = 1,
-    @Query("limit") limit = 10,
+    @Query('status') status?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10
   ): Promise<InvoiceListResponseDto> {
     return await this.issuanceService.getIssuerInvoices(
       tenant.businessId,
       tenant.databaseName,
       page,
       limit,
-      { status: status },
+      { status: status }
     );
   }
 
-  @Get("issued/:id")
+  @Get('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: "[TENANT DB] Get a specific invoice issued by this business",
+    summary: '[TENANT DB] Get a specific invoice issued by this business',
     description:
-      "Retrieve a specific invoice from the tenant database. businessId is REQUIRED as a query parameter. " +
-      "Data is stored in: Tenant-specific MongoDB database.",
+      'Retrieve a specific invoice from the tenant database. businessId is REQUIRED as a query parameter. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: "Invoice details from tenant database",
+    description: 'Invoice details from tenant database',
     type: InvoiceResponseDto,
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiNotFoundResponse({
-    description: "Invoice not found",
+    description: 'Invoice not found',
   })
   @ApiParam({
-    name: "id",
-    description: "Invoice ID",
+    name: 'id',
+    description: 'Invoice ID',
   })
   async getIssuedInvoice(
-    @Param("id") invoiceId: string,
-    @CurrentTenant() tenant: TenantContext,
+    @Param('id') invoiceId: string,
+    @CurrentTenant() tenant: TenantContext
   ): Promise<InvoiceResponseDto> {
     const invoice = await this.issuanceService.getInvoiceById(
       invoiceId,
-      tenant.databaseName,
+      tenant.databaseName
     );
     // Verify issuer
     if (invoice.issuerBusinessId !== tenant.businessId) {
-      throw new ForbiddenException("Forbidden");
+      throw new ForbiddenException('Forbidden');
     }
     return invoice;
   }
 
-  @Patch("issued/:id")
+  @Patch('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: "[TENANT DB] Update a draft invoice",
+    summary: '[TENANT DB] Update a draft invoice',
     description:
-      "Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead. Include businessId in the request body to resolve tenant context. " +
-      "Data is stored in: Tenant-specific MongoDB database.",
+      'Only DRAFT invoices can be edited. Once ISSUED, use state transitions instead. Include businessId in the request body to resolve tenant context. ' +
+      'Data is stored in: Tenant-specific MongoDB database.',
   })
   @ApiOkResponse({
-    description: "Invoice updated in tenant database",
+    description: 'Invoice updated in tenant database',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
-    description: "Cannot update non-draft invoice",
+    description: 'Cannot update non-draft invoice',
   })
   @ApiBody({
     description:
-      "Draft invoice update payload with businessId to resolve tenant context.",
+      'Draft invoice update payload with businessId to resolve tenant context.',
     type: UpdateInvoiceDto,
   })
   @ApiParam({
-    name: "id",
-    description: "Invoice ID",
+    name: 'id',
+    description: 'Invoice ID',
   })
   async updateDraftInvoice(
-    @Param("id") invoiceId: string,
+    @Param('id') invoiceId: string,
     @Body() dto: UpdateInvoiceDto,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UserPayload
   ): Promise<InvoiceResponseDto> {
     return await this.issuanceService.updateDraftInvoice(
       invoiceId,
       tenant.businessId,
       tenant.databaseName,
       dto,
-      user.id,
+      user.id
     );
   }
 
-  @Post("issued/:id/transition")
+  @Post('issued/:id/transition')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @ApiOperation({
-    summary: "[TENANT DB] Transition invoice to a new state",
+    summary: '[TENANT DB] Transition invoice to a new state',
     description:
-      "Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed. Include businessId in the request body to resolve tenant context. " +
-      "Data is updated in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.",
+      'Change invoice status (DRAFT → ISSUED, ISSUED → PAID, etc.). Only valid transitions are allowed. Include businessId in the request body to resolve tenant context. ' +
+      'Data is updated in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
   })
   @ApiOkResponse({
-    description: "Invoice state transitioned successfully",
+    description: 'Invoice state transitioned successfully',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
-    description: "Invalid state transition",
+    description: 'Invalid state transition',
   })
   @ApiBody({
     description:
-      "Invoice state transition payload with businessId to resolve tenant context.",
+      'Invoice state transition payload with businessId to resolve tenant context.',
     type: TransitionInvoiceStateDto,
   })
   @ApiParam({
-    name: "id",
-    description: "Invoice ID",
+    name: 'id',
+    description: 'Invoice ID',
   })
   async transitionInvoiceState(
-    @Param("id") invoiceId: string,
+    @Param('id') invoiceId: string,
     @Body() dto: TransitionInvoiceStateDto,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UserPayload
   ): Promise<InvoiceResponseDto> {
     return await this.issuanceService.transitionInvoiceState(
       invoiceId,
       tenant.businessId,
       tenant.databaseName,
       dto,
-      user.id,
+      user.id
     );
   }
 
@@ -308,241 +308,241 @@ export class InvoicesController {
    * These routes query invoice receipts to discover and access invoices from any issuer
    */
 
-  @Get("received/business")
+  @Get('received/business')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiOperation({
-    summary: "[PLATFORM DB] Get invoices received by this business",
+    summary: '[PLATFORM DB] Get invoices received by this business',
     description:
-      "Retrieve all invoices issued to your business from any issuer. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts. " +
-      "businessId is REQUIRED as a query parameter.",
+      'Retrieve all invoices issued to your business from any issuer. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts. ' +
+      'businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
-    description: "List of received invoices from platform database",
+    description: 'List of received invoices from platform database',
     type: InvoiceReceiptListResponseDto,
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiQuery({
-    name: "status",
+    name: 'status',
     required: false,
     description:
-      "Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)",
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
-    name: "page",
+    name: 'page',
     required: false,
     type: Number,
   })
   @ApiQuery({
-    name: "limit",
+    name: 'limit',
     required: false,
     type: Number,
   })
   async getReceivedByBusiness(
     @CurrentTenant() tenant: TenantContext,
-    @Query("status") status?: string,
-    @Query("page") page = 1,
-    @Query("limit") limit = 10,
+    @Query('status') status?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10
   ): Promise<InvoiceReceiptListResponseDto> {
     return await this.receiptService.getReceivedInvoicesByBusiness(
       tenant.businessId,
       page,
       limit,
-      { status },
+      { status }
     );
   }
 
-  @Get("received/individual")
+  @Get('received/individual')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: "[PLATFORM DB] Get invoices received by you (individual)",
+    summary: '[PLATFORM DB] Get invoices received by you (individual)',
     description:
-      "Retrieve all invoices issued to you personally from any business. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts.",
+      'Retrieve all invoices issued to you personally from any business. Data is queried from: Platform-wide MongoDB database (accountia) via InvoiceReceipts.',
   })
   @ApiOkResponse({
-    description: "List of received invoices from platform database",
+    description: 'List of received invoices from platform database',
     type: InvoiceReceiptListResponseDto,
   })
   @ApiQuery({
-    name: "status",
+    name: 'status',
     required: false,
     description:
-      "Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)",
+      'Filter by invoice status (DRAFT, ISSUED, PAID, OVERDUE, VIEWED)',
   })
   @ApiQuery({
-    name: "page",
+    name: 'page',
     required: false,
     type: Number,
   })
   @ApiQuery({
-    name: "limit",
+    name: 'limit',
     required: false,
     type: Number,
   })
   async getReceivedByIndividual(
     @CurrentUser() user: UserPayload,
-    @Query("status") status?: string,
-    @Query("page") page = 1,
-    @Query("limit") limit = 10,
+    @Query('status') status?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10
   ): Promise<InvoiceReceiptListResponseDto> {
     return await this.receiptService.getReceivedInvoicesByIndividual(
       user.id,
       user.email,
       page,
       limit,
-      { status },
+      { status }
     );
   }
 
-  @Get("received/:receiptId/details")
+  @Get('received/:receiptId/details')
   @UseGuards(JwtAuthGuard, TenantContextGuard)
   @ApiOperation({
     summary:
-      "[PLATFORM DB → TENANT DB] Get full invoice details (business recipient)",
+      '[PLATFORM DB → TENANT DB] Get full invoice details (business recipient)',
     description:
       "Fetch the authoritative invoice document from the issuer's tenant database. " +
       "Receipt lookup via: Platform database (accountia) | Full invoice data from: Issuer's tenant database. " +
-      "businessId is REQUIRED as a query parameter.",
+      'businessId is REQUIRED as a query parameter.',
   })
   @ApiOkResponse({
-    description: "Full invoice details from issuer tenant database",
+    description: 'Full invoice details from issuer tenant database',
     type: InvoiceResponseDto,
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiNotFoundResponse({
-    description: "Invoice not found",
+    description: 'Invoice not found',
   })
   @ApiForbiddenResponse({
-    description: "You do not have access to this invoice",
+    description: 'You do not have access to this invoice',
   })
   @ApiParam({
-    name: "receiptId",
-    description: "Receipt ID from platform database",
+    name: 'receiptId',
+    description: 'Receipt ID from platform database',
   })
   async getReceivedInvoiceDetails(
-    @Param("receiptId") receiptId: string,
-    @CurrentTenant() tenant: TenantContext,
+    @Param('receiptId') receiptId: string,
+    @CurrentTenant() tenant: TenantContext
   ): Promise<InvoiceResponseDto> {
     return await this.receiptService.getInvoiceDetailsAsRecipient(
       receiptId,
-      tenant.businessId,
+      tenant.businessId
     );
   }
 
-  @Get("received/individual/:receiptId/details")
+  @Get('received/individual/:receiptId/details')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary:
-      "[PLATFORM DB → TENANT DB] Get full invoice details (individual recipient)",
+      '[PLATFORM DB → TENANT DB] Get full invoice details (individual recipient)',
     description:
       "Fetch the authoritative invoice document from the issuer's tenant database for individual recipients. " +
       "Receipt lookup via: Platform database (accountia) | Full invoice data from: Issuer's tenant database.",
   })
   @ApiOkResponse({
-    description: "Full invoice details from issuer tenant database",
+    description: 'Full invoice details from issuer tenant database',
     type: InvoiceResponseDto,
   })
   @ApiForbiddenResponse({
-    description: "You do not have access to this invoice",
+    description: 'You do not have access to this invoice',
   })
   @ApiParam({
-    name: "receiptId",
-    description: "Receipt ID from platform database",
+    name: 'receiptId',
+    description: 'Receipt ID from platform database',
   })
   async getReceivedInvoiceDetailsIndividual(
-    @Param("receiptId") receiptId: string,
-    @CurrentUser() user: UserPayload,
+    @Param('receiptId') receiptId: string,
+    @CurrentUser() user: UserPayload
   ): Promise<InvoiceResponseDto> {
     return await this.receiptService.getInvoiceDetailsAsRecipient(
       receiptId,
       undefined,
       user.id,
-      user.email,
+      user.email
     );
   }
 
-  @Post("received/individual/:receiptId/payments/checkout")
+  @Post('received/individual/:receiptId/payments/checkout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      "[STRIPE] Create payment checkout session for an individual recipient",
+      '[STRIPE] Create payment checkout session for an individual recipient',
     description:
-      "Creates a Stripe Checkout session so the recipient can securely pay an invoice online.",
+      'Creates a Stripe Checkout session so the recipient can securely pay an invoice online.',
   })
   @ApiOkResponse({
-    description: "Stripe checkout session created",
+    description: 'Stripe checkout session created',
     type: InvoiceCheckoutSessionResponseDto,
   })
   @ApiForbiddenResponse({
-    description: "You do not have access to this invoice receipt",
+    description: 'You do not have access to this invoice receipt',
   })
   async createIndividualCheckoutSession(
-    @Param("receiptId") receiptId: string,
+    @Param('receiptId') receiptId: string,
     @CurrentUser() user: UserPayload,
-    @Body() dto: CreateInvoiceCheckoutSessionDto,
+    @Body() dto: CreateInvoiceCheckoutSessionDto
   ): Promise<InvoiceCheckoutSessionResponseDto> {
     return await this.paymentService.createCheckoutSession(
       receiptId,
       user,
-      dto,
+      dto
     );
   }
 
-  @Post("received/individual/:receiptId/payments/mock")
+  @Post('received/individual/:receiptId/payments/mock')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "[DEMO] Simulate payment for an individual recipient",
+    summary: '[DEMO] Simulate payment for an individual recipient',
     description:
-      "Simulates an invoice payment without Stripe. Intended for demo or faculty environments only.",
+      'Simulates an invoice payment without Stripe. Intended for demo or faculty environments only.',
   })
   @ApiOkResponse({
-    description: "Invoice marked as paid in demo mode",
+    description: 'Invoice marked as paid in demo mode',
     type: InvoiceResponseDto,
   })
   async createIndividualMockPayment(
-    @Param("receiptId") receiptId: string,
+    @Param('receiptId') receiptId: string,
     @CurrentUser() user: UserPayload,
-    @Body() dto: MockInvoicePaymentDto,
+    @Body() dto: MockInvoicePaymentDto
   ): Promise<InvoiceResponseDto> {
     return await this.paymentService.simulateIndividualPayment(
       receiptId,
       user,
-      dto,
+      dto
     );
   }
 
-  @Post("payments/webhook")
+  @Post('payments/webhook')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "[STRIPE] Payment webhook",
+    summary: '[STRIPE] Payment webhook',
     description:
-      "Consumes Stripe webhook events to finalize invoice payments and update statuses.",
+      'Consumes Stripe webhook events to finalize invoice payments and update statuses.',
   })
   @ApiOkResponse({
-    description: "Webhook received",
-    schema: { type: "object", properties: { received: { type: "boolean" } } },
+    description: 'Webhook received',
+    schema: { type: 'object', properties: { received: { type: 'boolean' } } },
   })
   async handleStripeWebhook(
     @Req() req: Request & { rawBody?: Buffer },
-    @Headers("stripe-signature") stripeSignature?: string,
+    @Headers('stripe-signature') stripeSignature?: string
   ): Promise<{ received: boolean }> {
     const rawBody = req.rawBody;
     if (!rawBody) {
       throw new BadRequestException(
-        "Raw request body is required for webhook signature validation",
+        'Raw request body is required for webhook signature validation'
       );
     }
 
@@ -550,69 +550,69 @@ export class InvoicesController {
     return { received: true };
   }
 
-  @Post("payments/confirm")
+  @Post('payments/confirm')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "[PLATFORM] Confirm payment status (JSON)",
+    summary: '[PLATFORM] Confirm payment status (JSON)',
     description:
-      "Verifies Stripe session status and updates invoice. Returns JSON.",
+      'Verifies Stripe session status and updates invoice. Returns JSON.',
   })
   @ApiQuery({
-    name: "session_id",
+    name: 'session_id',
     required: true,
-    type: "string",
-    description: "Stripe Checkout session ID",
+    type: 'string',
+    description: 'Stripe Checkout session ID',
   })
   @ApiQuery({
-    name: "receipt_id",
+    name: 'receipt_id',
     required: true,
-    type: "string",
-    description: "Invoice receipt ID",
+    type: 'string',
+    description: 'Invoice receipt ID',
   })
   @ApiBadRequestResponse({
     description:
-      "Missing or invalid query parameters: session_id and receipt_id are required",
+      'Missing or invalid query parameters: session_id and receipt_id are required',
   })
   @ApiOkResponse({
-    description: "Payment status confirmed",
+    description: 'Payment status confirmed',
     schema: {
-      type: "object",
-      properties: { success: { type: "boolean" }, status: { type: "string" } },
+      type: 'object',
+      properties: { success: { type: 'boolean' }, status: { type: 'string' } },
     },
   })
   async confirmPayment(
-    @Query("session_id") sessionId: string,
-    @Query("receipt_id") receiptId: string,
-    @CurrentUser() user: UserPayload,
+    @Query('session_id') sessionId: string,
+    @Query('receipt_id') receiptId: string,
+    @CurrentUser() user: UserPayload
   ): Promise<{ success: boolean; status: string }> {
     if (!sessionId || !receiptId) {
-      throw new BadRequestException("session_id and receipt_id are required");
+      throw new BadRequestException('session_id and receipt_id are required');
     }
     return await this.paymentService.confirmPaymentStatus(
       sessionId,
       receiptId,
-      user,
+      user
     );
   }
 
-  @Get("payments/return")
+  @Get('payments/return')
   @HttpCode(HttpStatus.FOUND)
   @ApiOperation({
-    summary: "[STRIPE] Checkout return handler",
+    summary: '[STRIPE] Checkout return handler',
     description:
-      "Finalizes payment status after Stripe checkout return, then redirects to frontend invoices page.",
+      'Finalizes payment status after Stripe checkout return, then redirects to frontend invoices page.',
   })
   @ApiOkResponse({
-    description: "Redirects to frontend with payment status",
+    description: 'Redirects to frontend with payment status',
   })
   async handleStripeCheckoutReturn(
-    @Query("session_id") sessionId: string,
-    @Query("receipt_id") receiptId: string,
-    @Res() res: Response,
+    @Query('session_id') sessionId: string,
+    @Query('receipt_id') receiptId: string,
+    @Res() res: Response
   ): Promise<void> {
     if (!sessionId || !receiptId) {
-      throw new BadRequestException("session_id and receipt_id are required");
+      throw new BadRequestException('session_id and receipt_id are required');
     }
 
     let paid = false;
@@ -621,26 +621,26 @@ export class InvoicesController {
     try {
       paid = await this.paymentService.finalizeCheckoutSessionFromReturn(
         sessionId,
-        receiptId,
+        receiptId
       );
     } catch (error) {
       hasError = true;
       this.logger.error(
         `Checkout return finalization failed for session ${sessionId} and receipt ${receiptId}`,
-        error instanceof Error ? error.stack : String(error),
+        error instanceof Error ? error.stack : String(error)
       );
     }
 
-    const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
-    let paymentStatus = "pending";
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
+    let paymentStatus = 'pending';
     if (hasError) {
-      paymentStatus = "error";
+      paymentStatus = 'error';
     } else if (paid) {
-      paymentStatus = "success";
+      paymentStatus = 'success';
     }
 
     const redirectTo = `${frontendUrl}/en/invoices?payment=${paymentStatus}&session_id=${encodeURIComponent(
-      sessionId,
+      sessionId
     )}`;
 
     res.redirect(HttpStatus.FOUND, redirectTo);
@@ -656,17 +656,17 @@ export class InvoicesController {
    * Data Storage: Tenant-specific MongoDB database (e.g., evenix_mn9fsurc_d1c76f)
    */
 
-  @Post("import")
+  @Post('import')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @UseInterceptors(
-    FileInterceptor("file", {
+    FileInterceptor('file', {
       limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
-          "text/csv",
-          "application/vnd.ms-excel",
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          'text/csv',
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ];
 
         if (allowedMimes.includes(file.mimetype)) {
@@ -674,75 +674,75 @@ export class InvoicesController {
           cb(null, true);
         } else {
           cb(
-            new BadRequestException("Only CSV and XLSX files are allowed"),
-            false,
+            new BadRequestException('Only CSV and XLSX files are allowed'),
+            false
           );
         }
       },
-    }),
+    })
   )
   @HttpCode(HttpStatus.OK)
-  @ApiConsumes("multipart/form-data")
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: "[TENANT DB] Bulk import invoices from CSV or Excel file",
+    summary: '[TENANT DB] Bulk import invoices from CSV or Excel file',
     description:
-      "Import multiple invoices at once from a CSV or XLSX file. " +
-      "Each row represents one invoice. Supports multiple recipient types and line item formats. " +
-      "businessId is REQUIRED as a query parameter. " +
-      "Data is created in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.",
+      'Import multiple invoices at once from a CSV or XLSX file. ' +
+      'Each row represents one invoice. Supports multiple recipient types and line item formats. ' +
+      'businessId is REQUIRED as a query parameter. ' +
+      'Data is created in: Tenant-specific MongoDB database and synced to Platform database for recipient visibility.',
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiOkResponse({
-    description: "Import completed with detailed results",
+    description: 'Import completed with detailed results',
     type: BulkImportInvoicesResponseDto,
   })
   @ApiBadRequestResponse({
-    description: "Invalid file format or structure",
+    description: 'Invalid file format or structure',
   })
   async importInvoicesFromFile(
     @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UserPayload
   ): Promise<BulkImportInvoicesResponseDto> {
     if (!file) {
-      throw new BadRequestException("File is required");
+      throw new BadRequestException('File is required');
     }
     this.logger.log(
-      `Importing invoices from file: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`,
+      `Importing invoices from file: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`
     );
     const result = await this.importService.importInvoicesFromFile(
       file,
       tenant.businessId,
       tenant.databaseName,
-      user.id,
+      user.id
     );
     this.logger.log(
-      `Import completed: ${result.successCount} success, ${result.failedCount} failed, ${result.warningCount} warnings, ${result.generalErrors?.length ?? 0} general errors`,
+      `Import completed: ${result.successCount} success, ${result.failedCount} failed, ${result.warningCount} warnings, ${result.generalErrors?.length ?? 0} general errors`
     );
     this.logger.debug(`Import results: ${JSON.stringify(result.results)}`);
     return result;
   }
 
-  @Post("import/document")
+  @Post('import/document')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
   @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
   @UseInterceptors(
-    FileInterceptor("file", {
+    FileInterceptor('file', {
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
-          "image/png",
-          "image/jpeg",
-          "image/jpg",
-          "image/gif",
-          "image/webp",
-          "application/pdf",
+          'image/png',
+          'image/jpeg',
+          'image/jpg',
+          'image/gif',
+          'image/webp',
+          'application/pdf',
         ];
 
         if (allowedMimes.includes(file.mimetype)) {
@@ -751,54 +751,54 @@ export class InvoicesController {
         } else {
           cb(
             new BadRequestException(
-              "Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed",
+              'Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed'
             ),
-            false,
+            false
           );
         }
       },
-    }),
+    })
   )
   @HttpCode(HttpStatus.CREATED)
-  @ApiConsumes("multipart/form-data")
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({
-    summary: "[TENANT DB] Import an invoice from an image or PDF document",
+    summary: '[TENANT DB] Import an invoice from an image or PDF document',
     description:
-      "Extract invoice information from an image (invoice photo, scanned document) or PDF using AI. " +
-      "The AI will analyze the document and extract invoice details like invoice number, recipient, items, and amounts. " +
-      "The extracted invoice is created in DRAFT state for review before issuing. " +
-      "businessId is REQUIRED as a query parameter.",
+      'Extract invoice information from an image (invoice photo, scanned document) or PDF using AI. ' +
+      'The AI will analyze the document and extract invoice details like invoice number, recipient, items, and amounts. ' +
+      'The extracted invoice is created in DRAFT state for review before issuing. ' +
+      'businessId is REQUIRED as a query parameter.',
   })
   @ApiQuery({
-    name: "businessId",
+    name: 'businessId',
     required: true,
     type: String,
     description:
-      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
+      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
   })
   @ApiCreatedResponse({
-    description: "Invoice extracted and imported successfully as DRAFT",
+    description: 'Invoice extracted and imported successfully as DRAFT',
     type: InvoiceResponseDto,
   })
   @ApiBadRequestResponse({
-    description: "Invalid file format or extraction failed",
+    description: 'Invalid file format or extraction failed',
   })
   async importInvoiceFromDocument(
     @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
     @CurrentTenant() tenant: TenantContext,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UserPayload
   ): Promise<InvoiceResponseDto> {
     if (!file) {
-      throw new BadRequestException("File is required");
+      throw new BadRequestException('File is required');
     }
     this.logger.log(
-      `Importing invoice from document: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`,
+      `Importing invoice from document: ${file.originalname} for businessId: ${tenant.businessId}, userId: ${user.id}`
     );
     const result = await this.importService.importInvoiceFromDocument(
       file,
       tenant.businessId,
       tenant.databaseName,
-      user.id,
+      user.id
     );
     this.logger.log(`Invoice imported from document: ${result.id}`);
     return result;

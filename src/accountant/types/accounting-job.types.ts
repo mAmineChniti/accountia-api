@@ -53,7 +53,7 @@ export interface TaxCalculation {
 export interface Anomaly {
   type: string;
   description: string;
-  severity: "low" | "medium" | "high";
+  severity: 'low' | 'medium' | 'high';
 }
 
 export interface Report {

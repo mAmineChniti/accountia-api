@@ -4,31 +4,31 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
-} from "@nestjs/common";
-import { InjectModel, InjectConnection } from "@nestjs/mongoose";
-import type { Model, Connection } from "mongoose";
-import { ObjectId } from "mongodb";
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import type { Model, Connection } from 'mongoose';
+import { ObjectId } from 'mongodb';
 import {
   CreateInvoiceDto,
   UpdateInvoiceDto,
   TransitionInvoiceStateDto,
   InvoiceResponseDto,
   InvoiceListResponseDto,
-} from "@/invoices/dto/invoice.dto";
-import { Invoice, InvoiceSchema } from "@/invoices/schemas/invoice.schema";
-import { InvoiceReceipt } from "@/invoices/schemas/invoice-receipt.schema";
+} from '@/invoices/dto/invoice.dto';
+import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
+import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
 import {
   InvoiceStatus,
   INVOICE_STATUS_TRANSITIONS,
-} from "@/invoices/enums/invoice-status.enum";
+} from '@/invoices/enums/invoice-status.enum';
 import {
   InvoiceRecipientType,
   RecipientResolutionStatus,
-} from "@/invoices/enums/invoice-recipient.enum";
-import { Business } from "@/business/schemas/business.schema";
-import { TenantConnectionService } from "@/common/tenant/tenant-connection.service";
-import { NotificationsService } from "@/notifications/notifications.service";
-import { NotificationType } from "@/notifications/schemas/notification.schema";
+} from '@/invoices/enums/invoice-recipient.enum';
+import { Business } from '@/business/schemas/business.schema';
+import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+import { NotificationsService } from '@/notifications/notifications.service';
+import { NotificationType } from '@/notifications/schemas/notification.schema';
 
 /**
  * InvoiceIssuanceService
@@ -64,7 +64,7 @@ export class InvoiceIssuanceService {
     @InjectModel(Business.name) private businessModel: Model<Business>,
     @InjectConnection() private connection: Connection,
     private tenantConnectionService: TenantConnectionService,
-    private notificationsService: NotificationsService,
+    private notificationsService: NotificationsService
   ) {}
 
   /**
@@ -77,11 +77,11 @@ export class InvoiceIssuanceService {
   }
 
   private normalizeInvoiceStatus(value: unknown): InvoiceStatus {
-    const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
+    const raw = typeof value === 'string' ? value.trim().toUpperCase() : '';
     const normalized = this.statusAliasMap[raw];
     if (!normalized) {
       throw new BadRequestException(
-        `Unsupported invoice status: ${String(value)}`,
+        `Unsupported invoice status: ${String(value)}`
       );
     }
     return normalized;
@@ -91,7 +91,7 @@ export class InvoiceIssuanceService {
    * Convert empty string values to undefined to avoid ObjectId cast failures.
    */
   private normalizeOptionalString(value?: string): string | undefined {
-    if (typeof value !== "string") {
+    if (typeof value !== 'string') {
       return undefined;
     }
 
@@ -117,7 +117,7 @@ export class InvoiceIssuanceService {
       databaseName,
       modelName: Invoice.name,
       schema: InvoiceSchema,
-      collectionName: "invoices",
+      collectionName: 'invoices',
     });
   }
 
@@ -129,7 +129,7 @@ export class InvoiceIssuanceService {
     businessId: string,
     databaseName: string,
     dto: CreateInvoiceDto,
-    userId: string,
+    userId: string
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
 
@@ -139,7 +139,7 @@ export class InvoiceIssuanceService {
     let invoiceNumber = dto.invoiceNumber;
     if (!invoiceNumber) {
       const now = new Date();
-      const dateStr = now.toISOString().slice(0, 10).replaceAll("-", ""); // YYYYMMDD
+      const dateStr = now.toISOString().slice(0, 10).replaceAll('-', ''); // YYYYMMDD
       const randomStr = Math.random().toString(36).slice(2, 8).toUpperCase(); // 6-char random string
       invoiceNumber = `INV-${dateStr}-${randomStr}`;
     }
@@ -147,7 +147,7 @@ export class InvoiceIssuanceService {
     // Normalize recipient email for consistent matching
     const normalizedEmail = this.normalizeEmail(dto.recipient.email);
     const normalizedPlatformId = this.normalizeOptionalString(
-      dto.recipient.platformId,
+      dto.recipient.platformId
     );
 
     // Determine resolution status based on recipient type
@@ -168,13 +168,13 @@ export class InvoiceIssuanceService {
         businessId,
         databaseName,
         dto.lineItems,
-        reservedProducts,
+        reservedProducts
       );
 
       // Build lineItems AFTER reservation so resolved ObjectIds are used in the invoice document.
       const totalAmount = dto.lineItems.reduce(
         (sum, item) => sum + item.quantity * item.unitPrice,
-        0,
+        0
       );
 
       const lineItems = dto.lineItems.map((item) => ({
@@ -200,7 +200,7 @@ export class InvoiceIssuanceService {
         },
         status: InvoiceStatus.DRAFT,
         totalAmount,
-        currency: dto.currency ?? "TND",
+        currency: dto.currency ?? 'TND',
         amountPaid: 0,
         issuedDate: dto.issuedDate,
         dueDate: dto.dueDate,
@@ -213,20 +213,20 @@ export class InvoiceIssuanceService {
       } as Partial<Invoice>);
 
       this.logger.debug(
-        `Created draft invoice ${invoice._id.toString()} for business ${businessId} in tenant database: ${databaseName}`,
+        `Created draft invoice ${invoice._id.toString()} for business ${businessId} in tenant database: ${databaseName}`
       );
 
       // Also save to platform database for cross-tenant visibility and archival
       try {
         await this.saveToPlatformDatabase(invoice, databaseName);
         this.logger.debug(
-          `Synchronized invoice ${invoice._id.toString()} to platform database`,
+          `Synchronized invoice ${invoice._id.toString()} to platform database`
         );
       } catch (error) {
         // Non-blocking: Log but don't fail the invoice creation
         this.logger.warn(
           `Failed to sync invoice ${invoice._id.toString()} to platform database: ${error}`,
-          error,
+          error
         );
       }
 
@@ -246,10 +246,10 @@ export class InvoiceIssuanceService {
   private async resolveProductId(
     productIdOrName: string,
     businessId: string,
-    databaseName: string,
+    databaseName: string
   ): Promise<string> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    const productsCollection = tenantDb.collection("products");
+    const productsCollection = tenantDb.collection('products');
     const businessObjectId = new ObjectId(businessId);
 
     // If it looks like an ObjectId, verify it actually exists in the database
@@ -270,7 +270,7 @@ export class InvoiceIssuanceService {
     const product = await productsCollection.findOne({
       name: {
         $regex: `^${productIdOrName.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}$`,
-        $options: "i",
+        $options: 'i',
       },
       $or: [{ businessId: businessObjectId }, { businessId }],
     });
@@ -278,7 +278,7 @@ export class InvoiceIssuanceService {
     if (!product) {
       throw new NotFoundException(
         `Product "${productIdOrName}" not found for this business. ` +
-          `Please use a valid product name or MongoDB ObjectId.`,
+          `Please use a valid product name or MongoDB ObjectId.`
       );
     }
 
@@ -288,15 +288,15 @@ export class InvoiceIssuanceService {
   private async reserveProductQuantities(
     businessId: string,
     databaseName: string,
-    lineItems: CreateInvoiceDto["lineItems"],
-    reservedProducts: Array<{ productId: ObjectId; quantity: number }>,
+    lineItems: CreateInvoiceDto['lineItems'],
+    reservedProducts: Array<{ productId: ObjectId; quantity: number }>
   ): Promise<void> {
     if (lineItems.length === 0) {
       return;
     }
 
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    const productsCollection = tenantDb.collection("products");
+    const productsCollection = tenantDb.collection('products');
     const businessObjectId = new ObjectId(businessId);
 
     // Resolve all productIds (supports both ObjectId strings and product names)
@@ -311,12 +311,12 @@ export class InvoiceIssuanceService {
       const resolvedId = await this.resolveProductId(
         rawId,
         businessId,
-        databaseName,
+        databaseName
       );
 
       quantitiesByProduct.set(
         resolvedId,
-        (quantitiesByProduct.get(resolvedId) ?? 0) + item.quantity,
+        (quantitiesByProduct.get(resolvedId) ?? 0) + item.quantity
       );
 
       // Mutate the lineItem so the invoice document stores the real ObjectId
@@ -334,7 +334,7 @@ export class InvoiceIssuanceService {
           $or: [{ businessId: businessObjectId }, { businessId }],
           quantity: { $gte: quantityToReserve },
         },
-        { $inc: { quantity: -quantityToReserve } },
+        { $inc: { quantity: -quantityToReserve } }
       );
 
       if (updateResult.modifiedCount !== 1) {
@@ -345,14 +345,14 @@ export class InvoiceIssuanceService {
 
         if (!product) {
           throw new NotFoundException(
-            `Product ${productId} not found for this business`,
+            `Product ${productId} not found for this business`
           );
         }
 
         const currentQuantity =
-          typeof product.quantity === "number" ? product.quantity : 0;
+          typeof product.quantity === 'number' ? product.quantity : 0;
         throw new BadRequestException(
-          `Insufficient quantity for product "${product.name ?? productId}". Available: ${currentQuantity}, required: ${quantityToReserve}`,
+          `Insufficient quantity for product "${product.name ?? productId}". Available: ${currentQuantity}, required: ${quantityToReserve}`
         );
       }
 
@@ -365,25 +365,25 @@ export class InvoiceIssuanceService {
 
   private async rollbackReservedQuantities(
     databaseName: string,
-    reservedProducts: Array<{ productId: ObjectId; quantity: number }>,
+    reservedProducts: Array<{ productId: ObjectId; quantity: number }>
   ): Promise<void> {
     if (reservedProducts.length === 0) {
       return;
     }
 
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    const productsCollection = tenantDb.collection("products");
+    const productsCollection = tenantDb.collection('products');
 
     for (const reserved of reservedProducts) {
       try {
         await productsCollection.updateOne(
           { _id: reserved.productId },
-          { $inc: { quantity: reserved.quantity } },
+          { $inc: { quantity: reserved.quantity } }
         );
       } catch (rollbackError) {
         this.logger.error(
           `Failed to rollback quantity for product ${reserved.productId.toString()}`,
-          rollbackError as Error,
+          rollbackError as Error
         );
       }
     }
@@ -407,11 +407,11 @@ export class InvoiceIssuanceService {
     databaseName: string,
     page: number,
     limit: number,
-    filters?: Record<string, unknown>,
+    filters?: Record<string, unknown>
   ): Promise<InvoiceListResponseDto> {
     const skip = (page - 1) * limit;
     const statusFilter =
-      filters?.status && typeof filters.status === "string"
+      filters?.status && typeof filters.status === 'string'
         ? { status: filters.status }
         : {};
 
@@ -433,7 +433,7 @@ export class InvoiceIssuanceService {
         .exec(),
       // Get count of filtered results (for display purposes)
       invoiceModel.countDocuments(
-        Object.assign({ issuerBusinessId: businessId }, statusFilter),
+        Object.assign({ issuerBusinessId: businessId }, statusFilter)
       ),
     ]);
 
@@ -452,12 +452,12 @@ export class InvoiceIssuanceService {
    */
   async getInvoiceById(
     invoiceId: string,
-    databaseName: string,
+    databaseName: string
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
     const invoice = await invoiceModel.findById(invoiceId).exec();
     if (!invoice) {
-      throw new NotFoundException("Invoice not found");
+      throw new NotFoundException('Invoice not found');
     }
     return this.mapInvoiceToResponse(invoice);
   }
@@ -470,22 +470,22 @@ export class InvoiceIssuanceService {
     businessId: string,
     databaseName: string,
     dto: UpdateInvoiceDto,
-    userId: string,
+    userId: string
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
     const invoice = await invoiceModel.findById(invoiceId).exec();
 
     if (!invoice) {
-      throw new NotFoundException("Invoice not found");
+      throw new NotFoundException('Invoice not found');
     }
 
     if (invoice.issuerBusinessId.toString() !== businessId) {
-      throw new ForbiddenException("You do not own this invoice");
+      throw new ForbiddenException('You do not own this invoice');
     }
 
     if (invoice.status !== InvoiceStatus.DRAFT) {
       throw new BadRequestException(
-        "Only draft invoices can be edited. Use state transitions for other changes.",
+        'Only draft invoices can be edited. Use state transitions for other changes.'
       );
     }
 
@@ -500,7 +500,7 @@ export class InvoiceIssuanceService {
     await invoice.save();
 
     this.logger.debug(
-      `Updated draft invoice ${invoiceId} for business ${businessId}`,
+      `Updated draft invoice ${invoiceId} for business ${businessId}`
     );
 
     // Sync updated invoice to platform database
@@ -510,7 +510,7 @@ export class InvoiceIssuanceService {
       // Non-blocking: log but don't fail the update
       this.logger.warn(
         `Failed to sync updated invoice to platform database: ${error}`,
-        error,
+        error
       );
     }
 
@@ -525,17 +525,17 @@ export class InvoiceIssuanceService {
     businessId: string,
     databaseName: string,
     dto: TransitionInvoiceStateDto,
-    userId: string,
+    userId: string
   ): Promise<InvoiceResponseDto> {
     const invoiceModel = this.getTenantInvoiceModel(databaseName);
     const invoice = await invoiceModel.findById(invoiceId).exec();
 
     if (!invoice) {
-      throw new NotFoundException("Invoice not found");
+      throw new NotFoundException('Invoice not found');
     }
 
     if (invoice.issuerBusinessId.toString() !== businessId) {
-      throw new ForbiddenException("You do not own this invoice");
+      throw new ForbiddenException('You do not own this invoice');
     }
 
     // Normalize statuses so legacy lowercase/mixed-case values still follow state machine rules.
@@ -546,7 +546,7 @@ export class InvoiceIssuanceService {
     const validTransitions = INVOICE_STATUS_TRANSITIONS[currentStatus];
     if (!validTransitions.includes(targetStatus)) {
       throw new BadRequestException(
-        `Cannot transition from ${currentStatus} to ${targetStatus}`,
+        `Cannot transition from ${currentStatus} to ${targetStatus}`
       );
     }
 
@@ -557,7 +557,7 @@ export class InvoiceIssuanceService {
     ) {
       if (dto.amountPaid === undefined) {
         throw new BadRequestException(
-          "amountPaid is required for payment states",
+          'amountPaid is required for payment states'
         );
       }
       invoice.amountPaid = dto.amountPaid;
@@ -585,7 +585,7 @@ export class InvoiceIssuanceService {
       } catch (error) {
         this.logger.warn(
           `Failed to restore reserved inventory for voided invoice ${invoiceId}`,
-          error,
+          error
         );
       }
     }
@@ -593,7 +593,7 @@ export class InvoiceIssuanceService {
     await invoice.save();
 
     this.logger.log(
-      `Invoice ${invoiceId} transitioned from ${previousStatus} to ${targetStatus}`,
+      `Invoice ${invoiceId} transitioned from ${previousStatus} to ${targetStatus}`
     );
 
     // Sync invoice state change to platform database
@@ -603,7 +603,7 @@ export class InvoiceIssuanceService {
       // Non-blocking: log but don't fail the transition
       this.logger.warn(
         `Failed to sync invoice state change to platform database: ${error}`,
-        error,
+        error
       );
     }
 
@@ -616,7 +616,7 @@ export class InvoiceIssuanceService {
     if (targetStatus === InvoiceStatus.ISSUED && invoice.recipient.email) {
       try {
         const business = await this.businessModel.findById(businessId).exec();
-        const issuerBusinessName = business?.name ?? "Unknown Business";
+        const issuerBusinessName = business?.name ?? 'Unknown Business';
 
         await this.notificationsService.createNotification({
           type: NotificationType.INVOICE_CREATED,
@@ -635,7 +635,7 @@ export class InvoiceIssuanceService {
       } catch (error) {
         this.logger.warn(
           `Failed to notify recipient for issued invoice ${invoiceId}`,
-          error,
+          error
         );
       }
     }
@@ -656,14 +656,14 @@ export class InvoiceIssuanceService {
    */
   private async syncInvoiceToReceipt(
     invoice: Invoice,
-    databaseName: string,
+    databaseName: string
   ): Promise<void> {
     try {
       // Fetch business name for receipt
       const business = await this.businessModel.findById(
-        invoice.issuerBusinessId,
+        invoice.issuerBusinessId
       );
-      const issuerBusinessName = business?.name ?? "Unknown Business";
+      const issuerBusinessName = business?.name ?? 'Unknown Business';
 
       // Check if receipt already exists (idempotent)
       const existingReceipt = await this.invoiceReceiptModel
@@ -704,16 +704,16 @@ export class InvoiceIssuanceService {
         receiptData.recipientViewed = existingReceipt.recipientViewed;
         await this.invoiceReceiptModel.updateOne(
           { _id: existingReceipt._id },
-          receiptData,
+          receiptData
         );
         this.logger.debug(
-          `Updated InvoiceReceipt ${existingReceipt._id.toString()}`,
+          `Updated InvoiceReceipt ${existingReceipt._id.toString()}`
         );
       } else {
         receiptData.recipientViewed = false;
         const created = await this.invoiceReceiptModel.create(receiptData);
         this.logger.log(
-          `Created InvoiceReceipt ${created._id.toString()} for invoice ${invoice._id.toString()}`,
+          `Created InvoiceReceipt ${created._id.toString()} for invoice ${invoice._id.toString()}`
         );
       }
     } catch (error) {
@@ -721,7 +721,7 @@ export class InvoiceIssuanceService {
       // Eventual consistency: Receipt will be re-synced on next status change
       this.logger.error(
         `Failed to sync InvoiceReceipt for ${invoice._id.toString()}: ${error}`,
-        error,
+        error
       );
     }
   }
@@ -733,18 +733,18 @@ export class InvoiceIssuanceService {
    */
   private async saveToPlatformDatabase(
     invoice: Invoice,
-    tenantDatabaseName: string,
+    tenantDatabaseName: string
   ): Promise<void> {
     try {
       // Get platform database connection
       const platformDb = this.connection.db;
       if (!platformDb) {
-        this.logger.warn("Platform database not available");
+        this.logger.warn('Platform database not available');
         return;
       }
 
       // Get the invoice collection from platform database
-      const platformInvoicesCollection = platformDb.collection("invoices");
+      const platformInvoicesCollection = platformDb.collection('invoices');
 
       // Draft and other pre-issuance states should remain private in shared storage.
       const invoiceDataForPlatform = {
@@ -781,28 +781,28 @@ export class InvoiceIssuanceService {
       await platformInvoicesCollection.updateOne(
         { _id: invoice._id },
         { $set: invoiceDataForPlatform },
-        { upsert: true },
+        { upsert: true }
       );
     } catch (error) {
       // Non-blocking: don't throw, just log
       // Eventual consistency: will retry on next state change or scheduled sync
       this.logger.warn(
         `Failed to save invoice ${invoice._id.toString()} to platform database`,
-        error,
+        error
       );
     }
   }
 
   private async restoreReservedInventoryForInvoice(
     invoice: Invoice,
-    databaseName: string,
+    databaseName: string
   ): Promise<void> {
     if (!Array.isArray(invoice.lineItems) || invoice.lineItems.length === 0) {
       return;
     }
 
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
-    const productsCollection = tenantDb.collection("products");
+    const productsCollection = tenantDb.collection('products');
 
     for (const item of invoice.lineItems) {
       const rawProductId = this.normalizeOptionalString(String(item.productId));
@@ -817,7 +817,7 @@ export class InvoiceIssuanceService {
 
       await productsCollection.updateOne(
         { _id: new ObjectId(rawProductId) },
-        { $inc: { quantity: quantityToRestore } },
+        { $inc: { quantity: quantityToRestore } }
       );
     }
   }
@@ -826,10 +826,10 @@ export class InvoiceIssuanceService {
    * Safely extract and convert ObjectId to string
    */
   private objectIdToString(value: unknown): string {
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       return value;
     }
-    if (value && typeof value === "object" && "toString" in value) {
+    if (value && typeof value === 'object' && 'toString' in value) {
       return (value as { toString(): string }).toString();
     }
     return String(value);

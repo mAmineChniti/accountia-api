@@ -1,5 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
-import Redis from "ioredis";
+import { Injectable, Inject } from '@nestjs/common';
+import Redis from 'ioredis';
 
 @Injectable()
 export class RateLimitingService {
@@ -11,11 +11,11 @@ export class RateLimitingService {
   private readonly maxOAuthStateRequests = 10;
   private readonly oauthStateWindowSeconds = 60; // 1 minute
 
-  constructor(@Inject("REDIS_CLIENT") private readonly redis: Redis) {}
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
 
   async checkLoginAttempts(
     identifier: string,
-    ip: string,
+    ip: string
   ): Promise<{ allowed: boolean; blockedUntil?: Date }> {
     const key = `rate_limit:login:${ip}:${identifier}`;
     const now = Date.now();
@@ -67,7 +67,7 @@ export class RateLimitingService {
   }
 
   async checkEmailAttempts(
-    userId: string,
+    userId: string
   ): Promise<{ allowed: boolean; waitTime?: number }> {
     const key = `rate_limit:email:${userId}`;
     const now = Date.now();
@@ -115,7 +115,7 @@ export class RateLimitingService {
     await this.redis.setex(
       key,
       this.emailWindowSeconds,
-      JSON.stringify(attempts),
+      JSON.stringify(attempts)
     );
   }
 

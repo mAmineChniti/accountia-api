@@ -1,19 +1,19 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document, Schema as MongooseSchema } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
 
-@Schema({ collection: "company_invoices", timestamps: true })
+@Schema({ collection: 'company_invoices', timestamps: true })
 export class CompanyInvoice extends Document {
   @Prop({
     required: true,
     type: MongooseSchema.Types.ObjectId,
-    ref: "Business",
+    ref: 'Business',
   })
   businessId!: string;
 
   @Prop({
     required: true,
     type: MongooseSchema.Types.ObjectId,
-    ref: "Business",
+    ref: 'Business',
   })
   clientBusinessId!: string;
 
@@ -26,7 +26,7 @@ export class CompanyInvoice extends Document {
   @Prop({
     required: true,
     type: MongooseSchema.Types.ObjectId,
-    ref: "Product",
+    ref: 'Product',
   })
   productId!: string;
 
@@ -47,23 +47,23 @@ export class CompanyInvoice extends Document {
 
   @Prop({
     type: String,
-    enum: ["issued", "received"],
-    default: "issued",
+    enum: ['issued', 'received'],
+    default: 'issued',
     description:
-      "Whether this invoice record is for issued or received invoices",
+      'Whether this invoice record is for issued or received invoices',
   })
-  invoiceType?: "issued" | "received";
+  invoiceType?: 'issued' | 'received';
 
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     description:
-      "Reference to the original invoice ID if this is a received copy",
+      'Reference to the original invoice ID if this is a received copy',
   })
   sourceInvoiceId?: string;
 
   @Prop({
     type: String,
-    description: "Database name where the original invoice is stored",
+    description: 'Database name where the original invoice is stored',
   })
   sourceDatabaseName?: string;
 

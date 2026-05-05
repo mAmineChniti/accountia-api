@@ -1,8 +1,8 @@
-import { Injectable } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
-import { Notification, NotificationType } from "./schemas/notification.schema";
-import { NotificationsGateway } from "./notifications.gateway";
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Notification, NotificationType } from './schemas/notification.schema';
+import { NotificationsGateway } from './notifications.gateway';
 
 export interface NotificationEvent {
   id: string;
@@ -19,7 +19,7 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private notificationModel: Model<Notification>,
-    private notificationsGateway: NotificationsGateway,
+    private notificationsGateway: NotificationsGateway
   ) {}
 
   async createNotification(data: {
@@ -55,7 +55,7 @@ export class NotificationsService {
 
   async getUnread(
     businessId?: string,
-    userEmail?: string,
+    userEmail?: string
   ): Promise<Notification[]> {
     const query = this.buildFilters(businessId, userEmail, true);
 
@@ -69,7 +69,7 @@ export class NotificationsService {
 
   async getRecent(
     businessId?: string,
-    userEmail?: string,
+    userEmail?: string
   ): Promise<Notification[]> {
     const query = this.buildFilters(businessId, userEmail, false);
 
@@ -93,7 +93,7 @@ export class NotificationsService {
   private buildFilters(
     businessId?: string,
     userEmail?: string,
-    addReadFilter = false,
+    addReadFilter = false
   ): Record<string, unknown> {
     const baseFilter: Record<string, unknown> = {};
 

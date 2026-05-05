@@ -14,4 +14,4 @@ export type {
   AccountingPeriodDetail,
   MonthlyTaxDetail,
   TaxDeadline,
-} from "./accounting-job.types";
+} from './accounting-job.types';

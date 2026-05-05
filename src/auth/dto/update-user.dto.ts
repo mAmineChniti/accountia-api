@@ -5,13 +5,13 @@ import {
   MaxLength,
   IsOptional,
   IsDate,
-} from "class-validator";
-import { Type } from "class-transformer";
-import { ApiPropertyOptional } from "@nestjs/swagger";
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({
-    example: "john_doe",
+    example: 'john_doe',
     minLength: 5,
     maxLength: 20,
   })
@@ -21,19 +21,19 @@ export class UpdateUserDto {
   @MaxLength(20)
   username?: string;
 
-  @ApiPropertyOptional({ example: "john@example.com" })
+  @ApiPropertyOptional({ example: 'john@example.com' })
   @IsOptional()
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional({ example: "NewP@ssw0rd!Secure", minLength: 12 })
+  @ApiPropertyOptional({ example: 'NewP@ssw0rd!Secure', minLength: 12 })
   @IsOptional()
   @IsString()
   @MinLength(12)
   password?: string;
 
   @ApiPropertyOptional({
-    example: "John",
+    example: 'John',
     minLength: 2,
     maxLength: 50,
   })
@@ -43,32 +43,32 @@ export class UpdateUserDto {
   @MaxLength(50)
   firstName?: string;
 
-  @ApiPropertyOptional({ example: "Doe", minLength: 2, maxLength: 50 })
+  @ApiPropertyOptional({ example: 'Doe', minLength: 2, maxLength: 50 })
   @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(50)
   lastName?: string;
 
-  @ApiPropertyOptional({ example: "1990-01-01T00:00:00Z" })
+  @ApiPropertyOptional({ example: '1990-01-01T00:00:00Z' })
   @IsOptional()
   @Type(() => Date)
   @IsDate()
   birthdate?: Date;
 
-  @ApiPropertyOptional({ example: "+1234567890" })
+  @ApiPropertyOptional({ example: '+1234567890' })
   @IsOptional()
   @IsString()
   phoneNumber?: string;
 
-  @ApiPropertyOptional({ example: "data:image/png;base64,iVBORw0..." })
+  @ApiPropertyOptional({ example: 'data:image/png;base64,iVBORw0...' })
   @IsOptional()
   @IsString()
   profilePicture?: string;
 
   @ApiPropertyOptional({
-    example: "CurrentP@ssw0rd!",
-    description: "Current password - required when updating email or password",
+    example: 'CurrentP@ssw0rd!',
+    description: 'Current password - required when updating email or password',
   })
   @IsOptional()
   @IsString()

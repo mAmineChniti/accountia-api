@@ -1,12 +1,12 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document, Schema as MongooseSchema } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
 
-@Schema({ collection: "products", timestamps: true })
+@Schema({ collection: 'products', timestamps: true })
 export class Product extends Document {
   @Prop({
     required: true,
     type: MongooseSchema.Types.ObjectId,
-    ref: "Business",
+    ref: 'Business',
   })
   businessId!: string;
 
@@ -25,7 +25,7 @@ export class Product extends Document {
   @Prop({ required: true, type: Number })
   quantity!: number;
 
-  @Prop({ required: true, default: "TND" })
+  @Prop({ required: true, default: 'TND' })
   currency!: string;
 
   createdAt!: Date;

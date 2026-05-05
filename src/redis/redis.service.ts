@@ -1,9 +1,9 @@
-import { Injectable, Inject, OnModuleDestroy } from "@nestjs/common";
-import Redis from "ioredis";
+import { Injectable, Inject, OnModuleDestroy } from '@nestjs/common';
+import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-  constructor(@Inject("REDIS_CLIENT") private readonly redis: Redis) {}
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
 
   async get(key: string): Promise<string | null> {
     return this.redis.get(key);
@@ -15,7 +15,7 @@ export class RedisService implements OnModuleDestroy {
     } else if (ttl > 0) {
       await this.redis.setex(key, ttl, value);
     } else {
-      throw new Error("TTL must be a positive integer or undefined");
+      throw new Error('TTL must be a positive integer or undefined');
     }
   }
 
@@ -43,26 +43,26 @@ export class RedisService implements OnModuleDestroy {
   async getKeys(pattern: string): Promise<string[]> {
     // Use SCAN instead of KEYS to avoid blocking Redis
     const keys: string[] = [];
-    let cursor = "0";
+    let cursor = '0';
     do {
       const result = await this.redis.scan(
         cursor,
-        "MATCH",
+        'MATCH',
         pattern,
-        "COUNT",
-        100,
+        'COUNT',
+        100
       );
       cursor = result[0];
       keys.push(...result[1]);
-    } while (cursor !== "0");
+    } while (cursor !== '0');
     return keys;
   }
 
   async flushAll(force = false): Promise<void> {
     // Safety check: only allow in non-production or with explicit force flag
-    if (!force && process.env.NODE_ENV === "production") {
+    if (!force && process.env.NODE_ENV === 'production') {
       throw new Error(
-        "flushAll is not allowed in production. Use force=true to override.",
+        'flushAll is not allowed in production. Use force=true to override.'
       );
     }
     await this.redis.flushall();

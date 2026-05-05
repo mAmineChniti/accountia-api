@@ -1,6 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { CreateAuditLogDto } from "./dto/audit-log.dto";
-import { AuditService } from "./audit.service";
+import { Injectable, Logger } from '@nestjs/common';
+import { CreateAuditLogDto } from './dto/audit-log.dto';
+import { AuditService } from './audit.service';
 
 @Injectable()
 export class AuditEmitter {

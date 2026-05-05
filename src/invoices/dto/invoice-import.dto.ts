@@ -12,9 +12,9 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
   ValidationArguments,
-} from "class-validator";
-import { Type } from "class-transformer";
-import { InvoiceRecipientType } from "@/invoices/enums/invoice-recipient.enum";
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
 
 /**
  * ============================================
@@ -25,7 +25,7 @@ import { InvoiceRecipientType } from "@/invoices/enums/invoice-recipient.enum";
 /**
  * Validator to ensure at least one line-item source is provided
  */
-@ValidatorConstraint({ name: "HasLineItemSource", async: false })
+@ValidatorConstraint({ name: 'HasLineItemSource', async: false })
 export class HasLineItemSourceValidator implements ValidatorConstraintInterface {
   validate(value: unknown, _args: ValidationArguments): boolean {
     const object = _args.object as Record<string, unknown>;
@@ -34,19 +34,19 @@ export class HasLineItemSourceValidator implements ValidatorConstraintInterface 
     // At least one of these should be a non-empty string
     const hasProductIds =
       productIds &&
-      typeof productIds === "string" &&
+      typeof productIds === 'string' &&
       productIds.trim().length > 0;
     const hasQuantities =
       quantities &&
-      typeof quantities === "string" &&
+      typeof quantities === 'string' &&
       quantities.trim().length > 0;
     const hasUnitPrices =
       unitPrices &&
-      typeof unitPrices === "string" &&
+      typeof unitPrices === 'string' &&
       unitPrices.trim().length > 0;
     const hasLineItemsJson =
       lineItemsJson &&
-      typeof lineItemsJson === "string" &&
+      typeof lineItemsJson === 'string' &&
       lineItemsJson.trim().length > 0;
 
     return !!(
@@ -56,14 +56,14 @@ export class HasLineItemSourceValidator implements ValidatorConstraintInterface 
   }
 
   defaultMessage(_args: ValidationArguments) {
-    return "Provide lineItemsJson or comma/pipe-separated product fields (productIds, quantities, unitPrices)";
+    return 'Provide lineItemsJson or comma/pipe-separated product fields (productIds, quantities, unitPrices)';
   }
 }
 
 /**
  * Validator to ensure recipient fields match the recipient type
  */
-@ValidatorConstraint({ name: "ValidateRecipientType", async: false })
+@ValidatorConstraint({ name: 'ValidateRecipientType', async: false })
 export class ValidateRecipientTypeValidator implements ValidatorConstraintInterface {
   validate(value: unknown, _args: ValidationArguments): boolean {
     const object = _args.object as Record<string, unknown>;
@@ -82,7 +82,7 @@ export class ValidateRecipientTypeValidator implements ValidatorConstraintInterf
       // Requires recipientPlatformId
       return !!(
         recipientPlatformId &&
-        typeof recipientPlatformId === "string" &&
+        typeof recipientPlatformId === 'string' &&
         recipientPlatformId.trim().length > 0
       );
     }
@@ -91,11 +91,11 @@ export class ValidateRecipientTypeValidator implements ValidatorConstraintInterf
       // Requires recipientPlatformId and recipientEmail
       const hasPlatformId =
         recipientPlatformId &&
-        typeof recipientPlatformId === "string" &&
+        typeof recipientPlatformId === 'string' &&
         recipientPlatformId.trim().length > 0;
       const hasEmail =
         recipientEmail &&
-        typeof recipientEmail === "string" &&
+        typeof recipientEmail === 'string' &&
         recipientEmail.trim().length > 0;
       return !!(hasPlatformId && hasEmail);
     }
@@ -104,15 +104,15 @@ export class ValidateRecipientTypeValidator implements ValidatorConstraintInterf
       // Requires recipientEmail and recipientDisplayName, recipientPlatformId should be absent/empty
       const hasEmail =
         recipientEmail &&
-        typeof recipientEmail === "string" &&
+        typeof recipientEmail === 'string' &&
         recipientEmail.trim().length > 0;
       const hasDisplayName =
         recipientDisplayName &&
-        typeof recipientDisplayName === "string" &&
+        typeof recipientDisplayName === 'string' &&
         recipientDisplayName.trim().length > 0;
       const noPlatformId =
         !recipientPlatformId ||
-        (typeof recipientPlatformId === "string" &&
+        (typeof recipientPlatformId === 'string' &&
           recipientPlatformId.trim().length === 0);
       return !!(hasEmail && hasDisplayName && noPlatformId);
     }
@@ -125,16 +125,16 @@ export class ValidateRecipientTypeValidator implements ValidatorConstraintInterf
     const type = object.recipientType as InvoiceRecipientType;
 
     if (type === InvoiceRecipientType.PLATFORM_BUSINESS) {
-      return "PLATFORM_BUSINESS requires recipientPlatformId";
+      return 'PLATFORM_BUSINESS requires recipientPlatformId';
     }
     if (type === InvoiceRecipientType.PLATFORM_INDIVIDUAL) {
-      return "PLATFORM_INDIVIDUAL requires recipientPlatformId and recipientEmail";
+      return 'PLATFORM_INDIVIDUAL requires recipientPlatformId and recipientEmail';
     }
     if (type === InvoiceRecipientType.EXTERNAL) {
-      return "EXTERNAL requires recipientEmail and recipientDisplayName, and recipientPlatformId should be absent/empty";
+      return 'EXTERNAL requires recipientEmail and recipientDisplayName, and recipientPlatformId should be absent/empty';
     }
 
-    return "Invalid recipient type configuration";
+    return 'Invalid recipient type configuration';
   }
 }
 
@@ -286,8 +286,8 @@ export class ImportedInvoiceResultDto {
   invoiceId?: string;
 
   @IsString()
-  @IsIn(["success", "error", "warning"])
-  status!: "success" | "error" | "warning";
+  @IsIn(['success', 'error', 'warning'])
+  status!: 'success' | 'error' | 'warning';
 
   @IsOptional()
   @IsString()

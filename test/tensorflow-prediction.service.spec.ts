@@ -1,18 +1,18 @@
-import { Test, type TestingModule } from "@nestjs/testing";
-import { getConnectionToken } from "@nestjs/mongoose";
-import { TensorflowPredictionService } from "../src/business/services/tensorflow-prediction.service";
-import { CacheService } from "../src/redis/cache.service";
-import { Types } from "mongoose";
-import { InvoiceStatus } from "../src/invoices/enums/invoice-status.enum";
-import { type Invoice } from "../src/invoices/schemas/invoice.schema";
+import { Test, type TestingModule } from '@nestjs/testing';
+import { getConnectionToken } from '@nestjs/mongoose';
+import { TensorflowPredictionService } from '../src/business/services/tensorflow-prediction.service';
+import { CacheService } from '../src/redis/cache.service';
+import { Types } from 'mongoose';
+import { InvoiceStatus } from '../src/invoices/enums/invoice-status.enum';
+import { type Invoice } from '../src/invoices/schemas/invoice.schema';
 
-describe("TensorflowPredictionService", () => {
+describe('TensorflowPredictionService', () => {
   let service: TensorflowPredictionService;
   let mockCacheService: { get: jest.Mock; set: jest.Mock };
   let mockConnection: { useDb: jest.Mock };
 
   const businessId = new Types.ObjectId().toString();
-  const databaseName = "tenant_db_test";
+  const databaseName = 'tenant_db_test';
   const horizonMonths = 3;
 
   beforeEach(async () => {
@@ -49,41 +49,41 @@ describe("TensorflowPredictionService", () => {
     }).compile();
 
     service = module.get<TensorflowPredictionService>(
-      TensorflowPredictionService,
+      TensorflowPredictionService
     );
   });
 
-  it("should return cached forecast if available", async () => {
+  it('should return cached forecast if available', async () => {
     const mockForecast = { revenue: { historical: [], predicted: [] } };
     mockCacheService.get.mockResolvedValue(mockForecast);
 
     const result = await service.forecastBusinessMetrics(
       businessId,
       databaseName,
-      horizonMonths,
+      horizonMonths
     );
 
     expect(result).toEqual(mockForecast);
     expect(mockCacheService.get).toHaveBeenCalled();
   });
 
-  it("should use linear extrapolation when data points are insufficient", async () => {
+  it('should use linear extrapolation when data points are insufficient', async () => {
     const historical = [
-      { date: "2024-01", value: 100 },
-      { date: "2024-02", value: 200 },
+      { date: '2024-01', value: 100 },
+      { date: '2024-02', value: 200 },
     ];
 
     const result = await service.forecastMetric(historical, 1);
 
     expect(result).toHaveLength(1);
-    expect(result[0].date).toBe("2024-03");
+    expect(result[0].date).toBe('2024-03');
     expect(result[0].value).toBeGreaterThan(200); // 100 -> 200 -> prediction > 200
   });
 
-  it("should calculate revenue correctly for PARTIAL invoices", () => {
+  it('should calculate revenue correctly for PARTIAL invoices', () => {
     const invoices = [
       {
-        issuedDate: new Date("2024-01-15"),
+        issuedDate: new Date('2024-01-15'),
         status: InvoiceStatus.PARTIAL,
         totalAmount: 1000,
         amountPaid: 400,
@@ -101,9 +101,9 @@ describe("TensorflowPredictionService", () => {
     // @ts-expect-error - accessing private method
     const monthlyData = service.buildMonthlyTimeSeries(
       invoices,
-      productCostMap,
+      productCostMap
     ) as Map<string, { revenue: number }>;
-    const janData = monthlyData.get("2024-01");
+    const janData = monthlyData.get('2024-01');
 
     // Revenue must be 400 (40% of 1000 because paid amount is 400)
     expect(janData?.revenue).toBe(400);

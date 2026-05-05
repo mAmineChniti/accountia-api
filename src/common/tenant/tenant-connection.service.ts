@@ -1,13 +1,13 @@
-import { Injectable, InternalServerErrorException } from "@nestjs/common";
-import { InjectConnection } from "@nestjs/mongoose";
-import type { Connection, Model, Schema } from "mongoose";
-import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
-import { type TenantMetadata } from "@/common/tenant/tenant.types";
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { InjectConnection } from '@nestjs/mongoose';
+import type { Connection, Model, Schema } from 'mongoose';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import { type TenantMetadata } from '@/common/tenant/tenant.types';
 
 @Injectable()
 export class TenantConnectionService {
-  private static readonly TENANT_METADATA_COLLECTION = "tenant_metadata";
-  private static readonly TENANT_USERS_COLLECTION = "tenant_users";
+  private static readonly TENANT_METADATA_COLLECTION = 'tenant_metadata';
+  private static readonly TENANT_USERS_COLLECTION = 'tenant_users';
   private readonly tenantModelCache = new Map<string, unknown>();
 
   constructor(@InjectConnection() private readonly connection: Connection) {}
@@ -24,36 +24,36 @@ export class TenantConnectionService {
 
     await this.createCollectionIfMissing(
       tenantDb,
-      TenantConnectionService.TENANT_METADATA_COLLECTION,
+      TenantConnectionService.TENANT_METADATA_COLLECTION
     );
 
     await this.createCollectionIfMissing(
       tenantDb,
-      TenantConnectionService.TENANT_USERS_COLLECTION,
+      TenantConnectionService.TENANT_USERS_COLLECTION
     );
 
     // Create indexes for the users collection
     const usersCollection = tenantDb.collection(
-      TenantConnectionService.TENANT_USERS_COLLECTION,
+      TenantConnectionService.TENANT_USERS_COLLECTION
     );
     await usersCollection.createIndex({ userId: 1 }, { unique: true });
 
     const metadataCollection = tenantDb.collection(
-      TenantConnectionService.TENANT_METADATA_COLLECTION,
+      TenantConnectionService.TENANT_METADATA_COLLECTION
     );
 
     await metadataCollection.updateOne(
-      { key: "tenant_info" },
+      { key: 'tenant_info' },
       {
         $set: {
-          key: "tenant_info",
+          key: 'tenant_info',
           businessName: params.businessName,
           ownerUserId: params.ownerUserId,
           provisionedAt: new Date(),
           version: 1,
         },
       },
-      { upsert: true },
+      { upsert: true }
     );
 
     await metadataCollection.createIndex({ key: 1 }, { unique: true });
@@ -71,17 +71,17 @@ export class TenantConnectionService {
       userId: string;
       role: BusinessUserRole;
       assignedBy: string;
-    },
+    }
   ): Promise<void> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
 
     await this.createCollectionIfMissing(
       tenantDb,
-      TenantConnectionService.TENANT_USERS_COLLECTION,
+      TenantConnectionService.TENANT_USERS_COLLECTION
     );
 
     const usersCollection = tenantDb.collection(
-      TenantConnectionService.TENANT_USERS_COLLECTION,
+      TenantConnectionService.TENANT_USERS_COLLECTION
     );
 
     await usersCollection.updateOne(
@@ -97,19 +97,19 @@ export class TenantConnectionService {
           createdAt: new Date(),
         },
       },
-      { upsert: true },
+      { upsert: true }
     );
   }
 
   async deactivateTenantUser(
     databaseName: string,
     userId: string,
-    _assignedBy: string,
+    _assignedBy: string
   ): Promise<void> {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
 
     const usersCollection = tenantDb.collection(
-      TenantConnectionService.TENANT_USERS_COLLECTION,
+      TenantConnectionService.TENANT_USERS_COLLECTION
     );
 
     await usersCollection.deleteOne({ userId });
@@ -130,7 +130,7 @@ export class TenantConnectionService {
   }
 
   async getTenantMetadata(
-    databaseName: string,
+    databaseName: string
   ): Promise<TenantMetadata | undefined> {
     const metadataCollection = this.getTenantCollection<{
       key: string;
@@ -140,7 +140,7 @@ export class TenantConnectionService {
       version: number;
     }>(databaseName, TenantConnectionService.TENANT_METADATA_COLLECTION);
 
-    const metadata = await metadataCollection.findOne({ key: "tenant_info" });
+    const metadata = await metadataCollection.findOne({ key: 'tenant_info' });
     if (!metadata) {
       return undefined;
     }
@@ -155,7 +155,7 @@ export class TenantConnectionService {
 
   getTenantCollection<TDocument extends object>(
     databaseName: string,
-    collectionName: string,
+    collectionName: string
   ) {
     const tenantDb = this.connection.useDb(databaseName, { useCache: true });
     return tenantDb.collection<TDocument>(collectionName);
@@ -188,7 +188,7 @@ export class TenantConnectionService {
     const model = tenantDb.model<TDocument>(
       params.modelName,
       params.schema,
-      params.collectionName,
+      params.collectionName
     );
     this.tenantModelCache.set(cacheKey, model as unknown);
     return model;
@@ -196,7 +196,7 @@ export class TenantConnectionService {
 
   private async createCollectionIfMissing(
     tenantDb: Connection,
-    collectionName: string,
+    collectionName: string
   ): Promise<void> {
     try {
       await tenantDb.createCollection(collectionName);
@@ -205,12 +205,12 @@ export class TenantConnectionService {
       const mongoError = error as { code?: number };
       if (
         error &&
-        typeof error === "object" &&
-        "code" in error &&
+        typeof error === 'object' &&
+        'code' in error &&
         mongoError.code !== 48
       ) {
         throw new InternalServerErrorException(
-          `Failed to create tenant collection: ${collectionName}`,
+          `Failed to create tenant collection: ${collectionName}`
         );
       }
     }

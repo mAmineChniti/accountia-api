@@ -3,27 +3,27 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
-} from "@nestjs/common";
-import { InjectModel, InjectConnection } from "@nestjs/mongoose";
-import type { Model, Connection } from "mongoose";
-import OpenAI from "openai";
-import { Business } from "@/business/schemas/business.schema";
-import { BusinessUser } from "@/business/schemas/business-user.schema";
-import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
-import { Invoice } from "@/invoices/schemas/invoice.schema";
-import { InvoiceReceipt } from "@/invoices/schemas/invoice-receipt.schema";
-import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
-import { Product, ProductSchema } from "@/products/schemas/product.schema";
-import { CacheService } from "@/redis/cache.service";
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import type { Model, Connection } from 'mongoose';
+import OpenAI from 'openai';
+import { Business } from '@/business/schemas/business.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import { Invoice } from '@/invoices/schemas/invoice.schema';
+import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
+import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Product, ProductSchema } from '@/products/schemas/product.schema';
+import { CacheService } from '@/redis/cache.service';
 
 // Groq API configuration - free tier, fast responses
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export interface AiResponse {
   response: string;
   choices: string[];
   link: { text: string; url: string } | undefined;
-  type: "text" | "choices" | "analysis";
+  type: 'text' | 'choices' | 'analysis';
 }
 
 export interface BusinessContext {
@@ -113,18 +113,18 @@ export class ChatService {
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
     @InjectConnection() private connection: Connection,
-    private readonly cacheService: CacheService,
+    private readonly cacheService: CacheService
   ) {
     const apiKey = process.env.GROQ_API_KEY;
     this.chatEnabled = Boolean(apiKey);
     this.maxCompletionTokens = this.resolveMaxCompletionTokens(
-      process.env.GROQ_MAX_COMPLETION_TOKENS,
+      process.env.GROQ_MAX_COMPLETION_TOKENS
     );
     this.timeoutMs = this.resolveTimeoutMs(process.env.GROQ_TIMEOUT_MS);
 
     if (!this.chatEnabled) {
       this.logger.warn(
-        "GROQ_API_KEY environment variable is not set. Chat service is disabled.",
+        'GROQ_API_KEY environment variable is not set. Chat service is disabled.'
       );
       this.client = undefined;
       return;
@@ -133,11 +133,11 @@ export class ChatService {
     // Initialize OpenAI client with Groq's base URL
     this.client = new OpenAI({
       apiKey: process.env.GROQ_API_KEY,
-      baseURL: "https://api.groq.com/openai/v1",
+      baseURL: 'https://api.groq.com/openai/v1',
     });
 
     this.logger.log(
-      `ChatService initialized with Groq model: ${GROQ_MODEL} (maxCompletionTokens=${this.maxCompletionTokens})`,
+      `ChatService initialized with Groq model: ${GROQ_MODEL} (maxCompletionTokens=${this.maxCompletionTokens})`
     );
   }
 
@@ -168,7 +168,7 @@ export class ChatService {
     let trimmed = content;
 
     // 1) Remove product catalog section if present
-    const productCatalogIdx = trimmed.indexOf("\nProduct Catalog (sample):");
+    const productCatalogIdx = trimmed.indexOf('\nProduct Catalog (sample):');
     if (productCatalogIdx !== -1) {
       trimmed = trimmed.slice(0, productCatalogIdx);
     }
@@ -179,42 +179,42 @@ export class ChatService {
     // Matches '  Line items:' and following indented lines starting with '  - '
     trimmed = trimmed.replaceAll(
       /\n\s{2}Line items:[\S\s]*?(?=\n- |$)/g,
-      "\n  Line items: (omitted)",
+      '\n  Line items: (omitted)'
     );
 
     if (trimmed.length <= SAFE_LIMIT) return trimmed;
 
     // 3) Reduce recent invoices list size by keeping only header and first 3 entries
-    const recentHeaderIdx = trimmed.indexOf("\nRecent Issued Invoices:");
+    const recentHeaderIdx = trimmed.indexOf('\nRecent Issued Invoices:');
     if (recentHeaderIdx !== -1) {
-      const headerText = "\nRecent Issued Invoices:";
+      const headerText = '\nRecent Issued Invoices:';
       const before = trimmed.slice(0, recentHeaderIdx + headerText.length);
       // extract lines after the header to avoid duplicating the header
       const invoiceLines = trimmed
         .slice(recentHeaderIdx + headerText.length)
-        .split("\n")
+        .split('\n')
         .filter((l) => l.trim().length > 0)
         .slice(0, 15); // a few lines per invoice
-      trimmed = before + "\n" + invoiceLines.join("\n") + "\n  ... (truncated)";
+      trimmed = before + '\n' + invoiceLines.join('\n') + '\n  ... (truncated)';
     }
 
     // Final safety clamp
     if (trimmed.length > SAFE_LIMIT) {
-      return trimmed.slice(0, SAFE_LIMIT) + "\n... (context truncated)";
+      return trimmed.slice(0, SAFE_LIMIT) + '\n... (context truncated)';
     }
     return trimmed;
   }
 
   private async withTimeout<T>(
     promise: Promise<T>,
-    operationName: string,
+    operationName: string
   ): Promise<T> {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(
-          new Error(`${operationName} timed out after ${this.timeoutMs}ms`),
+          new Error(`${operationName} timed out after ${this.timeoutMs}ms`)
         );
       }, this.timeoutMs);
     });
@@ -233,7 +233,7 @@ export class ChatService {
     history: Array<{ role: string; content: string }>;
   }): Promise<string> {
     if (!this.chatEnabled || !this.client) {
-      throw new Error("GROQ_API_KEY is not configured");
+      throw new Error('GROQ_API_KEY is not configured');
     }
 
     let systemContent = params.businessContext
@@ -252,18 +252,18 @@ export class ChatService {
       }));
 
     const messages: Array<{
-      role: "system" | "user" | "assistant";
+      role: 'system' | 'user' | 'assistant';
       content: string;
     }> = [
-      { role: "system", content: systemContent },
+      { role: 'system', content: systemContent },
       ...safeHistory.map((entry) => ({
         role:
-          entry.role === "assistant" || entry.role === "model"
-            ? ("assistant" as const)
-            : ("user" as const),
+          entry.role === 'assistant' || entry.role === 'model'
+            ? ('assistant' as const)
+            : ('user' as const),
         content: entry.content,
       })),
-      { role: "user", content: safeQuery },
+      { role: 'user', content: safeQuery },
     ];
 
     try {
@@ -275,15 +275,15 @@ export class ChatService {
           temperature: 0.7,
           top_p: 0.95,
         }),
-        "Groq chat request",
+        'Groq chat request'
       );
 
       const content = res.choices[0]?.message?.content;
-      if (typeof content === "string" && content.trim().length > 0) {
+      if (typeof content === 'string' && content.trim().length > 0) {
         return content;
       }
 
-      throw new Error("Groq response did not include message content");
+      throw new Error('Groq response did not include message content');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Groq request failed: ${message}`);
@@ -300,7 +300,7 @@ export class ChatService {
     onChunk: (chunk: string) => void;
   }): Promise<string> {
     if (!this.chatEnabled || !this.client) {
-      throw new Error("GROQ_API_KEY is not configured");
+      throw new Error('GROQ_API_KEY is not configured');
     }
 
     let systemContent = params.businessContext
@@ -319,18 +319,18 @@ export class ChatService {
       }));
 
     const messages: Array<{
-      role: "system" | "user" | "assistant";
+      role: 'system' | 'user' | 'assistant';
       content: string;
     }> = [
-      { role: "system", content: systemContent },
+      { role: 'system', content: systemContent },
       ...safeHistory.map((entry) => ({
         role:
-          entry.role === "assistant" || entry.role === "model"
-            ? ("assistant" as const)
-            : ("user" as const),
+          entry.role === 'assistant' || entry.role === 'model'
+            ? ('assistant' as const)
+            : ('user' as const),
         content: entry.content,
       })),
-      { role: "user", content: safeQuery },
+      { role: 'user', content: safeQuery },
     ];
 
     // Create AbortController for request-level timeout
@@ -347,10 +347,10 @@ export class ChatService {
           top_p: 0.95,
           stream: true,
         },
-        { signal: controller.signal },
+        { signal: controller.signal }
       );
 
-      let fullContent = "";
+      let fullContent = '';
 
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content;
@@ -362,7 +362,7 @@ export class ChatService {
 
       if (fullContent.trim().length === 0) {
         throw new Error(
-          "Groq streaming response did not include message content",
+          'Groq streaming response did not include message content'
         );
       }
 
@@ -382,7 +382,7 @@ export class ChatService {
    */
   private async verifyBusinessAccess(
     businessId: string,
-    userId: string,
+    userId: string
   ): Promise<void> {
     const businessUser = await this.businessUserModel.findOne({
       businessId,
@@ -390,7 +390,7 @@ export class ChatService {
     });
 
     if (!businessUser) {
-      throw new ForbiddenException("You do not have access to this business");
+      throw new ForbiddenException('You do not have access to this business');
     }
 
     if (
@@ -398,7 +398,7 @@ export class ChatService {
       businessUser.role !== BusinessUserRole.ADMIN
     ) {
       throw new ForbiddenException(
-        "Only business owners and admins can use the chat for this business",
+        'Only business owners and admins can use the chat for this business'
       );
     }
   }
@@ -408,7 +408,7 @@ export class ChatService {
    * Cached for 60 seconds to reduce database load
    */
   private async fetchBusinessContext(
-    businessId: string,
+    businessId: string
   ): Promise<BusinessContext> {
     const cacheKey = `chat:business_context:${businessId}`;
 
@@ -423,7 +423,7 @@ export class ChatService {
     // Fetch business details
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException("Business not found");
+      throw new NotFoundException('Business not found');
     }
 
     // Get tenant connection for this business
@@ -432,7 +432,7 @@ export class ChatService {
     // Get invoice model for the tenant database
     const tenantInvoiceModel = tenantDb.model(
       Invoice.name,
-      this.invoiceModel.schema,
+      this.invoiceModel.schema
     );
 
     // Fetch all invoices issued by this business for analysis
@@ -454,13 +454,13 @@ export class ChatService {
     // Calculate statistics
     const totalInvoices = invoices.length;
     const paidInvoices = invoices.filter(
-      (inv) => inv.status === InvoiceStatus.PAID,
+      (inv) => inv.status === InvoiceStatus.PAID
     ).length;
     const pendingInvoices = invoices.filter(
       (inv) =>
         inv.status === InvoiceStatus.ISSUED ||
         inv.status === InvoiceStatus.DRAFT ||
-        inv.status === InvoiceStatus.PARTIAL,
+        inv.status === InvoiceStatus.PARTIAL
     ).length;
 
     const now = new Date();
@@ -472,7 +472,7 @@ export class ChatService {
         (inv.status === InvoiceStatus.ISSUED ||
           inv.status === InvoiceStatus.PARTIAL ||
           inv.status === InvoiceStatus.OVERDUE) &&
-        new Date(inv.dueDate) < now,
+        new Date(inv.dueDate) < now
     ).length;
 
     // Calculate overdue amount
@@ -482,7 +482,7 @@ export class ChatService {
           (inv.status === InvoiceStatus.ISSUED ||
             inv.status === InvoiceStatus.PARTIAL ||
             inv.status === InvoiceStatus.OVERDUE) &&
-          new Date(inv.dueDate) < now,
+          new Date(inv.dueDate) < now
       )
       .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
@@ -496,13 +496,13 @@ export class ChatService {
       .filter(
         (inv) =>
           inv.status === InvoiceStatus.PAID &&
-          inv.paymentDates?.some((date) => new Date(date) >= thirtyDaysAgo),
+          inv.paymentDates?.some((date) => new Date(date) >= thirtyDaysAgo)
       )
       .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
     // Calculate revenue growth (compare last 30 days with previous 30 days)
     const previousThirtyDaysStart = new Date(
-      thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000,
+      thirtyDaysAgo.getTime() - 30 * 24 * 60 * 60 * 1000
     );
     const previousMonthRevenue = invoices
       .filter(
@@ -511,8 +511,8 @@ export class ChatService {
           inv.paymentDates?.some(
             (date) =>
               new Date(date) >= previousThirtyDaysStart &&
-              new Date(date) < thirtyDaysAgo,
-          ),
+              new Date(date) < thirtyDaysAgo
+          )
       )
       .reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
@@ -542,7 +542,7 @@ export class ChatService {
           const issued = new Date(inv.issuedDate);
           const paid = new Date(paymentDate);
           return (paid.getTime() - issued.getTime()) / (24 * 60 * 60 * 1000);
-        }),
+        })
       );
 
     const averagePaymentDelay =
@@ -566,11 +566,11 @@ export class ChatService {
           inv.recipient?.platformId ??
           inv.recipient?.email ??
           inv._id?.toString() ??
-          "Unknown";
+          'Unknown';
         const name =
           inv.recipient?.displayName ??
           inv.recipient?.email ??
-          `Invoice ${inv._id?.toString() ?? "Unknown"}`;
+          `Invoice ${inv._id?.toString() ?? 'Unknown'}`;
         const existing = debtorMap.get(key);
         if (existing) {
           existing.overdueAmount += inv.totalAmount || 0;
@@ -586,7 +586,7 @@ export class ChatService {
     // Recent invoices sample (include line items for context)
     const recentInvoices = invoices.slice(0, 10).map((inv) => ({
       invoiceNumber: inv.invoiceNumber,
-      recipientName: inv.recipient?.displayName ?? inv.recipient?.email ?? "",
+      recipientName: inv.recipient?.displayName ?? inv.recipient?.email ?? '',
       totalAmount: inv.totalAmount,
       currency: inv.currency,
       status: inv.status,
@@ -639,7 +639,7 @@ export class ChatService {
    */
   private async fetchIndividualContext(
     userId: string,
-    email: string,
+    email: string
   ): Promise<IndividualContext> {
     const cacheKey = `chat:individual_context:${userId}`;
 
@@ -653,7 +653,7 @@ export class ChatService {
 
     // Normalize email for matching if provided; avoid crashing if undefined
     const normalizedEmail =
-      typeof email === "string" && email
+      typeof email === 'string' && email
         ? email.toLowerCase().trim()
         : undefined;
 
@@ -680,17 +680,17 @@ export class ChatService {
     const pendingInvoices = receipts.filter(
       (r) =>
         r.invoiceStatus === InvoiceStatus.ISSUED ||
-        r.invoiceStatus === InvoiceStatus.PARTIAL,
+        r.invoiceStatus === InvoiceStatus.PARTIAL
     ).length;
 
     const paidInvoices = receipts.filter(
-      (r) => r.invoiceStatus === InvoiceStatus.PAID,
+      (r) => r.invoiceStatus === InvoiceStatus.PAID
     ).length;
 
     // Get upcoming due invoices (next 14 days, not paid)
     const now = new Date();
     const fourteenDaysFromNow = new Date(
-      now.getTime() + 14 * 24 * 60 * 60 * 1000,
+      now.getTime() + 14 * 24 * 60 * 60 * 1000
     );
 
     const overdueInvoices = receipts.filter(
@@ -698,7 +698,7 @@ export class ChatService {
         r.invoiceStatus === InvoiceStatus.OVERDUE ||
         ((r.invoiceStatus === InvoiceStatus.ISSUED ||
           r.invoiceStatus === InvoiceStatus.PARTIAL) &&
-          new Date(r.dueDate) < now),
+          new Date(r.dueDate) < now)
     ).length;
 
     // Calculate amounts
@@ -707,7 +707,7 @@ export class ChatService {
         (r) =>
           r.invoiceStatus === InvoiceStatus.ISSUED ||
           r.invoiceStatus === InvoiceStatus.PARTIAL ||
-          r.invoiceStatus === InvoiceStatus.OVERDUE,
+          r.invoiceStatus === InvoiceStatus.OVERDUE
       )
       .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
 
@@ -731,7 +731,7 @@ export class ChatService {
           (r.invoiceStatus === InvoiceStatus.ISSUED ||
             r.invoiceStatus === InvoiceStatus.PARTIAL) &&
           new Date(r.dueDate) >= now &&
-          new Date(r.dueDate) <= fourteenDaysFromNow,
+          new Date(r.dueDate) <= fourteenDaysFromNow
       )
       .map((r) => ({
         invoiceNumber: r.invoiceNumber,
@@ -741,7 +741,7 @@ export class ChatService {
         dueDate: r.dueDate,
         daysUntilDue: Math.ceil(
           (new Date(r.dueDate).getTime() - now.getTime()) /
-            (24 * 60 * 60 * 1000),
+            (24 * 60 * 60 * 1000)
         ),
       }))
       .toSorted((a, b) => a.daysUntilDue - b.daysUntilDue)
@@ -749,7 +749,7 @@ export class ChatService {
 
     const upcomingDueAmount = upcomingInvoices.reduce(
       (sum, inv) => sum + (inv.totalAmount || 0),
-      0,
+      0
     );
 
     const result: IndividualContext = {
@@ -775,10 +775,10 @@ export class ChatService {
    * Format individual context as a string for the prompt
    */
   private formatIndividualContext(context?: IndividualContext): string {
-    if (!context) return "";
+    if (!context) return '';
 
     const parts: string[] = [
-      "RECEIVED INVOICES CONTEXT:",
+      'RECEIVED INVOICES CONTEXT:',
       `- Total Received Invoices: ${context.totalReceivedInvoices}`,
       `- Paid Invoices: ${context.paidInvoices}`,
       `- Pending Invoices: ${context.pendingInvoices}`,
@@ -795,37 +795,37 @@ export class ChatService {
     }
     if (context.upcomingDueAmount > 0) {
       parts.push(
-        `- Due in Next 14 Days: ${context.upcomingDueAmount.toFixed(2)}`,
+        `- Due in Next 14 Days: ${context.upcomingDueAmount.toFixed(2)}`
       );
     }
 
     if (context.recentInvoices.length > 0) {
-      parts.push("\nRecent Invoices:");
+      parts.push('\nRecent Invoices:');
       for (const inv of context.recentInvoices) {
         parts.push(
-          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${inv.dueDate.toISOString().split("T")[0]})`,
+          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (${inv.status}, due: ${inv.dueDate.toISOString().split('T')[0]})`
         );
       }
     }
 
     if (context.upcomingInvoices.length > 0) {
-      parts.push("\nUpcoming Due (Next 14 Days):");
+      parts.push('\nUpcoming Due (Next 14 Days):');
       for (const inv of context.upcomingInvoices) {
         parts.push(
-          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (in ${inv.daysUntilDue} days)`,
+          `- ${inv.invoiceNumber} from ${inv.issuerName}: ${inv.totalAmount} ${inv.currency} (in ${inv.daysUntilDue} days)`
         );
       }
     }
 
-    return parts.join("\n");
+    return parts.join('\n');
   }
 
   /**
    * Generate system prompt based on mode (business or individual)
    * Groq will respond in the same language as the user's query
    */
-  private getSystemPrompt(mode: "business" | "individual"): string {
-    if (mode === "business") {
+  private getSystemPrompt(mode: 'business' | 'individual'): string {
+    if (mode === 'business') {
       return `You are an expert financial advisor (virtual CFO) for Accountia Business.
 
 YOUR PURPOSE:
@@ -883,9 +883,9 @@ ABSOLUTE RULES:
    * Format business context as a string for the prompt
    */
   private formatBusinessContext(context?: BusinessContext): string {
-    if (!context) return "";
+    if (!context) return '';
 
-    const parts: string[] = ["BUSINESS FINANCIAL CONTEXT:"];
+    const parts: string[] = ['BUSINESS FINANCIAL CONTEXT:'];
 
     if (context.businessName) {
       parts.push(`- Business: ${context.businessName}`);
@@ -929,12 +929,12 @@ ABSOLUTE RULES:
 
     if (context.averagePaymentDelay !== undefined) {
       parts.push(
-        `- Average Payment Delay: ${context.averagePaymentDelay} days`,
+        `- Average Payment Delay: ${context.averagePaymentDelay} days`
       );
     }
 
     if (context.topDebtors && context.topDebtors.length > 0) {
-      parts.push("\nTop Debtors (overdue amounts):");
+      parts.push('\nTop Debtors (overdue amounts):');
       for (const debtor of context.topDebtors) {
         parts.push(`- ${debtor.name}: ${debtor.overdueAmount.toFixed(2)} TND`);
       }
@@ -942,22 +942,22 @@ ABSOLUTE RULES:
 
     // Include recent invoices (full sample) for the AI to reference individual invoice details
     if (context.recentInvoices && context.recentInvoices.length > 0) {
-      parts.push("\nRecent Issued Invoices:");
+      parts.push('\nRecent Issued Invoices:');
       for (const inv of context.recentInvoices.slice(0, 10)) {
         const issued = inv.issuedDate
-          ? new Date(inv.issuedDate).toISOString().split("T")[0]
-          : "n/a";
+          ? new Date(inv.issuedDate).toISOString().split('T')[0]
+          : 'n/a';
         const due = inv.dueDate
-          ? new Date(inv.dueDate).toISOString().split("T")[0]
-          : "n/a";
+          ? new Date(inv.dueDate).toISOString().split('T')[0]
+          : 'n/a';
         parts.push(
-          `- ${inv.invoiceNumber} → ${inv.recipientName ?? "Unknown"}: ${inv.totalAmount} ${inv.currency ?? "TND"} (${inv.status ?? "UNKNOWN"}, issued: ${issued}, due: ${due})`,
+          `- ${inv.invoiceNumber} → ${inv.recipientName ?? 'Unknown'}: ${inv.totalAmount} ${inv.currency ?? 'TND'} (${inv.status ?? 'UNKNOWN'}, issued: ${issued}, due: ${due})`
         );
         if (inv.lineItems && inv.lineItems.length > 0) {
-          parts.push("  Line items:");
+          parts.push('  Line items:');
           for (const li of inv.lineItems.slice(0, 5)) {
             parts.push(
-              `  - ${li.productName ?? li.description ?? "Item"}: ${li.quantity ?? 1} × ${li.unitPrice ?? 0} = ${li.amount ?? 0}`,
+              `  - ${li.productName ?? li.description ?? 'Item'}: ${li.quantity ?? 1} × ${li.unitPrice ?? 0} = ${li.amount ?? 0}`
             );
           }
         }
@@ -967,21 +967,21 @@ ABSOLUTE RULES:
     // Include product catalog (recent products) so AI can reference product-level details
     const recentProductsTyped = context.recentProducts;
     if (recentProductsTyped && recentProductsTyped.length > 0) {
-      parts.push("\nProduct Catalog (sample):");
+      parts.push('\nProduct Catalog (sample):');
       for (const p of recentProductsTyped.slice(0, 15)) {
-        const name = p.name ?? "";
-        const description = p.description ?? "";
+        const name = p.name ?? '';
+        const description = p.description ?? '';
         const unitPrice = p.unitPrice ?? 0;
-        const currency = p.currency ?? "TND";
+        const currency = p.currency ?? 'TND';
         const quantity = p.quantity ?? 0;
 
         parts.push(
-          `- ${name}: ${description} — ${unitPrice} ${currency} (qty: ${quantity})`,
+          `- ${name}: ${description} — ${unitPrice} ${currency} (qty: ${quantity})`
         );
       }
     }
 
-    return parts.join("\n");
+    return parts.join('\n');
   }
 
   /**
@@ -998,26 +998,26 @@ ABSOLUTE RULES:
       onChunk: (chunk: string) => void;
       onComplete: (fullResponse: string) => void;
       onError: (error: Error) => void;
-    },
+    }
   ): Promise<void> {
     try {
       let contextStr: string;
-      let mode: "business" | "individual";
+      let mode: 'business' | 'individual';
 
       if (businessId) {
         // Business mode: verify access and fetch business context
         await this.verifyBusinessAccess(businessId, userId);
         const businessContext = await this.fetchBusinessContext(businessId);
         contextStr = this.formatBusinessContext(businessContext);
-        mode = "business";
+        mode = 'business';
       } else {
         // Individual mode: fetch user's received invoices
         const individualContext = await this.fetchIndividualContext(
           userId,
-          userEmail,
+          userEmail
         );
         contextStr = this.formatIndividualContext(individualContext);
-        mode = "individual";
+        mode = 'individual';
       }
 
       const systemPrompt = this.getSystemPrompt(mode);
@@ -1037,7 +1037,7 @@ ABSOLUTE RULES:
       this.logger.error(`Streaming chat error: ${err.message}`, err.stack);
 
       // Handle specific error types
-      const message = err.message || "Unknown AI service error";
+      const message = err.message || 'Unknown AI service error';
 
       // Handle HTTP exceptions first (before API key detection)
       if (
@@ -1057,13 +1057,13 @@ ABSOLUTE RULES:
       const httpStatus = groqError.status;
       const isApiKeyError =
         httpStatus === 401 ||
-        message.toLowerCase().includes("invalid api key") ||
-        message.toLowerCase().includes("authentication") ||
-        groqError.code === "invalid_api_key";
+        message.toLowerCase().includes('invalid api key') ||
+        message.toLowerCase().includes('authentication') ||
+        groqError.code === 'invalid_api_key';
 
       if (isApiKeyError) {
         callbacks.onError(
-          new Error("AI service is not configured. Please check GROQ_API_KEY."),
+          new Error('AI service is not configured. Please check GROQ_API_KEY.')
         );
         return;
       }

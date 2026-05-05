@@ -1,7 +1,7 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
 
-@Schema({ collection: "business_applications", timestamps: true })
+@Schema({ collection: 'business_applications', timestamps: true })
 export class BusinessApplication extends Document {
   @Prop({ required: true })
   businessName: string;
@@ -29,10 +29,10 @@ export class BusinessApplication extends Document {
 
   @Prop({
     type: String,
-    enum: ["pending", "approved", "rejected"],
-    default: "pending",
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending',
   })
-  status: "pending" | "approved" | "rejected";
+  status: 'pending' | 'approved' | 'rejected';
 
   @Prop({ required: false })
   reviewedBy?: string; // Platform admin/owner who reviewed
@@ -56,5 +56,5 @@ export const BusinessApplicationSchema =
 // Add compound index to ensure one pending application per user
 BusinessApplicationSchema.index(
   { applicantId: 1, status: 1 },
-  { unique: false },
+  { unique: false }
 );

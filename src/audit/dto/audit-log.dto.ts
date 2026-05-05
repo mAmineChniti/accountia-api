@@ -1,8 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { AuditAction } from "../schemas/audit-log.schema";
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AuditAction } from '../schemas/audit-log.schema';
 
 export class CreateAuditLogDto {
-  @ApiProperty({ enum: AuditAction, enumName: "AuditAction" })
+  @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
   action: AuditAction;
 
   @ApiPropertyOptional({ nullable: true })
@@ -28,7 +28,7 @@ export class AuditLogResponseDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ enum: AuditAction, enumName: "AuditAction" })
+  @ApiProperty({ enum: AuditAction, enumName: 'AuditAction' })
   action: AuditAction;
 
   @ApiPropertyOptional({ nullable: true })

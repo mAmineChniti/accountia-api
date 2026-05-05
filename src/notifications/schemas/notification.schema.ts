@@ -1,16 +1,16 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
 
 export enum NotificationType {
-  NEW_BUSINESS_APPLICATION = "NEW_BUSINESS_APPLICATION",
-  BUSINESS_APPROVED = "BUSINESS_APPROVED",
-  BUSINESS_REJECTED = "BUSINESS_REJECTED",
-  USER_BANNED = "USER_BANNED",
-  INVOICE_CREATED = "INVOICE_CREATED",
-  INVOICE_PAID = "INVOICE_PAID",
+  NEW_BUSINESS_APPLICATION = 'NEW_BUSINESS_APPLICATION',
+  BUSINESS_APPROVED = 'BUSINESS_APPROVED',
+  BUSINESS_REJECTED = 'BUSINESS_REJECTED',
+  USER_BANNED = 'USER_BANNED',
+  INVOICE_CREATED = 'INVOICE_CREATED',
+  INVOICE_PAID = 'INVOICE_PAID',
 }
 
-@Schema({ timestamps: true, collection: "notifications" })
+@Schema({ timestamps: true, collection: 'notifications' })
 export class Notification extends Document {
   @Prop({ required: true, enum: NotificationType })
   type: NotificationType;

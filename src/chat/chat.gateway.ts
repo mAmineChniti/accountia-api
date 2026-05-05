@@ -6,16 +6,16 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
-} from "@nestjs/websockets";
-import { Server, Socket } from "socket.io";
-import { Logger } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
-import { ChatService } from "./chat.service";
-import { User } from "@/users/schemas/user.schema";
-import { JwtService } from "@nestjs/jwt";
-import { ConfigService } from "@nestjs/config";
-import { WebSocketStateService } from "@/redis/websocket-state.service";
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { ChatService } from './chat.service';
+import { User } from '@/users/schemas/user.schema';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { WebSocketStateService } from '@/redis/websocket-state.service';
 
 interface ChatMessage {
   query: string;
@@ -33,7 +33,7 @@ interface AuthenticatedSocket extends Socket {
 }
 
 @WebSocketGateway({
-  namespace: "chat",
+  namespace: 'chat',
   cors: {
     origin: (origin, callback) => {
       // Get origins from ConfigService at runtime for validated config
@@ -41,22 +41,22 @@ interface AuthenticatedSocket extends Socket {
       const frontendUrls =
         process.env.FRONTEND_URLS ??
         process.env.FRONTEND_URL ??
-        "http://localhost:3000";
-      const allowed = frontendUrls.split(",").map((url) => url.trim());
+        'http://localhost:3000';
+      const allowed = frontendUrls.split(',').map((url) => url.trim());
       // Always allow localhost for development
-      allowed.push("http://localhost:3000", "http://localhost:3001");
+      allowed.push('http://localhost:3000', 'http://localhost:3001');
 
       // Allow requests with no origin (e.g., mobile apps, Postman)
       if (!origin || allowed.includes(origin)) {
         // eslint-disable-next-line unicorn/no-null -- Socket.IO CORS callback type requires null
         callback(null, true);
       } else {
-        callback(new Error("Origin not allowed by CORS"), false);
+        callback(new Error('Origin not allowed by CORS'), false);
       }
     },
     credentials: true,
   },
-  transports: ["websocket", "polling"],
+  transports: ['websocket', 'polling'],
   pingInterval: 10_000,
   pingTimeout: 5000,
 })
@@ -71,7 +71,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly wsStateService: WebSocketStateService,
-    @InjectModel(User.name) private readonly userModel: Model<User>,
+    @InjectModel(User.name) private readonly userModel: Model<User>
   ) {}
 
   async handleConnection(client: AuthenticatedSocket) {
@@ -79,15 +79,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Only accept token from auth (not query) to prevent JWT logging in URLs
       const token = client.handshake.auth.token as string | undefined;
 
-      if (!token || typeof token !== "string") {
-        this.logger.warn("Client connected without token");
+      if (!token || typeof token !== 'string') {
+        this.logger.warn('Client connected without token');
         client.disconnect(true);
         return;
       }
 
-      const secret = this.configService.get<string>("JWT_SECRET");
+      const secret = this.configService.get<string>('JWT_SECRET');
       if (!secret) {
-        this.logger.error("JWT_SECRET not configured");
+        this.logger.error('JWT_SECRET not configured');
         client.disconnect(true);
         return;
       }
@@ -100,7 +100,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .findById(payload.sub, { email: 1, role: 1 })
         .lean();
       if (!user) {
-        this.logger.warn("User from token not found");
+        this.logger.warn('User from token not found');
         client.disconnect(true);
         return;
       }
@@ -119,43 +119,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       this.logger.debug(`Client connected: ${client.user.id}`);
-      client.emit("connected", { status: "connected", userId: client.user.id });
+      client.emit('connected', { status: 'connected', userId: client.user.id });
     } catch {
-      this.logger.warn("Authentication failed, disconnecting client");
+      this.logger.warn('Authentication failed, disconnecting client');
       client.disconnect(true);
     }
   }
 
   handleDisconnect(client: AuthenticatedSocket) {
-    this.logger.debug(`Client disconnected: ${client.user?.id ?? "unknown"}`);
+    this.logger.debug(`Client disconnected: ${client.user?.id ?? 'unknown'}`);
     // Remove connection from Redis
     void this.wsStateService.recordDisconnection(client.id);
   }
 
-  @SubscribeMessage("chat_message")
+  @SubscribeMessage('chat_message')
   async handleChatMessage(
     @MessageBody() data: ChatMessage,
-    @ConnectedSocket() client: AuthenticatedSocket,
+    @ConnectedSocket() client: AuthenticatedSocket
   ): Promise<void> {
     if (!client.user) {
-      client.emit("message_error", {
+      client.emit('message_error', {
         messageId: data.messageId,
-        message: "Not authenticated",
+        message: 'Not authenticated',
       });
       return;
     }
 
     const { query, businessId, history = [], messageId } = data;
 
-    if (!query || typeof query !== "string") {
-      client.emit("message_error", { messageId, message: "Query is required" });
+    if (!query || typeof query !== 'string') {
+      client.emit('message_error', { messageId, message: 'Query is required' });
       return;
     }
 
     const startTime = Date.now();
 
     // Send start event immediately
-    client.emit("message_start", {
+    client.emit('message_start', {
       messageId,
       timestamp: new Date().toISOString(),
     });
@@ -173,7 +173,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           onChunk: (chunk: string) => {
             // Use reliable emit for chunks so clients don't lose data
             // (client can still reconcile with fullResponse from message_complete)
-            client.emit("message_chunk", {
+            client.emit('message_chunk', {
               messageId,
               chunk,
             });
@@ -181,10 +181,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           onComplete: (fullResponse: string) => {
             const duration = Date.now() - startTime;
             this.logger.debug(
-              `Response completed in ${duration}ms for user ${client.user?.id}`,
+              `Response completed in ${duration}ms for user ${client.user?.id}`
             );
 
-            client.emit("message_complete", {
+            client.emit('message_complete', {
               messageId,
               response: fullResponse,
               duration,
@@ -192,26 +192,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             });
           },
           onError: (error: Error) => {
-            this.logger.error("Streaming error:", error.message);
-            client.emit("message_error", {
+            this.logger.error('Streaming error:', error.message);
+            client.emit('message_error', {
               messageId,
-              message: error.message || "An error occurred",
+              message: error.message || 'An error occurred',
             });
           },
-        },
+        }
       );
     } catch (error) {
-      this.logger.error("Chat error:", error);
+      this.logger.error('Chat error:', error);
       const message =
-        error instanceof Error ? error.message : "An error occurred";
-      client.emit("message_error", { messageId, message });
+        error instanceof Error ? error.message : 'An error occurred';
+      client.emit('message_error', { messageId, message });
     }
   }
 
-  @SubscribeMessage("ping")
+  @SubscribeMessage('ping')
   handlePing(@ConnectedSocket() client: Socket): void {
     // Update last ping time in Redis to keep connection alive
     void this.wsStateService.recordPing(client.id);
-    client.emit("pong", { timestamp: Date.now() });
+    client.emit('pong', { timestamp: Date.now() });
   }
 }

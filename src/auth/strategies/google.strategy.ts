@@ -2,11 +2,11 @@ import {
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { PassportStrategy } from "@nestjs/passport";
-import type { Request } from "express";
-import { Profile, Strategy } from "passport-google-oauth20";
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import type { Request } from 'express';
+import { Profile, Strategy } from 'passport-google-oauth20';
 
 export type GoogleAuthUser = {
   email: string;
@@ -18,23 +18,23 @@ export type GoogleAuthUser = {
 };
 
 @Injectable()
-export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
+export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(private readonly configService: ConfigService) {
     // Handle insecure TLS for local testing with self-signed certs
     const allowInsecureTls = configService.get<string>(
-      "GOOGLE_OAUTH_ALLOW_INSECURE_TLS",
+      'GOOGLE_OAUTH_ALLOW_INSECURE_TLS'
     );
-    if (allowInsecureTls === "true") {
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    if (allowInsecureTls === 'true') {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     }
 
-    const clientID = configService.get<string>("GOOGLE_CLIENT_ID");
-    const clientSecret = configService.get<string>("GOOGLE_CLIENT_SECRET");
-    const callbackURL = configService.get<string>("GOOGLE_CALLBACK_URL");
+    const clientID = configService.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = configService.get<string>('GOOGLE_CLIENT_SECRET');
+    const callbackURL = configService.get<string>('GOOGLE_CALLBACK_URL');
 
     if (!clientID || !clientSecret || !callbackURL) {
       throw new InternalServerErrorException(
-        "Google OAuth is not configured on the server",
+        'Google OAuth is not configured on the server'
       );
     }
 
@@ -42,7 +42,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
       clientID,
       clientSecret,
       callbackURL,
-      scope: ["email", "profile"],
+      scope: ['email', 'profile'],
       passReqToCallback: true,
     });
   }
@@ -51,15 +51,15 @@ export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
     req: Request,
     _accessToken: string,
     _refreshToken: string,
-    profile: Profile,
+    profile: Profile
   ): GoogleAuthUser {
     const email = profile.emails?.[0]?.value;
     if (!email) {
-      throw new UnauthorizedException("Google account email is missing");
+      throw new UnauthorizedException('Google account email is missing');
     }
 
     const state =
-      typeof req.query.state === "string" ? req.query.state : undefined;
+      typeof req.query.state === 'string' ? req.query.state : undefined;
 
     return {
       email,

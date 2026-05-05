@@ -5,17 +5,17 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
-} from "@nestjs/websockets";
-import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { InjectModel } from "@nestjs/mongoose";
-import { Model } from "mongoose";
-import { Server, Socket } from "socket.io";
-import { User } from "@/users/schemas/user.schema";
-import { BusinessUser } from "@/business/schemas/business-user.schema";
-import { Role } from "@/auth/enums/role.enum";
-import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
-import type { NotificationEvent } from "./notifications.service";
+} from '@nestjs/websockets';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Server, Socket } from 'socket.io';
+import { User } from '@/users/schemas/user.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
+import { Role } from '@/auth/enums/role.enum';
+import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import type { NotificationEvent } from './notifications.service';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -65,7 +65,7 @@ interface AuthenticatedSocket extends Socket {
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
     credentials: true,
   },
 })
@@ -79,7 +79,7 @@ export class NotificationsGateway
     private readonly jwtService: JwtService,
     @InjectModel(User.name) private readonly userModel: Model<User>,
     @InjectModel(BusinessUser.name)
-    private readonly businessUserModel: Model<BusinessUser>,
+    private readonly businessUserModel: Model<BusinessUser>
   ) {}
 
   afterInit(server: Server) {
@@ -89,7 +89,7 @@ export class NotificationsGateway
       const businessId = socket.handshake.query.businessId as string;
 
       if (!token) {
-        return next(new UnauthorizedException("Missing token"));
+        return next(new UnauthorizedException('Missing token'));
       }
 
       this.validateAndAttachUser(socket, token, businessId)
@@ -103,14 +103,14 @@ export class NotificationsGateway
   private async validateAndAttachUser(
     socket: AuthenticatedSocket,
     token: string,
-    businessId: string,
+    businessId: string
   ): Promise<void> {
     try {
       const payload = this.jwtService.verify<{ sub?: string }>(token);
       const user = await this.userModel.findById(payload.sub).lean();
 
       if (!user) {
-        throw new UnauthorizedException("User not found");
+        throw new UnauthorizedException('User not found');
       }
 
       // Allowed roles
@@ -121,7 +121,7 @@ export class NotificationsGateway
       ];
 
       if (!allowedRoles.includes(user.role)) {
-        throw new UnauthorizedException("Insufficient role");
+        throw new UnauthorizedException('Insufficient role');
       }
 
       // Attach user info to socket
@@ -132,19 +132,19 @@ export class NotificationsGateway
     } catch (error) {
       throw error instanceof UnauthorizedException
         ? error
-        : new UnauthorizedException("Invalid token");
+        : new UnauthorizedException('Invalid token');
     }
   }
 
   handleConnection(socket: AuthenticatedSocket) {
     // Join user to appropriate room based on role
     const isAdmin = [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN].includes(
-      socket.userRole!,
+      socket.userRole!
     );
     const isClient = socket.userRole === Role.CLIENT;
 
     if (isAdmin) {
-      void socket.join("admin");
+      void socket.join('admin');
     } else if (isClient) {
       void socket.join(`client:${socket.userEmail}`);
     }
@@ -152,7 +152,7 @@ export class NotificationsGateway
     // Join business room if businessId is provided
     if (socket.businessId) {
       this.joinBusinessRoom(socket).catch((error) => {
-        console.error("Error joining business room:", error);
+        console.error('Error joining business room:', error);
       });
     }
   }
@@ -173,7 +173,7 @@ export class NotificationsGateway
         await socket.join(`business:${socket.businessId}`);
       }
     } catch (error) {
-      console.error("Error joining business room:", error);
+      console.error('Error joining business room:', error);
     }
   }
 
@@ -186,17 +186,17 @@ export class NotificationsGateway
    * Client can subscribe to specific notification types.
    * Useful for filtering notifications client-side.
    */
-  @SubscribeMessage("subscribe")
+  @SubscribeMessage('subscribe')
   handleSubscribe(
     socket: AuthenticatedSocket,
-    data: { types?: string[] },
+    data: { types?: string[] }
   ): { success: boolean; message: string } {
     const types = Array.isArray(data.types) ? data.types : [];
     socket.data ??= {};
     (socket.data as Record<string, unknown>).subscribedTypes = types;
     return {
       success: true,
-      message: `Subscribed to types: ${types.join(", ") || "all"}`,
+      message: `Subscribed to types: ${types.join(', ') || 'all'}`,
     };
   }
 
@@ -217,14 +217,14 @@ export class NotificationsGateway
     if (event.targetBusinessId) {
       this.server
         .to(`business:${event.targetBusinessId}`)
-        .emit("notification", notification);
+        .emit('notification', notification);
     } else if (event.targetUserEmail) {
       this.server
         .to(`client:${event.targetUserEmail}`)
-        .emit("notification", notification);
+        .emit('notification', notification);
     } else {
       // Global notification for admins
-      this.server.to("admin").emit("notification", notification);
+      this.server.to('admin').emit('notification', notification);
     }
   }
 
@@ -237,7 +237,7 @@ export class NotificationsGateway
     const stats: Record<string, number> = {};
 
     for (const [room, sockets] of rooms) {
-      if (!room.startsWith("/")) {
+      if (!room.startsWith('/')) {
         // Skip socket IDs
         stats[room] = sockets.size;
       }

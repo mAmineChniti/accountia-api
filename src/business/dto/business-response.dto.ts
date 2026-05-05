@@ -1,25 +1,25 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty } from '@nestjs/swagger';
 
 export class BusinessResponseDto {
   @ApiProperty({
-    example: "Business retrieved successfully",
-    description: "Success message describing the operation result",
+    example: 'Business retrieved successfully',
+    description: 'Success message describing the operation result',
   })
   message!: string;
 
   @ApiProperty({
-    description: "Business object with complete details",
+    description: 'Business object with complete details',
     example: {
-      id: "507f1f77bcf86cd799439011",
-      name: "Tech Solutions Inc.",
-      description: "A technology company specializing in software development",
-      website: "https://techsolutions.com",
-      phone: "+1-555-0123",
-      email: "contact@techsolutions.com",
-      databaseName: "tech_solutions_inc_1708198200000",
-      status: "approved",
-      createdAt: "2024-02-17T16:30:00.000Z",
-      updatedAt: "2024-02-17T16:30:00.000Z",
+      id: '507f1f77bcf86cd799439011',
+      name: 'Tech Solutions Inc.',
+      description: 'A technology company specializing in software development',
+      website: 'https://techsolutions.com',
+      phone: '+1-555-0123',
+      email: 'contact@techsolutions.com',
+      databaseName: 'tech_solutions_inc_1708198200000',
+      status: 'approved',
+      createdAt: '2024-02-17T16:30:00.000Z',
+      updatedAt: '2024-02-17T16:30:00.000Z',
     },
   })
   business!: {
@@ -38,22 +38,22 @@ export class BusinessResponseDto {
 
 export class BusinessesListResponseDto {
   @ApiProperty({
-    example: "Businesses retrieved successfully",
-    description: "Success message describing the operation result",
+    example: 'Businesses retrieved successfully',
+    description: 'Success message describing the operation result',
   })
   message!: string;
 
   @ApiProperty({
-    description: "Array of businesses with basic details",
+    description: 'Array of businesses with basic details',
     type: [Object],
     isArray: true,
     example: [
       {
-        id: "507f1f77bcf86cd799439011",
-        name: "Tech Solutions Inc.",
-        phone: "+1-555-0123",
-        status: "approved",
-        createdAt: "2024-02-17T16:30:00.000Z",
+        id: '507f1f77bcf86cd799439011',
+        name: 'Tech Solutions Inc.',
+        phone: '+1-555-0123',
+        status: 'approved',
+        createdAt: '2024-02-17T16:30:00.000Z',
       },
     ],
   })
@@ -68,29 +68,29 @@ export class BusinessesListResponseDto {
 
 export class BusinessApplicationListResponseDto {
   @ApiProperty({
-    example: "Business applications retrieved successfully",
-    description: "Success message describing the operation result",
+    example: 'Business applications retrieved successfully',
+    description: 'Success message describing the operation result',
   })
   message!: string;
 
   @ApiProperty({
-    description: "Array of business applications with details",
+    description: 'Array of business applications with details',
     type: [Object],
     isArray: true,
     example: [
       {
-        id: "507f1f77bcf86cd799439011",
-        businessName: "Tech Solutions Inc.",
+        id: '507f1f77bcf86cd799439011',
+        businessName: 'Tech Solutions Inc.',
         description:
-          "A technology company specializing in software development",
-        website: "https://techsolutions.com",
-        phone: "+1-555-0123",
-        businessEmail: "contact@techsolutions.com",
-        applicantId: "615f2e0a6c6d5c0e1a1e4a01",
-        applicantEmail: "john@example.com",
-        applicantName: "John Doe",
-        status: "pending",
-        createdAt: "2024-02-17T16:30:00.000Z",
+          'A technology company specializing in software development',
+        website: 'https://techsolutions.com',
+        phone: '+1-555-0123',
+        businessEmail: 'contact@techsolutions.com',
+        applicantId: '615f2e0a6c6d5c0e1a1e4a01',
+        applicantEmail: 'john@example.com',
+        applicantName: 'John Doe',
+        status: 'pending',
+        createdAt: '2024-02-17T16:30:00.000Z',
       },
     ],
   })

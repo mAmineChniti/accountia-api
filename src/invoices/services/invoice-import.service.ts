@@ -1,20 +1,20 @@
-import { Injectable, BadRequestException, Logger } from "@nestjs/common";
-import { parse as csvParse } from "csv-parse/sync";
-import * as XLSX from "xlsx";
-import { InvoiceIssuanceService } from "./invoice-issuance.service";
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { parse as csvParse } from 'csv-parse/sync';
+import * as XLSX from 'xlsx';
+import { InvoiceIssuanceService } from './invoice-issuance.service';
 import {
   ImportedInvoiceResultDto,
   BulkImportInvoicesResponseDto,
-} from "@/invoices/dto/invoice-import.dto";
+} from '@/invoices/dto/invoice-import.dto';
 import {
   CreateInvoiceDto,
   CreateInvoiceRecipientDto,
-} from "@/invoices/dto/invoice.dto";
-import type { InvoiceResponseDto } from "@/invoices/dto/invoice.dto";
-import type { InvoiceExtractionResult } from "@/common/utils/ocr-document-extraction.util";
-import { InvoiceRecipientType } from "@/invoices/enums/invoice-recipient.enum";
-import { mapColumnsUsingAi } from "@/common/utils/ai-mapper.util";
-import { extractFromDocument } from "@/common/utils/ocr-document-extraction.util";
+} from '@/invoices/dto/invoice.dto';
+import type { InvoiceResponseDto } from '@/invoices/dto/invoice.dto';
+import type { InvoiceExtractionResult } from '@/common/utils/ocr-document-extraction.util';
+import { InvoiceRecipientType } from '@/invoices/enums/invoice-recipient.enum';
+import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
+import { extractFromDocument } from '@/common/utils/ocr-document-extraction.util';
 
 /**
  * Service for bulk importing invoices from CSV or Excel files
@@ -54,7 +54,7 @@ export class InvoiceImportService {
     file: FileUpload,
     businessId: string,
     databaseName: string,
-    userId: string,
+    userId: string
   ): Promise<BulkImportInvoicesResponseDto> {
     const startTime = Date.now();
     const generalErrors: string[] = [];
@@ -66,28 +66,28 @@ export class InvoiceImportService {
 
       if (records.length === 0) {
         throw new BadRequestException(
-          "File is empty or contains no valid records",
+          'File is empty or contains no valid records'
         );
       }
 
       this.logger.debug(`Parsed ${records.length} records from file`);
 
       const expectedColumns = [
-        "invoiceNumber",
-        "recipientType",
-        "recipientPlatformId",
-        "recipientEmail",
-        "recipientDisplayName",
-        "productIds",
-        "productNames",
-        "quantities",
-        "unitPrices",
-        "issuedDate",
-        "dueDate",
-        "description",
-        "paymentTerms",
-        "currency",
-        "lineItemsJson",
+        'invoiceNumber',
+        'recipientType',
+        'recipientPlatformId',
+        'recipientEmail',
+        'recipientDisplayName',
+        'productIds',
+        'productNames',
+        'quantities',
+        'unitPrices',
+        'issuedDate',
+        'dueDate',
+        'description',
+        'paymentTerms',
+        'currency',
+        'lineItemsJson',
       ];
       records = await mapColumnsUsingAi(records, expectedColumns);
 
@@ -105,7 +105,7 @@ export class InvoiceImportService {
             businessId,
             databaseName,
             userId,
-            i + 1, // Row number (1-indexed, accounting for header)
+            i + 1 // Row number (1-indexed, accounting for header)
           );
           results.push(result);
         } catch (error) {
@@ -113,8 +113,8 @@ export class InvoiceImportService {
             (record.invoiceNumber as string) || `Row ${i + 2}`;
           const errorRecord: ImportedInvoiceResultDto = {
             invoiceNumber,
-            status: "error",
-            message: error instanceof Error ? error.message : "Unknown error",
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error',
           };
           results.push(errorRecord);
           this.logger.warn(`Failed to import invoice row ${i + 2}:`, error);
@@ -122,9 +122,9 @@ export class InvoiceImportService {
       }
 
       // Calculate statistics
-      const successCount = results.filter((r) => r.status === "success").length;
-      const failedCount = results.filter((r) => r.status === "error").length;
-      const warningCount = results.filter((r) => r.status === "warning").length;
+      const successCount = results.filter((r) => r.status === 'success').length;
+      const failedCount = results.filter((r) => r.status === 'error').length;
+      const warningCount = results.filter((r) => r.status === 'warning').length;
       const processingTimeMs = Date.now() - startTime;
 
       const response: BulkImportInvoicesResponseDto = {
@@ -141,13 +141,13 @@ export class InvoiceImportService {
 
       this.logger.log(
         `Import completed: ${successCount} succeeded, ${failedCount} failed, ` +
-          `${warningCount} warnings in ${processingTimeMs}ms`,
+          `${warningCount} warnings in ${processingTimeMs}ms`
       );
 
       return response;
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "File processing failed";
+        error instanceof Error ? error.message : 'File processing failed';
       this.logger.error(`Import failed: ${errorMessage}`, error);
       throw new BadRequestException(`File import failed: ${errorMessage}`);
     }
@@ -159,13 +159,13 @@ export class InvoiceImportService {
   private parseFile(file: FileUpload): Record<string, unknown>[] {
     const filename = file.originalname.toLowerCase();
 
-    if (filename.endsWith(".csv")) {
+    if (filename.endsWith('.csv')) {
       return this.parseCSV(file.buffer);
-    } else if (filename.endsWith(".xlsx")) {
+    } else if (filename.endsWith('.xlsx')) {
       return this.parseExcel(file.buffer);
     } else {
       throw new BadRequestException(
-        "Unsupported file format. Please upload a CSV or XLSX file.",
+        'Unsupported file format. Please upload a CSV or XLSX file.'
       );
     }
   }
@@ -175,7 +175,7 @@ export class InvoiceImportService {
    */
   private parseCSV(buffer: Buffer): Record<string, unknown>[] {
     try {
-      const csvData = buffer.toString("utf8");
+      const csvData = buffer.toString('utf8');
       const records = csvParse(csvData, {
         columns: true, // Use first row as column headers
         skip_empty_lines: true,
@@ -186,7 +186,7 @@ export class InvoiceImportService {
       return records as Record<string, unknown>[];
     } catch (error) {
       throw new BadRequestException(
-        `CSV parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `CSV parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }
@@ -196,10 +196,10 @@ export class InvoiceImportService {
    */
   private parseExcel(buffer: Buffer): Record<string, unknown>[] {
     try {
-      const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
 
       if (workbook.SheetNames.length === 0) {
-        throw new BadRequestException("Excel file contains no sheets");
+        throw new BadRequestException('Excel file contains no sheets');
       }
 
       // Use first sheet
@@ -211,14 +211,14 @@ export class InvoiceImportService {
         XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet);
 
       this.logger.debug(
-        `Parsed ${records.length} records from Excel sheet "${sheetName}"`,
+        `Parsed ${records.length} records from Excel sheet "${sheetName}"`
       );
 
       return records;
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException(
-        `Excel parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        `Excel parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }
@@ -230,18 +230,18 @@ export class InvoiceImportService {
     const errors: string[] = [];
 
     if (records.length === 0) {
-      errors.push("No records found in file");
+      errors.push('No records found in file');
       return errors;
     }
 
     // Check that all required columns exist
     const firstRecord = records[0];
-    const requiredFields = ["recipientType", "issuedDate", "dueDate"];
+    const requiredFields = ['recipientType', 'issuedDate', 'dueDate'];
 
     for (const field of requiredFields) {
       if (!(field in firstRecord)) {
         errors.push(
-          `Missing required column: "${field}". Required columns: ${requiredFields.join(", ")}`,
+          `Missing required column: "${field}". Required columns: ${requiredFields.join(', ')}`
         );
       }
     }
@@ -257,21 +257,21 @@ export class InvoiceImportService {
     businessId: string,
     databaseName: string,
     userId: string,
-    rowNumber: number,
+    rowNumber: number
   ): Promise<ImportedInvoiceResultDto> {
     const invoiceNumber =
-      String((record.invoiceNumber as string) ?? "").trim() || undefined;
+      String((record.invoiceNumber as string) ?? '').trim() || undefined;
 
     // Parse and validate recipient
-    const recipientType = String((record.recipientType as string) ?? "").trim();
+    const recipientType = String((record.recipientType as string) ?? '').trim();
     if (
       !Object.values(InvoiceRecipientType).includes(
-        recipientType as InvoiceRecipientType,
+        recipientType as InvoiceRecipientType
       )
     ) {
       throw new Error(
         `Row ${rowNumber}: Invalid recipientType "${recipientType}". ` +
-          `Must be one of: ${Object.values(InvoiceRecipientType).join(", ")}`,
+          `Must be one of: ${Object.values(InvoiceRecipientType).join(', ')}`
       );
     }
 
@@ -279,13 +279,13 @@ export class InvoiceImportService {
     const recipient: CreateInvoiceRecipientDto = {
       type: recipientType as InvoiceRecipientType,
       platformId: record.recipientPlatformId
-        ? String((record.recipientPlatformId as string) ?? "").trim()
+        ? String((record.recipientPlatformId as string) ?? '').trim()
         : undefined,
       email: record.recipientEmail
-        ? String((record.recipientEmail as string) ?? "").trim()
+        ? String((record.recipientEmail as string) ?? '').trim()
         : undefined,
       displayName: record.recipientDisplayName
-        ? String((record.recipientDisplayName as string) ?? "").trim()
+        ? String((record.recipientDisplayName as string) ?? '').trim()
         : undefined,
     };
 
@@ -296,7 +296,7 @@ export class InvoiceImportService {
       !recipient.platformId
     ) {
       throw new Error(
-        `Row ${rowNumber}: recipientPlatformId is required for PLATFORM_BUSINESS`,
+        `Row ${rowNumber}: recipientPlatformId is required for PLATFORM_BUSINESS`
       );
     }
 
@@ -306,7 +306,7 @@ export class InvoiceImportService {
       !recipient.email
     ) {
       throw new Error(
-        `Row ${rowNumber}: recipientEmail is required for PLATFORM_INDIVIDUAL`,
+        `Row ${rowNumber}: recipientEmail is required for PLATFORM_INDIVIDUAL`
       );
     }
 
@@ -316,12 +316,12 @@ export class InvoiceImportService {
     ) {
       if (!recipient.email) {
         throw new Error(
-          `Row ${rowNumber}: recipientEmail is required for EXTERNAL recipients`,
+          `Row ${rowNumber}: recipientEmail is required for EXTERNAL recipients`
         );
       }
       if (!recipient.displayName) {
         throw new Error(
-          `Row ${rowNumber}: recipientDisplayName is required for EXTERNAL recipients`,
+          `Row ${rowNumber}: recipientDisplayName is required for EXTERNAL recipients`
         );
       }
     }
@@ -335,14 +335,14 @@ export class InvoiceImportService {
     // Parse dates
     const issuedDate = this.parseDate(
       record.issuedDate,
-      "issuedDate",
-      rowNumber,
+      'issuedDate',
+      rowNumber
     );
-    const dueDate = this.parseDate(record.dueDate, "dueDate", rowNumber);
+    const dueDate = this.parseDate(record.dueDate, 'dueDate', rowNumber);
 
     if (dueDate < issuedDate) {
       throw new Error(
-        `Row ${rowNumber}: dueDate must be after or equal to issuedDate`,
+        `Row ${rowNumber}: dueDate must be after or equal to issuedDate`
       );
     }
 
@@ -354,14 +354,14 @@ export class InvoiceImportService {
       issuedDate,
       dueDate,
       description: record.description
-        ? String((record.description as string) ?? "").trim()
+        ? String((record.description as string) ?? '').trim()
         : undefined,
       paymentTerms: record.paymentTerms
-        ? String((record.paymentTerms as string) ?? "").trim()
+        ? String((record.paymentTerms as string) ?? '').trim()
         : undefined,
       currency: record.currency
-        ? String((record.currency as string) ?? "").trim()
-        : "TND",
+        ? String((record.currency as string) ?? '').trim()
+        : 'TND',
     };
 
     // Create invoice
@@ -369,26 +369,26 @@ export class InvoiceImportService {
       businessId,
       databaseName,
       createInvoiceDto,
-      userId,
+      userId
     );
 
     // Calculate total for response
     const totalAmount = lineItems.reduce(
       (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
+      0
     );
 
     const result: ImportedInvoiceResultDto = {
       invoiceNumber,
       invoiceId: createdInvoice.id,
-      status: "success",
-      message: "Invoice created successfully",
+      status: 'success',
+      message: 'Invoice created successfully',
       lineItemsCount: lineItems.length,
       totalAmount,
     };
 
     this.logger.debug(
-      `Successfully imported invoice ${invoiceNumber} (ID: ${createdInvoice.id})`,
+      `Successfully imported invoice ${invoiceNumber} (ID: ${createdInvoice.id})`
     );
 
     return result;
@@ -402,7 +402,7 @@ export class InvoiceImportService {
    */
   private parseLineItems(
     record: Record<string, unknown>,
-    rowNumber: number,
+    rowNumber: number
   ): Array<{
     productId: string;
     productName: string;
@@ -414,7 +414,7 @@ export class InvoiceImportService {
     if (record.lineItemsJson) {
       try {
         const parsed: unknown = JSON.parse(
-          String((record.lineItemsJson as string) ?? ""),
+          String((record.lineItemsJson as string) ?? '')
         );
         if (Array.isArray(parsed)) {
           return (
@@ -432,7 +432,7 @@ export class InvoiceImportService {
         }
       } catch {
         throw new Error(
-          `Row ${rowNumber}: Invalid lineItemsJson format. Must be valid JSON.`,
+          `Row ${rowNumber}: Invalid lineItemsJson format. Must be valid JSON.`
         );
       }
     }
@@ -449,13 +449,13 @@ export class InvoiceImportService {
       };
 
       const productIds = smartSplit(
-        String((record.productIds as string) ?? ""),
+        String((record.productIds as string) ?? '')
       );
       const productNames = record.productNames
-        ? smartSplit(String((record.productNames as string) ?? ""))
+        ? smartSplit(String((record.productNames as string) ?? ''))
         : productIds; // Default to IDs if names not provided
       const quantities = smartSplit(
-        String((record.quantities as string) ?? ""),
+        String((record.quantities as string) ?? '')
       ).map((x) => {
         const num = Number(x);
         if (Number.isNaN(num) || num < 0) {
@@ -464,7 +464,7 @@ export class InvoiceImportService {
         return num;
       });
       const unitPrices = smartSplit(
-        String((record.unitPrices as string) ?? ""),
+        String((record.unitPrices as string) ?? '')
       ).map((x) => {
         const num = Number(x);
         if (Number.isNaN(num) || num < 0) {
@@ -477,7 +477,7 @@ export class InvoiceImportService {
       const maxLen = Math.max(
         productIds.length,
         quantities.length,
-        unitPrices.length,
+        unitPrices.length
       );
       if (
         productIds.length !== maxLen ||
@@ -485,7 +485,7 @@ export class InvoiceImportService {
         unitPrices.length !== maxLen
       ) {
         throw new Error(
-          `Row ${rowNumber}: productIds, quantities, and unitPrices must have the same number of items`,
+          `Row ${rowNumber}: productIds, quantities, and unitPrices must have the same number of items`
         );
       }
 
@@ -498,7 +498,7 @@ export class InvoiceImportService {
     }
 
     throw new Error(
-      `Row ${rowNumber}: Must provide either lineItemsJson or productIds+quantities+unitPrices`,
+      `Row ${rowNumber}: Must provide either lineItemsJson or productIds+quantities+unitPrices`
     );
   }
 
@@ -508,39 +508,39 @@ export class InvoiceImportService {
   private validateLineItem(
     item: unknown,
     rowNumber: number,
-    itemIndex: number,
+    itemIndex: number
   ): void {
-    if (!item || typeof item !== "object") {
+    if (!item || typeof item !== 'object') {
       throw new Error(
-        `Row ${rowNumber}: Line item ${itemIndex} is not an object`,
+        `Row ${rowNumber}: Line item ${itemIndex} is not an object`
       );
     }
 
     const lineItem = item as Record<string, unknown>;
 
-    if (!lineItem.productId || typeof lineItem.productId !== "string") {
+    if (!lineItem.productId || typeof lineItem.productId !== 'string') {
       throw new Error(
-        `Row ${rowNumber}: Line item ${itemIndex} must have a valid productId (string)`,
+        `Row ${rowNumber}: Line item ${itemIndex} must have a valid productId (string)`
       );
     }
 
-    if (!lineItem.productName || typeof lineItem.productName !== "string") {
+    if (!lineItem.productName || typeof lineItem.productName !== 'string') {
       throw new Error(
-        `Row ${rowNumber}: Line item ${itemIndex} must have a valid productName (string)`,
+        `Row ${rowNumber}: Line item ${itemIndex} must have a valid productName (string)`
       );
     }
 
     const quantity = Number(lineItem.quantity);
     if (Number.isNaN(quantity) || quantity < 0) {
       throw new Error(
-        `Row ${rowNumber}: Line item ${itemIndex} has invalid quantity`,
+        `Row ${rowNumber}: Line item ${itemIndex} has invalid quantity`
       );
     }
 
     const unitPrice = Number(lineItem.unitPrice);
     if (Number.isNaN(unitPrice) || unitPrice < 0) {
       throw new Error(
-        `Row ${rowNumber}: Line item ${itemIndex} has invalid unitPrice`,
+        `Row ${rowNumber}: Line item ${itemIndex} has invalid unitPrice`
       );
     }
   }
@@ -551,7 +551,7 @@ export class InvoiceImportService {
   private parseDate(
     dateValue: unknown,
     fieldName: string,
-    rowNumber: number,
+    rowNumber: number
   ): Date {
     if (!dateValue) {
       throw new Error(`Row ${rowNumber}: ${fieldName} is required`);
@@ -561,18 +561,18 @@ export class InvoiceImportService {
 
     if (dateValue instanceof Date) {
       date = dateValue;
-    } else if (typeof dateValue === "number") {
+    } else if (typeof dateValue === 'number') {
       // With cellDates: true, numbers should not appear - they should be Date objects
       throw new TypeError(
-        `Row ${rowNumber}: Invalid ${fieldName} format. Expected a date object or ISO string`,
+        `Row ${rowNumber}: Invalid ${fieldName} format. Expected a date object or ISO string`
       );
-    } else if (typeof dateValue === "string") {
+    } else if (typeof dateValue === 'string') {
       // Try to parse string
       date = new Date(dateValue);
       if (Number.isNaN(date.getTime())) {
         throw new TypeError(
           `Row ${rowNumber}: Invalid ${fieldName} format "${dateValue}". ` +
-            `Use ISO format (YYYY-MM-DD) or timestamp`,
+            `Use ISO format (YYYY-MM-DD) or timestamp`
         );
       }
     } else {
@@ -593,18 +593,18 @@ export class InvoiceImportService {
     file: FileUpload,
     businessId: string,
     databaseName: string,
-    userId: string,
+    userId: string
   ): Promise<InvoiceResponseDto> {
     const extracted = await extractFromDocument(
       file.buffer,
       file.originalname,
-      { documentType: "invoice" },
+      { documentType: 'invoice' }
     );
 
-    if (extracted?.type !== "invoice") {
+    if (extracted?.type !== 'invoice') {
       throw new BadRequestException(
-        "Could not extract invoice information from the document. " +
-          "Please ensure the image contains a clear invoice with readable text.",
+        'Could not extract invoice information from the document. ' +
+          'Please ensure the image contains a clear invoice with readable text.'
       );
     }
 
@@ -612,7 +612,7 @@ export class InvoiceImportService {
     const lineItems =
       extracted.lineItems?.map((item, index) => ({
         productId: `extracted-${index}`, // Temporary ID, will be resolved by issuance service
-        productName: item.productName ?? "Unknown Item",
+        productName: item.productName ?? 'Unknown Item',
         quantity: item.quantity ?? 1,
         unitPrice: item.unitPrice ?? 0,
         description: item.description,
@@ -620,8 +620,8 @@ export class InvoiceImportService {
 
     if (lineItems.length === 0) {
       throw new BadRequestException(
-        "No line items could be extracted from the document. " +
-          "Please ensure the invoice contains itemized products or services.",
+        'No line items could be extracted from the document. ' +
+          'Please ensure the invoice contains itemized products or services.'
       );
     }
 
@@ -639,7 +639,7 @@ export class InvoiceImportService {
         : this.getDefaultDueDate(),
       description: extracted.description,
       paymentTerms: extracted.paymentTerms,
-      currency: extracted.currency ?? "TND",
+      currency: extracted.currency ?? 'TND',
     };
 
     // Create the invoice using the issuance service
@@ -647,7 +647,7 @@ export class InvoiceImportService {
       businessId,
       databaseName,
       createInvoiceDto,
-      userId,
+      userId
     );
   }
 
@@ -655,7 +655,7 @@ export class InvoiceImportService {
    * Build recipient DTO from extracted invoice data
    */
   private buildRecipientFromExtracted(
-    extracted: InvoiceExtractionResult,
+    extracted: InvoiceExtractionResult
   ): CreateInvoiceRecipientDto {
     // If we have an email that looks like it could be from our platform,
     // we'll mark it as EXTERNAL for now and let the resolution service handle it
@@ -670,8 +670,8 @@ export class InvoiceImportService {
     // Fallback to a generic external recipient
     return {
       type: InvoiceRecipientType.EXTERNAL,
-      email: "unknown@example.com",
-      displayName: extracted.recipientName ?? "Unknown Recipient",
+      email: 'unknown@example.com',
+      displayName: extracted.recipientName ?? 'Unknown Recipient',
     };
   }
 
@@ -694,20 +694,20 @@ export class InvoiceImportService {
     notes: string;
   } {
     const csvColumns = [
-      "invoiceNumber",
-      "recipientType",
-      "recipientPlatformId",
-      "recipientEmail",
-      "recipientDisplayName",
-      "productIds",
-      "productNames",
-      "quantities",
-      "unitPrices",
-      "issuedDate",
-      "dueDate",
-      "description",
-      "paymentTerms",
-      "currency",
+      'invoiceNumber',
+      'recipientType',
+      'recipientPlatformId',
+      'recipientEmail',
+      'recipientDisplayName',
+      'productIds',
+      'productNames',
+      'quantities',
+      'unitPrices',
+      'issuedDate',
+      'dueDate',
+      'description',
+      'paymentTerms',
+      'currency',
     ];
 
     const csvExample = `invoiceNumber,recipientType,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,issuedDate,dueDate,description,paymentTerms,currency
@@ -717,11 +717,11 @@ INV-2024-001,EXTERNAL,john@example.com,John Doe,PROD-001,Website Service,1,5000.
     const recipientTypes = Object.values(InvoiceRecipientType);
 
     const notes =
-      "Format: Use comma-separated values. Dates must be in YYYY-MM-DD format. " +
-      "invoiceNumber is optional - if not provided, it will be auto-generated in format INV-{YYYYMMDD}-{randomString}. " +
-      "For PLATFORM_BUSINESS, provide recipientPlatformId. " +
-      "For EXTERNAL, provide recipientEmail and recipientDisplayName. " +
-      "Multiple line items can be separated by pipe (|) character.";
+      'Format: Use comma-separated values. Dates must be in YYYY-MM-DD format. ' +
+      'invoiceNumber is optional - if not provided, it will be auto-generated in format INV-{YYYYMMDD}-{randomString}. ' +
+      'For PLATFORM_BUSINESS, provide recipientPlatformId. ' +
+      'For EXTERNAL, provide recipientEmail and recipientDisplayName. ' +
+      'Multiple line items can be separated by pipe (|) character.';
 
     return {
       csvExample,

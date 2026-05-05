@@ -1,9 +1,9 @@
-import { Test, type TestingModule } from "@nestjs/testing";
-import { getModelToken } from "@nestjs/mongoose";
-import { AuditService } from "../src/audit/audit.service";
-import { AuditLog, AuditAction } from "../src/audit/schemas/audit-log.schema";
-import { Types } from "mongoose";
-import { type CreateAuditLogDto } from "../src/audit/dto/audit-log.dto";
+import { Test, type TestingModule } from '@nestjs/testing';
+import { getModelToken } from '@nestjs/mongoose';
+import { AuditService } from '../src/audit/audit.service';
+import { AuditLog, AuditAction } from '../src/audit/schemas/audit-log.schema';
+import { Types } from 'mongoose';
+import { type CreateAuditLogDto } from '../src/audit/dto/audit-log.dto';
 
 // Define a type for our mock model instances
 interface MockAuditLogInstance {
@@ -25,7 +25,7 @@ function MockModel(this: MockAuditLogInstance, dto: CreateAuditLogDto) {
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 MockModel.prototype.save = jest.fn().mockImplementation(function (
-  this: MockAuditLogInstance,
+  this: MockAuditLogInstance
 ) {
   const savedDoc = {
     action: this.action,
@@ -49,7 +49,7 @@ MockModel.find = jest.fn();
 
 MockModel.countDocuments = jest.fn();
 
-describe("AuditService", () => {
+describe('AuditService', () => {
   let service: AuditService;
   let model: {
     find: jest.Mock;
@@ -59,10 +59,10 @@ describe("AuditService", () => {
   const mockAuditLog = {
     _id: new Types.ObjectId(),
     action: AuditAction.LOGIN,
-    userEmail: "test@example.com",
-    userRole: "CLIENT",
+    userEmail: 'test@example.com',
+    userRole: 'CLIENT',
     userId: new Types.ObjectId(),
-    ipAddress: "127.0.0.1",
+    ipAddress: '127.0.0.1',
     createdAt: new Date(),
     toISOString: function (this: { createdAt: Date }) {
       return this.createdAt.toISOString();
@@ -84,16 +84,16 @@ describe("AuditService", () => {
     model = module.get(getModelToken(AuditLog.name));
   });
 
-  it("should be defined", () => {
+  it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  describe("logAction", () => {
-    it("should save a log entry", async () => {
+  describe('logAction', () => {
+    it('should save a log entry', async () => {
       const dto: CreateAuditLogDto = {
         action: AuditAction.LOGIN,
-        userEmail: "test@example.com",
-        userRole: "CLIENT",
+        userEmail: 'test@example.com',
+        userRole: 'CLIENT',
       };
 
       const result = await service.logAction(dto);
@@ -101,22 +101,22 @@ describe("AuditService", () => {
       expect(result?.action).toBe(AuditAction.LOGIN);
     });
 
-    it("should return undefined if saving fails", async () => {
+    it('should return undefined if saving fails', async () => {
       jest
-        .spyOn(MockModel.prototype, "save")
-        .mockRejectedValueOnce(new Error("Save failed"));
+        .spyOn(MockModel.prototype, 'save')
+        .mockRejectedValueOnce(new Error('Save failed'));
 
       const result = await service.logAction({
         action: AuditAction.LOGIN,
-        userEmail: "test@example.com",
-        userRole: "CLIENT",
+        userEmail: 'test@example.com',
+        userRole: 'CLIENT',
       });
       expect(result).toBeUndefined();
     });
   });
 
-  describe("getLogs", () => {
-    it("should return paginated logs", async () => {
+  describe('getLogs', () => {
+    it('should return paginated logs', async () => {
       const mockLogs = [mockAuditLog];
       const mockQuery = {
         sort: jest.fn().mockReturnThis(),
@@ -136,7 +136,7 @@ describe("AuditService", () => {
       expect(model.find).toHaveBeenCalledWith({});
     });
 
-    it("should filter by action", async () => {
+    it('should filter by action', async () => {
       const mockQuery = {
         sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),

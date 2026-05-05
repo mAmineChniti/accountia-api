@@ -2,15 +2,15 @@ import {
   Injectable,
   ForbiddenException,
   NotFoundException,
-} from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import type { Model } from "mongoose";
-import { Role } from "@/auth/enums/role.enum";
-import { type UserPayload } from "@/auth/types/auth.types";
-import { Business } from "@/business/schemas/business.schema";
-import { BusinessUser } from "@/business/schemas/business-user.schema";
-import { type TenantContext } from "@/common/tenant/tenant.types";
-import { CacheService } from "@/redis/cache.service";
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import type { Model } from 'mongoose';
+import { Role } from '@/auth/enums/role.enum';
+import { type UserPayload } from '@/auth/types/auth.types';
+import { Business } from '@/business/schemas/business.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
+import { type TenantContext } from '@/common/tenant/tenant.types';
+import { CacheService } from '@/redis/cache.service';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 
@@ -21,12 +21,12 @@ export class TenantContextService {
     private readonly businessModel: Model<Business>,
     @InjectModel(BusinessUser.name)
     private readonly businessUserModel: Model<BusinessUser>,
-    private readonly cacheService: CacheService,
+    private readonly cacheService: CacheService
   ) {}
 
   async resolveTenantContext(
     user: UserPayload,
-    businessId: string,
+    businessId: string
   ): Promise<TenantContext> {
     // Cache key includes user and business to handle role changes
     const cacheKey = `tenant:context:${user.id}:${businessId}`;
@@ -40,14 +40,14 @@ export class TenantContextService {
 
     const business = await this.businessModel
       .findById(businessId)
-      .select("databaseName status");
+      .select('databaseName status');
 
     if (!business) {
-      throw new NotFoundException("Business not found");
+      throw new NotFoundException('Business not found');
     }
 
-    if (business.status !== "approved") {
-      throw new ForbiddenException("Business is not active");
+    if (business.status !== 'approved') {
+      throw new ForbiddenException('Business is not active');
     }
 
     let result: TenantContext;
@@ -59,7 +59,7 @@ export class TenantContextService {
       result = {
         businessId: business._id.toString(),
         databaseName: business.databaseName,
-        membershipRole: "platform-admin",
+        membershipRole: 'platform-admin',
       };
     } else {
       const membership = await this.businessUserModel
@@ -67,10 +67,10 @@ export class TenantContextService {
           businessId,
           userId: user.id,
         })
-        .select("role");
+        .select('role');
 
       if (!membership) {
-        throw new ForbiddenException("You do not have access to this business");
+        throw new ForbiddenException('You do not have access to this business');
       }
 
       result = {

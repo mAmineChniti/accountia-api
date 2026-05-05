@@ -1,6 +1,6 @@
-import { type Request } from "express";
-import { type Role } from "@/auth/enums/role.enum";
-import { type TenantContext } from "@/common/tenant/tenant.types";
+import { type Request } from 'express';
+import { type Role } from '@/auth/enums/role.enum';
+import { type TenantContext } from '@/common/tenant/tenant.types';
 
 export interface UserPayload {
   id: string;
