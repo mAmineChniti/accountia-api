@@ -53,3 +53,6 @@ tmp/
 /generated/prisma
 
 /generated/prisma
+jenkins_home/
+.scannerwork/
+coverage/

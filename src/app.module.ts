@@ -14,6 +14,7 @@ import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AccountantModule } from '@/accountant/accountant.module';
+import { MetricsController } from './metrics.controller';
 import { AnalyticsModule } from '@/analytics/analytics.module';
 import { ClientPortalModule } from '@/client-portal/client-portal.module';
 import { CollectionsModule } from '@/collections/collections.module';
@@ -88,7 +89,7 @@ import { VendorsModule } from '@/vendors/vendors.module';
     ReportsModule,
     VendorsModule,
   ],
-  controllers: [],
+  controllers: [MetricsController],
   providers: [],
 })
 export class AppModule {}

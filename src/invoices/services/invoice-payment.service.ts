@@ -23,6 +23,7 @@ interface StripeSessionMetadata {
   issuerTenantDatabaseName?: string;
   payerUserId?: string;
   payerEmail?: string;
+  stripeConnectedAccountId?: string;
 }
 import {
   CreateInvoiceCheckoutSessionDto,
@@ -46,6 +47,9 @@ export class InvoicePaymentService {
   private readonly fallbackFxRates: Map<string, number>;
   private readonly mockInvoicePaymentsEnabled: boolean;
   private readonly paymentMethodConfigurationId?: string;
+  // Cache for recently updated Stripe account profiles to avoid redundant API calls
+  private readonly recentlyUpdatedStripeAccounts = new Map<string, number>();
+  private readonly STRIPE_PROFILE_UPDATE_CACHE_TTL = 60_000; // 1 minute
 
   constructor(
     private readonly configService: ConfigService,
@@ -212,12 +216,18 @@ export class InvoicePaymentService {
     user: UserPayload,
     _options?: CreateInvoiceCheckoutSessionDto
   ): Promise<InvoiceCheckoutSessionResponseDto> {
+    const startTime = Date.now();
+    this.logger.log(
+      `Starting checkout session creation for receipt ${receiptId}, user ${user.id}`
+    );
+
     const stripe = this.ensureStripeEnabled();
 
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
       throw new NotFoundException('Invoice receipt not found');
     }
+    this.logger.debug(`Receipt loaded in ${Date.now() - startTime}ms`);
 
     this.assertRecipientCanPay(receipt, user);
 
@@ -225,6 +235,7 @@ export class InvoicePaymentService {
       receipt.invoiceId.toString(),
       receipt.issuerTenantDatabaseName
     );
+    this.logger.debug(`Invoice loaded in ${Date.now() - startTime}ms`);
 
     if (!this.isPayableStatus(invoice.status)) {
       throw new BadRequestException(
@@ -247,6 +258,8 @@ export class InvoicePaymentService {
     if (!business) {
       throw new NotFoundException('Business not found');
     }
+    this.logger.debug(`Business loaded in ${Date.now() - startTime}ms`);
+
     // Use the already-loaded business to get connect ID (avoid duplicate DB lookup)
     const connectedAccountId = this.resolveStripeAccountFromBusiness(business);
     if (!connectedAccountId) {
@@ -264,6 +277,10 @@ export class InvoicePaymentService {
       payerEmail: user.email,
       originalInvoiceCurrency: invoice.currency,
       originalInvoiceAmount: remainingAmount.toFixed(2),
+      // Store the connected account used so confirmPaymentStatus can retrieve the session correctly
+      ...(connectedAccountId
+        ? { stripeConnectedAccountId: connectedAccountId }
+        : {}),
     };
 
     const createCheckoutSession = async (
@@ -277,9 +294,65 @@ export class InvoicePaymentService {
         : undefined;
       const paymentMethodConfigurationId = this.paymentMethodConfigurationId;
 
+      if (connectedAccountId) {
+        try {
+          // Check if we recently updated this account profile to avoid redundant calls
+          const lastUpdateTime =
+            this.recentlyUpdatedStripeAccounts.get(connectedAccountId);
+          const now = Date.now();
+
+          if (
+            !lastUpdateTime ||
+            now - lastUpdateTime > this.STRIPE_PROFILE_UPDATE_CACHE_TTL
+          ) {
+            // Ensure the business profile name is set to avoid checkout errors
+            this.logger.debug(
+              `Updating Stripe profile for account ${connectedAccountId}`
+            );
+            await stripe.accounts.update(
+              connectedAccountId,
+              {
+                business_profile: {
+                  name: business.name ?? 'Accountia Business',
+                },
+              },
+              { timeout: 10_000 } // 10 second timeout for profile update
+            );
+            // Update cache
+            this.recentlyUpdatedStripeAccounts.set(connectedAccountId, now);
+            // Clean up old cache entries
+            if (this.recentlyUpdatedStripeAccounts.size > 100) {
+              const oldestEntry = [
+                ...this.recentlyUpdatedStripeAccounts.entries(),
+              ].toSorted((a, b) => a[1] - b[1])[0];
+              if (oldestEntry) {
+                this.recentlyUpdatedStripeAccounts.delete(oldestEntry[0]);
+              }
+            }
+          } else {
+            this.logger.debug(
+              `Skipping profile update for account ${connectedAccountId} (cached)`
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Could not auto-fix business name for account ${connectedAccountId}: ${error instanceof Error ? error.message : String(error)}`
+          );
+          // Non-blocking: continue with checkout session creation
+        }
+      }
+
+      this.logger.debug(
+        `Creating Stripe checkout session for currency: ${currency}, amount: ${amount}`
+      );
+      const trimmedDescription = invoice.description?.trim();
+      const defaultDescription = `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`;
+      const paymentDescription =
+        [trimmedDescription].find((value) => value?.length) ??
+        defaultDescription;
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded' as never,
+          ui_mode: 'embedded_page' as never,
           mode: 'payment',
           redirect_on_completion: 'never',
           ...(paymentMethodConfigurationId
@@ -299,32 +372,51 @@ export class InvoicePaymentService {
                 unit_amount: Math.round(amount * 100),
                 product_data: {
                   name: `Invoice ${invoice.invoiceNumber}`,
-                  description:
-                    invoice.description ??
-                    `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`,
+                  description: paymentDescription,
                 },
               },
             },
           ],
         },
-        requestOptions
+        { ...requestOptions, timeout: 15_000 } // 15 second timeout for session creation
       );
     };
 
     const invoiceCurrency = invoice.currency.trim().toLowerCase();
     let session;
     try {
+      this.logger.debug(
+        `Attempting to create Stripe session with currency: ${invoiceCurrency}`
+      );
       session = await createCheckoutSession(
         invoiceCurrency,
         remainingAmount,
         baseMetadata
       );
+      this.logger.debug(
+        `Stripe session created in ${Date.now() - startTime}ms`
+      );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message.toLowerCase() : String(error);
+      const errAny = error as unknown as { type?: string; code?: string };
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const message = errorMessage.toLowerCase();
       const isInvalidCurrency = message.includes('invalid currency');
+      const isTimeout = errAny?.code === 'ETIMEDOUT';
+
+      if (isTimeout) {
+        this.logger.error(
+          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage} (type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'})`
+        );
+        throw new ServiceUnavailableException(
+          'Payment service is currently slow. Please try again in a few moments.'
+        );
+      }
 
       if (!isInvalidCurrency) {
+        this.logger.error(
+          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage} (type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'})`
+        );
         throw error;
       }
 
@@ -352,9 +444,20 @@ export class InvoicePaymentService {
           convertedAmount: conversion.convertedAmount.toFixed(2),
         }
       );
+      this.logger.debug(
+        `Stripe fallback session created in ${Date.now() - startTime}ms`
+      );
     }
 
     const sessionObj = session as StripeCheckoutSession;
+
+    // Persist the connected account used so confirmPaymentStatus can reliably retrieve the session
+    if (connectedAccountId) {
+      await this.invoiceReceiptModel.updateOne(
+        { _id: receiptId },
+        { $set: { stripeConnectedAccountId: connectedAccountId } }
+      );
+    }
 
     if (!sessionObj.url || !sessionObj.id) {
       const clientSecret = sessionObj.client_secret as string | undefined;
@@ -364,6 +467,8 @@ export class InvoicePaymentService {
         );
       }
 
+      const totalTime = Date.now() - startTime;
+      this.logger.log(`Checkout session completed in ${totalTime}ms`);
       return {
         clientSecret,
         sessionId: sessionObj.id,
@@ -371,6 +476,11 @@ export class InvoicePaymentService {
         receiptId,
       };
     }
+
+    const totalTime = Date.now() - startTime;
+    this.logger.log(
+      `Checkout session completed in ${totalTime}ms (URL: ${sessionObj.url.slice(0, 50)}...)`
+    );
 
     return {
       clientSecret: sessionObj.client_secret! ?? '',
@@ -485,10 +595,11 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    // Resolve the Stripe Connect account for the issuer business
-    const stripeConnectId = await this.resolveStripeAccount(
-      receipt.issuerBusinessId.toString()
-    );
+    // Resolve the Stripe Connect account: prefer the value stored directly on the receipt
+    // (set when the checkout session was created) — it reflects the exact account used.
+    const stripeConnectId =
+      receipt.stripeConnectedAccountId?.trim() ??
+      (await this.resolveStripeAccount(receipt.issuerBusinessId.toString()));
     const requestOptions = stripeConnectId
       ? { stripeAccount: stripeConnectId }
       : undefined;
@@ -634,10 +745,10 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    // Resolve the Stripe Connect account for the issuer business
-    const stripeConnectId = await this.resolveStripeAccount(
-      receipt.issuerBusinessId.toString()
-    );
+    // Prefer the connected account stored on the receipt (set at session creation time)
+    const stripeConnectId =
+      receipt.stripeConnectedAccountId?.trim() ??
+      (await this.resolveStripeAccount(receipt.issuerBusinessId.toString()));
     const requestOptions = stripeConnectId
       ? { stripeAccount: stripeConnectId }
       : undefined;

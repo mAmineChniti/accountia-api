@@ -6,6 +6,7 @@ import { NotificationsService } from '../src/notifications/notifications.service
 import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
 import { Business } from '../src/business/schemas/business.schema';
 import { InvoiceStatus } from '../src/invoices/enums/invoice-status.enum';
+import { InvoiceRecipientType } from '../src/invoices/enums/invoice-recipient.enum';
 import { Types } from 'mongoose';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
@@ -41,7 +42,7 @@ describe('InvoiceIssuanceService', () => {
       issuerBusinessId: bizId,
       invoiceNumber: 'INV-20250404-TEST',
       recipient: {
-        type: 'EXTERNAL',
+        type: InvoiceRecipientType.EXTERNAL,
         email: 'test@example.com',
         displayName: 'Test Recipient',
         resolutionStatus: 'PENDING',
@@ -168,7 +169,7 @@ describe('InvoiceIssuanceService', () => {
     it('should create a draft invoice and sync to platform', async () => {
       const dto: Partial<CreateInvoiceDto> = {
         recipient: {
-          type: 'EXTERNAL',
+          type: InvoiceRecipientType.EXTERNAL,
           email: 'test@example.com',
           displayName: 'Test Recipient',
         },
@@ -210,8 +211,18 @@ describe('InvoiceIssuanceService', () => {
 
     it('should rollback if product reservation fails', async () => {
       const dto: Partial<CreateInvoiceDto> = {
-        recipient: { type: 'EXTERNAL', email: 'test@example.com' },
-        lineItems: [{ productId: 'prod1', quantity: 100, unitPrice: 10 }],
+        recipient: {
+          type: InvoiceRecipientType.EXTERNAL,
+          email: 'test@example.com',
+        },
+        lineItems: [
+          {
+            productId: 'prod1',
+            productName: 'Product 1',
+            quantity: 100,
+            unitPrice: 10,
+          },
+        ],
       };
 
       mockProductsCollection.findOne.mockResolvedValue({
