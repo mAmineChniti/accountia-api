@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ServiceUnavailableException, NotFoundException } from '@nestjs/common';
 import { type ConfigService } from '@nestjs/config';
-import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto';
+import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto/create-job.dto';
 
 // Shared mocked ky instance used by the service under test
 const mockKyInstance: {

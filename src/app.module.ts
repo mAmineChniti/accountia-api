@@ -15,6 +15,15 @@ import { InvoicesModule } from '@/invoices/invoices.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AccountantModule } from '@/accountant/accountant.module';
 import { MetricsController } from './metrics.controller';
+import { AnalyticsModule } from '@/analytics/analytics.module';
+import { ClientPortalModule } from '@/client-portal/client-portal.module';
+import { CollectionsModule } from '@/collections/collections.module';
+import { CommentsModule } from '@/comments/comments.module';
+import { ExpensesModule } from '@/expenses/expenses.module';
+import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
+import { RecurringInvoicesModule } from '@/recurring-invoices/recurring-invoices.module';
+import { ReportsModule } from '@/reports/reports.module';
+import { VendorsModule } from '@/vendors/vendors.module';
 
 @Module({
   imports: [
@@ -70,6 +79,15 @@ import { MetricsController } from './metrics.controller';
     RedisModule,
     InvoicesModule,
     AccountantModule,
+    AnalyticsModule,
+    ClientPortalModule,
+    CollectionsModule,
+    CommentsModule,
+    ExpensesModule,
+    PurchaseOrdersModule,
+    RecurringInvoicesModule,
+    ReportsModule,
+    VendorsModule,
   ],
   controllers: [MetricsController],
   providers: [],
