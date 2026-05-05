@@ -1,8 +1,8 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { Role } from '@/auth/enums/role.enum';
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Document } from "mongoose";
+import { Role } from "@/auth/enums/role.enum";
 
-@Schema({ collection: 'users', timestamps: true })
+@Schema({ collection: "users", timestamps: true })
 export class User extends Document {
   @Prop({ required: true, unique: true })
   username: string;
@@ -112,7 +112,7 @@ export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.index({ stripeConnectId: 1 }, { unique: true, sparse: true });
 
-UserSchema.pre('save', function () {
+UserSchema.pre("save", function () {
   if (
     this.refreshTokens &&
     Array.isArray(this.refreshTokens) &&

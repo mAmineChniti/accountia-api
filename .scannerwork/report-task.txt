@@ -1,6 +1,0 @@
-projectKey=accountia-api
-serverUrl=http://localhost:9000
-serverVersion=9.9.8.100196
-dashboardUrl=http://localhost:9000/dashboard?id=accountia-api
-ceTaskId=AZ3pQyJh9xPqz895erFy
-ceTaskUrl=http://localhost:9000/api/ce/task?id=AZ3pQyJh9xPqz895erFy

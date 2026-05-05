@@ -1,5 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
-import Redis from 'ioredis';
+import { Injectable, Inject } from "@nestjs/common";
+import Redis from "ioredis";
 
 interface ConnectionState {
   userId: string;
@@ -11,13 +11,13 @@ interface ConnectionState {
 
 @Injectable()
 export class WebSocketStateService {
-  private readonly KEY_PREFIX = 'ws:connections';
-  private readonly USER_INDEX_PREFIX = 'ws:user';
-  private readonly GLOBAL_SOCKETS_SET = 'ws:global:sockets';
-  private readonly GLOBAL_USERS_SET = 'ws:global:users';
+  private readonly KEY_PREFIX = "ws:connections";
+  private readonly USER_INDEX_PREFIX = "ws:user";
+  private readonly GLOBAL_SOCKETS_SET = "ws:global:sockets";
+  private readonly GLOBAL_USERS_SET = "ws:global:users";
   private readonly TTL_SECONDS = 300; // 5 minutes (refreshed on each ping)
 
-  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+  constructor(@Inject("REDIS_CLIENT") private readonly redis: Redis) {}
 
   /**
    * Store connection state when user connects
@@ -25,7 +25,7 @@ export class WebSocketStateService {
   async recordConnection(
     socketId: string,
     userId: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
   ): Promise<void> {
     const now = new Date().toISOString();
     const state: ConnectionState = {
@@ -42,7 +42,7 @@ export class WebSocketStateService {
     pipeline.setex(
       `${this.KEY_PREFIX}:${socketId}`,
       this.TTL_SECONDS,
-      JSON.stringify(state)
+      JSON.stringify(state),
     );
 
     // Add to user's connection index (set of socket IDs)
@@ -74,15 +74,15 @@ export class WebSocketStateService {
     await this.redis.set(
       key,
       JSON.stringify(state),
-      'EX',
+      "EX",
       this.TTL_SECONDS,
-      'XX'
+      "XX",
     );
 
     // Also refresh user index TTL
     await this.redis.expire(
       `${this.USER_INDEX_PREFIX}:${state.userId}`,
-      this.TTL_SECONDS
+      this.TTL_SECONDS,
     );
   }
 
@@ -144,7 +144,7 @@ export class WebSocketStateService {
   async notifyUser<T>(
     userId: string,
     event: string,
-    payload: T
+    payload: T,
   ): Promise<number> {
     // Store notification for each socket to be picked up
     const socketIds = await this.getUserConnections(userId);
@@ -155,12 +155,12 @@ export class WebSocketStateService {
     for (const socketId of socketIds) {
       pipeline.lpush(
         `${this.KEY_PREFIX}:${socketId}:notifications`,
-        JSON.stringify({ event, payload, timestamp: Date.now() })
+        JSON.stringify({ event, payload, timestamp: Date.now() }),
       );
       pipeline.ltrim(`${this.KEY_PREFIX}:${socketId}:notifications`, 0, 99); // Keep last 100
       pipeline.expire(
         `${this.KEY_PREFIX}:${socketId}:notifications`,
-        this.TTL_SECONDS
+        this.TTL_SECONDS,
       );
     }
     await pipeline.exec();
@@ -173,7 +173,7 @@ export class WebSocketStateService {
    * Uses MULTI/EXEC for atomic read-and-clear
    */
   async getNotifications<T>(
-    socketId: string
+    socketId: string,
   ): Promise<Array<{ event: string; payload: T; timestamp: number }>> {
     const key = `${this.KEY_PREFIX}:${socketId}:notifications`;
 
@@ -187,7 +187,7 @@ export class WebSocketStateService {
 
     return data.map(
       (item: string) =>
-        JSON.parse(item) as { event: string; payload: T; timestamp: number }
+        JSON.parse(item) as { event: string; payload: T; timestamp: number },
     );
   }
 

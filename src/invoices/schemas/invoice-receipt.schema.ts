@@ -1,6 +1,6 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Schema as MongooseSchema } from 'mongoose';
-import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Document, Schema as MongooseSchema } from "mongoose";
+import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
 
 /**
  * InvoiceReceipt - Cross-tenant discoverability record
@@ -17,7 +17,7 @@ import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
  * This solves the cross-tenant visibility problem without replicating
  * the full invoice document.
  */
-@Schema({ collection: 'invoice_receipts', timestamps: true })
+@Schema({ collection: "invoice_receipts", timestamps: true })
 export class InvoiceReceipt extends Document {
   /**
    * Reference to the authoritative invoice

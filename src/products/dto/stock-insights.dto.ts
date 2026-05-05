@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
-export type StockRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type StockRiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
 export class StockInsightItemDto {
   @ApiProperty()
@@ -19,11 +19,11 @@ export class StockInsightItemDto {
   dailySalesRate!: number;
 
   @ApiPropertyOptional({
-    description: 'Estimated days until stockout, or undefined if no sales data',
+    description: "Estimated days until stockout, or undefined if no sales data",
   })
   estimatedDaysUntilStockout?: number;
 
-  @ApiProperty({ enum: ['LOW', 'MEDIUM', 'HIGH'] })
+  @ApiProperty({ enum: ["LOW", "MEDIUM", "HIGH"] })
   riskLevel!: StockRiskLevel;
 
   @ApiProperty()

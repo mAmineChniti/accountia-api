@@ -1,17 +1,17 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Schema as MongooseSchema } from 'mongoose';
-import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Document, Schema as MongooseSchema } from "mongoose";
+import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
 import {
   InvoiceRecipientType,
   RecipientResolutionStatus,
-} from '@/invoices/enums/invoice-recipient.enum';
+} from "@/invoices/enums/invoice-recipient.enum";
 
 /**
  * InvoiceLineItem - Subdocument representing a single line on the invoice
  */
 @Schema({ _id: true })
 export class InvoiceLineItem extends Document {
-  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'Product' })
+  @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: "Product" })
   productId!: string;
 
   @Prop({ required: true })
@@ -101,7 +101,7 @@ export const InvoiceRecipientSchema =
  * It lives in the issuing business's tenant database.
  * Recipients interact with read-only views or receipt records.
  */
-@Schema({ collection: 'invoices', timestamps: true })
+@Schema({ collection: "invoices", timestamps: true })
 export class Invoice extends Document {
   /**
    * Issuer: The business that created and owns the invoice
@@ -109,7 +109,7 @@ export class Invoice extends Document {
   @Prop({
     required: true,
     type: MongooseSchema.Types.ObjectId,
-    ref: 'Business',
+    ref: "Business",
     index: true,
   })
   issuerBusinessId!: string;
@@ -145,7 +145,7 @@ export class Invoice extends Document {
   @Prop({ required: true, type: Number })
   totalAmount!: number;
 
-  @Prop({ required: true, type: String, default: 'TND' })
+  @Prop({ required: true, type: String, default: "TND" })
   currency!: string;
 
   /**
@@ -202,10 +202,10 @@ export class Invoice extends Document {
   /**
    * Audit trail
    */
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: "User" })
   createdBy?: string;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: "User" })
   lastModifiedBy?: string;
 
   @Prop({ type: Date })
@@ -227,12 +227,12 @@ InvoiceSchema.index({ issuerBusinessId: 1, status: 1 });
 InvoiceSchema.index({ issuerBusinessId: 1, issuedDate: -1 });
 InvoiceSchema.index(
   { invoiceNumber: 1, issuerBusinessId: 1 },
-  { unique: true }
+  { unique: true },
 );
 InvoiceSchema.index({ status: 1, dueDate: 1 }); // For overdue queries
-InvoiceSchema.index({ 'recipient.email': 1 }); // For recipient lookup
+InvoiceSchema.index({ "recipient.email": 1 }); // For recipient lookup
 InvoiceSchema.index({
-  'recipient.platformId': 1,
-  'recipient.type': 1,
+  "recipient.platformId": 1,
+  "recipient.type": 1,
   status: 1,
 }); // For recipient discovery

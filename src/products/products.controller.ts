@@ -13,9 +13,9 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { type Multer } from 'multer';
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { type Multer } from "multer";
 import {
   ApiTags,
   ApiOperation,
@@ -29,29 +29,29 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
-} from '@nestjs/swagger';
-import { ProductsService } from './products.service';
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
+} from "@nestjs/swagger";
+import { ProductsService } from "./products.service";
+import { CreateProductDto } from "./dto/create-product.dto";
+import { UpdateProductDto } from "./dto/update-product.dto";
 import {
   ProductResponseDto,
   ProductListResponseDto,
-} from './dto/product-response.dto';
-import { StockInsightsResponseDto } from './dto/stock-insights.dto';
-import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
-import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
-import { CurrentTenant } from '@/common/tenant/current-tenant.decorator';
-import { TenantContextGuard } from '@/common/tenant/tenant-context.guard';
+} from "./dto/product-response.dto";
+import { StockInsightsResponseDto } from "./dto/stock-insights.dto";
+import { BulkDeleteProductsDto } from "./dto/bulk-delete-products.dto";
+import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
+import { CurrentTenant } from "@/common/tenant/current-tenant.decorator";
+import { TenantContextGuard } from "@/common/tenant/tenant-context.guard";
 import {
   BusinessRolesGuard,
   BusinessRoles,
-} from '@/business/guards/business-roles.guard';
-import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
-import { parseFile } from '@/common/utils/file-parser.util';
-import type { TenantContext } from '@/common/tenant/tenant.types';
+} from "@/business/guards/business-roles.guard";
+import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
+import { parseFile } from "@/common/utils/file-parser.util";
+import type { TenantContext } from "@/common/tenant/tenant.types";
 
-@ApiTags('Products')
-@Controller('products')
+@ApiTags("Products")
+@Controller("products")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
 @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
@@ -61,117 +61,117 @@ export class ProductsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create a new product',
+    summary: "Create a new product",
     description:
-      'Create a new product for the current business. Include businessId in the request body to resolve tenant context.',
+      "Create a new product for the current business. Include businessId in the request body to resolve tenant context.",
   })
   @ApiBody({
     description:
-      'Product payload with businessId to resolve current tenant context.',
+      "Product payload with businessId to resolve current tenant context.",
     type: CreateProductDto,
   })
   @ApiCreatedResponse({
-    description: 'Product created successfully',
+    description: "Product created successfully",
     type: ProductResponseDto,
   })
-  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiBadRequestResponse({ description: "Invalid input data" })
   @ApiForbiddenResponse({
-    description: 'Insufficient permissions or unauthorized business',
+    description: "Insufficient permissions or unauthorized business",
   })
   async create(
     @Body() createProductDto: CreateProductDto,
-    @CurrentTenant() tenant: TenantContext
+    @CurrentTenant() tenant: TenantContext,
   ): Promise<ProductResponseDto> {
     return this.productsService.create(
       tenant.businessId,
       tenant.databaseName,
-      createProductDto
+      createProductDto,
     );
   }
 
   @Get()
   @ApiOperation({
-    summary: 'Get all products for the business',
+    summary: "Get all products for the business",
     description:
-      'Retrieve paginated list of products for the current business. businessId is REQUIRED as a query parameter.',
+      "Retrieve paginated list of products for the current business. businessId is REQUIRED as a query parameter.",
   })
   @ApiOkResponse({
-    description: 'Products retrieved successfully',
+    description: "Products retrieved successfully",
     type: ProductListResponseDto,
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     required: true,
     type: String,
     description:
-      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
   })
   @ApiQuery({
-    name: 'page',
+    name: "page",
     required: false,
     type: Number,
-    description: 'Page number (default: 1)',
+    description: "Page number (default: 1)",
   })
   @ApiQuery({
-    name: 'limit',
+    name: "limit",
     required: false,
     type: Number,
-    description: 'Items per page (default: 10)',
+    description: "Items per page (default: 10)",
   })
   @ApiQuery({
-    name: 'search',
+    name: "search",
     required: false,
     type: String,
-    description: 'Search by name or description',
+    description: "Search by name or description",
   })
   async findAll(
     @CurrentTenant() tenant: TenantContext,
-    @Query('page') page = 1,
-    @Query('limit') limit = 10,
-    @Query('search') search?: string
+    @Query("page") page = 1,
+    @Query("limit") limit = 10,
+    @Query("search") search?: string,
   ): Promise<ProductListResponseDto> {
     return this.productsService.findByBusiness(
       tenant.businessId,
       tenant.databaseName,
       page,
       limit,
-      search
+      search,
     );
   }
 
-  @Get('stock-insights')
+  @Get("stock-insights")
   @ApiOperation({
-    summary: 'Local AI stock insights (non-chatbot)',
+    summary: "Local AI stock insights (non-chatbot)",
     description:
-      'Computes stockout risk, safety stock, and reorder recommendations using local product and invoice data only (no external AI API).',
+      "Computes stockout risk, safety stock, and reorder recommendations using local product and invoice data only (no external AI API).",
   })
   @ApiOkResponse({
-    description: 'Stock insights generated successfully',
+    description: "Stock insights generated successfully",
     type: StockInsightsResponseDto,
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     required: true,
     type: String,
-    description: 'Business identifier required for tenant resolution',
+    description: "Business identifier required for tenant resolution",
   })
   @ApiQuery({
-    name: 'lookbackDays',
+    name: "lookbackDays",
     required: false,
     type: Number,
     description:
-      'How many days of historical invoices to analyze (default: 30)',
+      "How many days of historical invoices to analyze (default: 30)",
   })
   @ApiQuery({
-    name: 'planningHorizonDays',
+    name: "planningHorizonDays",
     required: false,
     type: Number,
-    description: 'Reorder planning horizon in days (default: 30)',
+    description: "Reorder planning horizon in days (default: 30)",
   })
   async getStockInsights(
     @CurrentTenant() tenant: TenantContext,
-    @Query('lookbackDays') lookbackDays?: string,
-    @Query('planningHorizonDays') planningHorizonDays?: string
+    @Query("lookbackDays") lookbackDays?: string,
+    @Query("planningHorizonDays") planningHorizonDays?: string,
   ): Promise<StockInsightsResponseDto> {
     const parsedLookbackDays = lookbackDays ? Number(lookbackDays) : undefined;
     const parsedPlanningHorizonDays = planningHorizonDays
@@ -182,156 +182,156 @@ export class ProductsController {
       tenant.businessId,
       tenant.databaseName,
       parsedLookbackDays,
-      parsedPlanningHorizonDays
+      parsedPlanningHorizonDays,
     );
   }
 
-  @Get(':id')
+  @Get(":id")
   @ApiOperation({
-    summary: 'Get a product by ID',
+    summary: "Get a product by ID",
     description:
-      'Get a specific product by ID (must belong to current business). businessId is REQUIRED as a query parameter.',
+      "Get a specific product by ID (must belong to current business). businessId is REQUIRED as a query parameter.",
   })
   @ApiOkResponse({
-    description: 'Product retrieved successfully',
+    description: "Product retrieved successfully",
     type: ProductResponseDto,
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     required: true,
     type: String,
     description:
-      'Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context',
+      "Business ID (MongoDB ObjectId) - REQUIRED to resolve tenant context",
   })
-  @ApiNotFoundResponse({ description: 'Product not found' })
+  @ApiNotFoundResponse({ description: "Product not found" })
   @ApiForbiddenResponse({
-    description: 'Product does not belong to your business',
+    description: "Product does not belong to your business",
   })
   @ApiParam({
-    name: 'id',
-    description: 'Product ID',
+    name: "id",
+    description: "Product ID",
     type: String,
   })
   async findById(
-    @Param('id') id: string,
-    @CurrentTenant() tenant: TenantContext
+    @Param("id") id: string,
+    @CurrentTenant() tenant: TenantContext,
   ): Promise<ProductResponseDto> {
     return this.productsService.findById(
       id,
       tenant.businessId,
-      tenant.databaseName
+      tenant.databaseName,
     );
   }
 
-  @Patch(':id')
+  @Patch(":id")
   @ApiOperation({
-    summary: 'Update a product',
+    summary: "Update a product",
     description:
-      'Update a product (must belong to current business). Include businessId in the request body to resolve tenant context.',
+      "Update a product (must belong to current business). Include businessId in the request body to resolve tenant context.",
   })
   @ApiBody({
     description:
-      'Product update payload with businessId to resolve current tenant context.',
+      "Product update payload with businessId to resolve current tenant context.",
     type: UpdateProductDto,
   })
   @ApiOkResponse({
-    description: 'Product updated successfully',
+    description: "Product updated successfully",
     type: ProductResponseDto,
   })
-  @ApiNotFoundResponse({ description: 'Product not found' })
-  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiNotFoundResponse({ description: "Product not found" })
+  @ApiBadRequestResponse({ description: "Invalid input data" })
   @ApiForbiddenResponse({
-    description: 'Product does not belong to your business',
+    description: "Product does not belong to your business",
   })
   @ApiParam({
-    name: 'id',
-    description: 'Product ID',
+    name: "id",
+    description: "Product ID",
     type: String,
   })
   async update(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body() updateProductDto: UpdateProductDto,
-    @CurrentTenant() tenant: TenantContext
+    @CurrentTenant() tenant: TenantContext,
   ): Promise<ProductResponseDto> {
     return this.productsService.update(
       id,
       tenant.businessId,
       tenant.databaseName,
-      updateProductDto
+      updateProductDto,
     );
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Delete a product',
+    summary: "Delete a product",
     description:
-      'Delete a product (must belong to current business). businessId is REQUIRED as a query parameter.',
+      "Delete a product (must belong to current business). businessId is REQUIRED as a query parameter.",
   })
-  @ApiNotFoundResponse({ description: 'Product not found' })
+  @ApiNotFoundResponse({ description: "Product not found" })
   @ApiForbiddenResponse({
-    description: 'Product does not belong to your business',
+    description: "Product does not belong to your business",
   })
   @ApiParam({
-    name: 'id',
-    description: 'Product ID',
+    name: "id",
+    description: "Product ID",
     type: String,
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     type: String,
     required: true,
-    description: 'Business identifier required for tenant resolution',
+    description: "Business identifier required for tenant resolution",
   })
   async delete(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @CurrentTenant() tenant: TenantContext,
-    @Query('businessId') businessId: string
+    @Query("businessId") businessId: string,
   ): Promise<void> {
     return this.productsService.delete(
       id,
       businessId || tenant.businessId,
-      tenant.databaseName
+      tenant.databaseName,
     );
   }
 
-  @Post('bulk-delete')
+  @Post("bulk-delete")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Bulk delete products',
+    summary: "Bulk delete products",
     description:
-      'Delete multiple products by their IDs. Only products belonging to your business will be deleted. businessId is REQUIRED as a query parameter.',
+      "Delete multiple products by their IDs. Only products belonging to your business will be deleted. businessId is REQUIRED as a query parameter.",
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     type: String,
     required: true,
-    description: 'Business identifier required for tenant resolution',
+    description: "Business identifier required for tenant resolution",
   })
   @ApiBody({
-    description: 'Array of product IDs to delete',
+    description: "Array of product IDs to delete",
     type: BulkDeleteProductsDto,
   })
   @ApiOkResponse({
-    description: 'Bulk delete completed',
+    description: "Bulk delete completed",
     schema: {
-      type: 'object',
+      type: "object",
       properties: {
-        success: { type: 'boolean' },
+        success: { type: "boolean" },
         data: {
-          type: 'object',
+          type: "object",
           properties: {
-            deleted: { type: 'number' },
-            notFound: { type: 'array', items: { type: 'string' } },
+            deleted: { type: "number" },
+            notFound: { type: "array", items: { type: "string" } },
           },
         },
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiBadRequestResponse({ description: "Invalid input data" })
   async bulkDelete(
     @Body() dto: BulkDeleteProductsDto,
-    @CurrentTenant() tenant: TenantContext
+    @CurrentTenant() tenant: TenantContext,
   ): Promise<{
     success: boolean;
     data: { deleted: number; notFound: string[] };
@@ -339,7 +339,7 @@ export class ProductsController {
     const result = await this.productsService.deleteMany(
       dto.ids,
       tenant.businessId,
-      tenant.databaseName
+      tenant.databaseName,
     );
     return {
       success: true,
@@ -347,65 +347,66 @@ export class ProductsController {
     };
   }
 
-  @Post('import')
+  @Post("import")
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiConsumes("multipart/form-data")
   @ApiOperation({
-    summary: 'Import products from CSV or Excel',
+    summary: "Import products from CSV or Excel",
     description:
-      'Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. businessId is REQUIRED as a query parameter.',
+      "Bulk import products from a CSV or Excel file. Required columns: name, description, unitPrice, quantity. businessId is REQUIRED as a query parameter.",
   })
   @ApiCreatedResponse({
-    description: 'Products imported successfully',
+    description: "Products imported successfully",
     schema: {
-      type: 'object',
+      type: "object",
       properties: {
-        imported: { type: 'number' },
-        failed: { type: 'number' },
-        errors: { type: 'array', items: { type: 'string' } },
+        imported: { type: "number" },
+        failed: { type: "number" },
+        errors: { type: "array", items: { type: "string" } },
       },
     },
   })
-  @ApiBadRequestResponse({ description: 'Invalid file format or data' })
+  @ApiBadRequestResponse({ description: "Invalid file format or data" })
   @ApiForbiddenResponse({
-    description: 'Insufficient permissions',
+    description: "Insufficient permissions",
   })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     required: true,
     type: String,
-    description: 'Business identifier for tenant resolution',
+    description: "Business identifier for tenant resolution",
   })
   async importProducts(
     @UploadedFile() file: Multer.File,
     @CurrentTenant() tenant: TenantContext,
-    @Query('businessId') businessId: string
+    @Query("businessId") businessId: string,
   ): Promise<{ imported: number; failed: number; errors: string[] }> {
     const records = await parseFile(
       (file as unknown as { buffer: Buffer; originalname: string }).buffer,
-      (file as unknown as { buffer: Buffer; originalname: string }).originalname
+      (file as unknown as { buffer: Buffer; originalname: string })
+        .originalname,
     );
     return this.productsService.importProducts(
       businessId || tenant.businessId,
       tenant.databaseName,
-      records
+      records,
     );
   }
 
-  @Post('import/document')
+  @Post("import/document")
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
-    FileInterceptor('file', {
+    FileInterceptor("file", {
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
-          'image/png',
-          'image/jpeg',
-          'image/jpg',
-          'image/gif',
-          'image/webp',
-          'application/pdf',
+          "image/png",
+          "image/jpeg",
+          "image/jpg",
+          "image/gif",
+          "image/webp",
+          "application/pdf",
         ];
 
         if (allowedMimes.includes(file.mimetype)) {
@@ -414,46 +415,47 @@ export class ProductsController {
         } else {
           cb(
             new BadRequestException(
-              'Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed'
+              "Only image files (PNG, JPEG, GIF, WebP) and PDF are allowed",
             ),
-            false
+            false,
           );
         }
       },
-    })
+    }),
   )
-  @ApiConsumes('multipart/form-data')
+  @ApiConsumes("multipart/form-data")
   @ApiOperation({
-    summary: 'Import a product from an image or PDF document',
+    summary: "Import a product from an image or PDF document",
     description:
-      'Extract product information from an image (invoice, product catalog, receipt) or PDF using AI. ' +
-      'The AI will analyze the document and extract product details like name, description, price, and quantity. ' +
-      'businessId is REQUIRED as a query parameter.',
+      "Extract product information from an image (invoice, product catalog, receipt) or PDF using AI. " +
+      "The AI will analyze the document and extract product details like name, description, price, and quantity. " +
+      "businessId is REQUIRED as a query parameter.",
   })
   @ApiCreatedResponse({
-    description: 'Product extracted and imported successfully',
+    description: "Product extracted and imported successfully",
     type: ProductResponseDto,
   })
   @ApiBadRequestResponse({
-    description: 'Invalid file format or extraction failed',
+    description: "Invalid file format or extraction failed",
   })
-  @ApiForbiddenResponse({ description: 'Insufficient permissions' })
+  @ApiForbiddenResponse({ description: "Insufficient permissions" })
   @ApiQuery({
-    name: 'businessId',
+    name: "businessId",
     required: true,
     type: String,
-    description: 'Business identifier for tenant resolution',
+    description: "Business identifier for tenant resolution",
   })
   async importProductFromDocument(
     @UploadedFile() file: Multer.File,
     @CurrentTenant() tenant: TenantContext,
-    @Query('businessId') businessId: string
+    @Query("businessId") businessId: string,
   ): Promise<ProductResponseDto> {
     return this.productsService.importFromDocument(
       businessId || tenant.businessId,
       tenant.databaseName,
       (file as unknown as { buffer: Buffer; originalname: string }).buffer,
-      (file as unknown as { buffer: Buffer; originalname: string }).originalname
+      (file as unknown as { buffer: Buffer; originalname: string })
+        .originalname,
     );
   }
 }

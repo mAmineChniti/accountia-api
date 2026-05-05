@@ -1,10 +1,10 @@
-import { IsString, IsNumber, Min } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNumber, Min } from "class-validator";
+import { ApiProperty } from "@nestjs/swagger";
 
 export class CreateProductDto {
   @ApiProperty({
     description:
-      'Tenant businessId used to resolve the current business context (REQUIRED for non-platform users).',
+      "Tenant businessId used to resolve the current business context (REQUIRED for non-platform users).",
     type: String,
   })
   @IsString()

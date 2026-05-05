@@ -3,8 +3,8 @@ import {
   Catch,
   ArgumentsHost,
   ConflictException,
-} from '@nestjs/common';
-import { Response } from 'express';
+} from "@nestjs/common";
+import { Response } from "express";
 
 @Catch(ConflictException)
 export class ConflictExceptionFilter implements ExceptionFilter {
@@ -14,9 +14,9 @@ export class ConflictExceptionFilter implements ExceptionFilter {
     const exceptionResponse = exception.getResponse();
 
     if (
-      typeof exceptionResponse === 'object' &&
+      typeof exceptionResponse === "object" &&
       exceptionResponse !== undefined &&
-      'type' in exceptionResponse
+      "type" in exceptionResponse
     ) {
       response.status(409).json(exceptionResponse);
       return;

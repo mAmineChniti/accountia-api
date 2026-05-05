@@ -1,5 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
-import Redis from 'ioredis';
+import { Injectable, Inject } from "@nestjs/common";
+import Redis from "ioredis";
 
 interface CacheEntry<T> {
   data: T;
@@ -10,7 +10,7 @@ interface CacheEntry<T> {
 export class CacheService {
   private readonly DEFAULT_TTL = 300; // 5 minutes
 
-  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis) {}
+  constructor(@Inject("REDIS_CLIENT") private readonly redis: Redis) {}
 
   /**
    * Get cached data by key
@@ -38,7 +38,7 @@ export class CacheService {
   async set<T>(
     key: string,
     data: T,
-    ttlSeconds: number = this.DEFAULT_TTL
+    ttlSeconds: number = this.DEFAULT_TTL,
   ): Promise<void> {
     const entry: CacheEntry<T> = {
       data,
@@ -83,21 +83,21 @@ export class CacheService {
    */
   async delPattern(pattern: string): Promise<void> {
     const fullPattern = `cache:${pattern}`;
-    let cursor = '0';
+    let cursor = "0";
     do {
       const result = await this.redis.scan(
         cursor,
-        'MATCH',
+        "MATCH",
         fullPattern,
-        'COUNT',
-        100
+        "COUNT",
+        100,
       );
       cursor = result[0];
       const keys = result[1];
       if (keys.length > 0) {
         await this.redis.unlink(...keys);
       }
-    } while (cursor !== '0');
+    } while (cursor !== "0");
   }
 
   /**
@@ -115,7 +115,7 @@ export class CacheService {
   async getOrSet<T>(
     key: string,
     factory: () => Promise<T>,
-    ttlSeconds: number = this.DEFAULT_TTL
+    ttlSeconds: number = this.DEFAULT_TTL,
   ): Promise<T> {
     const cached = await this.get<T>(key);
     if (cached !== undefined) {
@@ -135,7 +135,7 @@ export class CacheService {
    */
   async increment(
     key: string,
-    ttlSeconds: number = this.DEFAULT_TTL
+    ttlSeconds: number = this.DEFAULT_TTL,
   ): Promise<number> {
     const fullKey = `cache:counter:${key}`;
     const multi = await this.redis
@@ -150,20 +150,20 @@ export class CacheService {
    * Clear all cache entries using SCAN + UNLINK (non-blocking)
    */
   async flush(): Promise<void> {
-    let cursor = '0';
+    let cursor = "0";
     do {
       const result = await this.redis.scan(
         cursor,
-        'MATCH',
-        'cache:*',
-        'COUNT',
-        100
+        "MATCH",
+        "cache:*",
+        "COUNT",
+        100,
       );
       cursor = result[0];
       const keys = result[1];
       if (keys.length > 0) {
         await this.redis.unlink(...keys);
       }
-    } while (cursor !== '0');
+    } while (cursor !== "0");
   }
 }

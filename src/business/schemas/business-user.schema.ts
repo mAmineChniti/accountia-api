@@ -1,8 +1,8 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Document } from "mongoose";
+import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
 
-@Schema({ collection: 'business_users', timestamps: true })
+@Schema({ collection: "business_users", timestamps: true })
 export class BusinessUser extends Document {
   @Prop({ required: true })
   businessId: string;

@@ -1,16 +1,16 @@
-import { IsString, IsNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty } from "class-validator";
+import { ApiProperty } from "@nestjs/swagger";
 
 /**
  * Request DTO for 2FA login step
  */
 export class TwoFALoginDto {
-  @ApiProperty({ description: 'Temporary token from login step' })
+  @ApiProperty({ description: "Temporary token from login step" })
   @IsString()
   @IsNotEmpty()
   tempToken: string;
 
-  @ApiProperty({ description: 'TOTP code from authenticator app' })
+  @ApiProperty({ description: "TOTP code from authenticator app" })
   @IsString()
   @IsNotEmpty()
   code: string;
@@ -20,10 +20,10 @@ export class TwoFALoginDto {
  * Response DTO for 2FA setup
  */
 export class TwoFASetupResponseDto {
-  @ApiProperty({ description: 'QR code image (data URL)' })
+  @ApiProperty({ description: "QR code image (data URL)" })
   qrCode: string;
 
-  @ApiProperty({ description: 'Manual entry key' })
+  @ApiProperty({ description: "Manual entry key" })
   secret: string;
 }
 
@@ -31,7 +31,7 @@ export class TwoFASetupResponseDto {
  * Request DTO for 2FA verification
  */
 export class TwoFAVerifyDto {
-  @ApiProperty({ description: 'TOTP code from authenticator app' })
+  @ApiProperty({ description: "TOTP code from authenticator app" })
   @IsString()
   @IsNotEmpty()
   code: string;

@@ -1,10 +1,10 @@
-import { IsString, IsDate, IsOptional, IsNotEmpty } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { IsString, IsDate, IsOptional, IsNotEmpty } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 
 export class CreateAccountingJobDto {
   @ApiPropertyOptional({
-    description: 'Tenant businessId used to resolve current business context.',
+    description: "Tenant businessId used to resolve current business context.",
     type: String,
   })
   @IsOptional()
@@ -13,18 +13,18 @@ export class CreateAccountingJobDto {
   businessId?: string;
 
   @ApiProperty({
-    description: 'Period start date (ISO 8601)',
+    description: "Period start date (ISO 8601)",
     type: String,
-    format: 'date-time',
+    format: "date-time",
   })
   @IsDate()
   @Type(() => Date)
   periodStart!: Date;
 
   @ApiProperty({
-    description: 'Period end date (ISO 8601)',
+    description: "Period end date (ISO 8601)",
     type: String,
-    format: 'date-time',
+    format: "date-time",
   })
   @IsDate()
   @Type(() => Date)

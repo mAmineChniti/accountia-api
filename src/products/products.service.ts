@@ -3,31 +3,31 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
-} from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
-import { Connection, Model, Types } from 'mongoose';
-import { Product, ProductSchema } from './schemas/product.schema';
-import { Invoice, InvoiceSchema } from '@/invoices/schemas/invoice.schema';
-import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
+} from "@nestjs/common";
+import { InjectConnection } from "@nestjs/mongoose";
+import { Connection, Model, Types } from "mongoose";
+import { Product, ProductSchema } from "./schemas/product.schema";
+import { Invoice, InvoiceSchema } from "@/invoices/schemas/invoice.schema";
+import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
+import { CreateProductDto } from "./dto/create-product.dto";
+import { UpdateProductDto } from "./dto/update-product.dto";
 import {
   ProductResponseDto,
   ProductListResponseDto,
-} from './dto/product-response.dto';
+} from "./dto/product-response.dto";
 import {
   StockInsightItemDto,
   StockInsightsResponseDto,
-} from './dto/stock-insights.dto';
-import { mapColumnsUsingAi } from '@/common/utils/ai-mapper.util';
-import { CacheService } from '@/redis/cache.service';
-import { extractFromDocument } from '@/common/utils/ocr-document-extraction.util';
+} from "./dto/stock-insights.dto";
+import { mapColumnsUsingAi } from "@/common/utils/ai-mapper.util";
+import { CacheService } from "@/redis/cache.service";
+import { extractFromDocument } from "@/common/utils/ocr-document-extraction.util";
 
 @Injectable()
 export class ProductsService {
   constructor(
     @InjectConnection() private connection: Connection,
-    private readonly cacheService: CacheService
+    private readonly cacheService: CacheService,
   ) {}
 
   private static readonly MIN_LOOKBACK_DAYS = 7;
@@ -69,7 +69,7 @@ export class ProductsService {
   private clampDays(
     value: number | undefined,
     min: number,
-    max: number
+    max: number,
   ): number {
     if (!Number.isFinite(value)) {
       return min;
@@ -82,17 +82,17 @@ export class ProductsService {
     businessId: string,
     databaseName: string,
     lookbackDays?: number,
-    planningHorizonDays?: number
+    planningHorizonDays?: number,
   ): Promise<StockInsightsResponseDto> {
     const effectiveLookbackDays = this.clampDays(
       lookbackDays ?? ProductsService.DEFAULT_LOOKBACK_DAYS,
       ProductsService.MIN_LOOKBACK_DAYS,
-      ProductsService.MAX_LOOKBACK_DAYS
+      ProductsService.MAX_LOOKBACK_DAYS,
     );
     const effectivePlanningDays = this.clampDays(
       planningHorizonDays ?? ProductsService.DEFAULT_PLANNING_DAYS,
       ProductsService.MIN_PLANNING_DAYS,
-      ProductsService.MAX_PLANNING_DAYS
+      ProductsService.MAX_PLANNING_DAYS,
     );
 
     // Cache key includes all parameters
@@ -109,7 +109,7 @@ export class ProductsService {
     const now = new Date();
     const lookbackStartDate = new Date(now);
     lookbackStartDate.setDate(
-      lookbackStartDate.getDate() - effectiveLookbackDays
+      lookbackStartDate.getDate() - effectiveLookbackDays,
     );
 
     const productFilter: Record<string, unknown> = { businessId };
@@ -123,7 +123,7 @@ export class ProductsService {
 
     const products = await productModel
       .find({ ...productFilter })
-      .select('_id name quantity unitPrice')
+      .select("_id name quantity unitPrice")
       .lean();
 
     if (products.length === 0) {
@@ -171,19 +171,19 @@ export class ProductsService {
         soldQuantity: number;
       }>([
         { $match: invoiceFilter },
-        { $unwind: '$lineItems' },
+        { $unwind: "$lineItems" },
         {
           $group: {
-            _id: { $toString: '$lineItems.productId' },
+            _id: { $toString: "$lineItems.productId" },
             soldQuantity: {
-              $sum: { $ifNull: ['$lineItems.quantity', 0] },
+              $sum: { $ifNull: ["$lineItems.quantity", 0] },
             },
           },
         },
         {
           $project: {
             _id: 0,
-            productId: '$_id',
+            productId: "$_id",
             soldQuantity: 1,
           },
         },
@@ -191,7 +191,7 @@ export class ProductsService {
       .exec();
 
     const soldByProduct = new Map<string, number>(
-      soldLineItems.map((item) => [item.productId, item.soldQuantity])
+      soldLineItems.map((item) => [item.productId, item.soldQuantity]),
     );
 
     const items: StockInsightItemDto[] = products.map((product) => {
@@ -207,49 +207,49 @@ export class ProductsService {
 
       const safetyStock = Math.max(5, Math.ceil(dailySalesRate * 7));
       const targetStock = Math.ceil(
-        dailySalesRate * (effectivePlanningDays + 7)
+        dailySalesRate * (effectivePlanningDays + 7),
       );
       const recommendedReorderQuantity = Math.max(
         0,
-        targetStock - currentQuantity
+        targetStock - currentQuantity,
       );
 
-      let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
-      let reason = 'Stock level is healthy for the current sales rhythm.';
+      let riskLevel: "LOW" | "MEDIUM" | "HIGH" = "LOW";
+      let reason = "Stock level is healthy for the current sales rhythm.";
       let recommendation =
-        'Keep monitoring weekly and keep current reorder cadence.';
+        "Keep monitoring weekly and keep current reorder cadence.";
 
       if (currentQuantity <= 0) {
-        riskLevel = 'HIGH';
-        reason = 'Product is out of stock right now.';
+        riskLevel = "HIGH";
+        reason = "Product is out of stock right now.";
         recommendation =
-          'Reorder immediately and prioritize this product in procurement.';
+          "Reorder immediately and prioritize this product in procurement.";
       } else if (
         estimatedDaysUntilStockout !== undefined &&
         estimatedDaysUntilStockout <= 7
       ) {
-        riskLevel = 'HIGH';
+        riskLevel = "HIGH";
         reason = `Estimated stockout in ${estimatedDaysUntilStockout} days based on recent sales.`;
         recommendation =
-          'Trigger urgent reorder and consider temporary purchase limits.';
+          "Trigger urgent reorder and consider temporary purchase limits.";
       } else if (
         estimatedDaysUntilStockout !== undefined &&
         estimatedDaysUntilStockout <= 21
       ) {
-        riskLevel = 'MEDIUM';
+        riskLevel = "MEDIUM";
         reason = `Estimated stockout in ${estimatedDaysUntilStockout} days.`;
         recommendation =
-          'Plan reorder this week to avoid stockout in the next cycle.';
+          "Plan reorder this week to avoid stockout in the next cycle.";
       } else if (dailySalesRate > 0 && currentQuantity < safetyStock) {
-        riskLevel = 'MEDIUM';
-        reason = 'Current stock is below the 7-day safety stock threshold.';
+        riskLevel = "MEDIUM";
+        reason = "Current stock is below the 7-day safety stock threshold.";
         recommendation =
-          'Increase safety stock buffer and schedule reorder in advance.';
+          "Increase safety stock buffer and schedule reorder in advance.";
       }
 
       return {
         productId,
-        productName: String(product.name ?? 'Unnamed Product'),
+        productName: String(product.name ?? "Unnamed Product"),
         currentQuantity,
         soldLastPeriod,
         dailySalesRate,
@@ -262,7 +262,7 @@ export class ProductsService {
       };
     });
 
-    const riskRank: Record<'LOW' | 'MEDIUM' | 'HIGH', number> = {
+    const riskRank: Record<"LOW" | "MEDIUM" | "HIGH", number> = {
       HIGH: 0,
       MEDIUM: 1,
       LOW: 2,
@@ -281,12 +281,12 @@ export class ProductsService {
 
     const summary = {
       totalProducts: items.length,
-      highRiskCount: items.filter((i) => i.riskLevel === 'HIGH').length,
-      mediumRiskCount: items.filter((i) => i.riskLevel === 'MEDIUM').length,
-      lowRiskCount: items.filter((i) => i.riskLevel === 'LOW').length,
+      highRiskCount: items.filter((i) => i.riskLevel === "HIGH").length,
+      mediumRiskCount: items.filter((i) => i.riskLevel === "MEDIUM").length,
+      lowRiskCount: items.filter((i) => i.riskLevel === "LOW").length,
       totalRecommendedUnits: items.reduce(
         (acc, item) => acc + item.recommendedReorderQuantity,
-        0
+        0,
       ),
     };
 
@@ -310,7 +310,7 @@ export class ProductsService {
   async create(
     businessId: string,
     databaseName: string,
-    createProductDto: CreateProductDto
+    createProductDto: CreateProductDto,
   ): Promise<ProductResponseDto> {
     const productModel = this.getProductModel(databaseName);
     const { businessId: ignoredBusinessId, ...productData } = createProductDto;
@@ -331,7 +331,7 @@ export class ProductsService {
     databaseName: string,
     page = 1,
     limit = 10,
-    search?: string
+    search?: string,
   ): Promise<ProductListResponseDto> {
     const productModel = this.getProductModel(databaseName);
     const conditions: { businessId?: string } = { businessId };
@@ -341,14 +341,14 @@ export class ProductsService {
 
     if (search) {
       query = query.or([
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
       ]);
       countFilter = {
         ...conditions,
         $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } },
+          { name: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
         ],
       };
     }
@@ -375,7 +375,7 @@ export class ProductsService {
   async findById(
     id: string,
     businessId: string,
-    databaseName: string
+    databaseName: string,
   ): Promise<ProductResponseDto> {
     const productModel = this.getProductModel(databaseName);
     const product = await productModel.findById(id);
@@ -396,7 +396,7 @@ export class ProductsService {
     id: string,
     businessId: string,
     databaseName: string,
-    updateProductDto: UpdateProductDto
+    updateProductDto: UpdateProductDto,
   ): Promise<ProductResponseDto> {
     const productModel = this.getProductModel(databaseName);
     const product = await productModel.findById(id);
@@ -410,7 +410,7 @@ export class ProductsService {
     const { businessId: ignoredBusinessId, ...updateData } = updateProductDto;
     void ignoredBusinessId;
     const updated = await productModel.findByIdAndUpdate(id, updateData, {
-      returnDocument: 'after',
+      returnDocument: "after",
       runValidators: true,
     });
 
@@ -427,7 +427,7 @@ export class ProductsService {
   async delete(
     id: string,
     businessId: string,
-    databaseName: string
+    databaseName: string,
   ): Promise<void> {
     const productModel = this.getProductModel(databaseName);
     const product = await productModel.findById(id);
@@ -447,7 +447,7 @@ export class ProductsService {
   async deleteMany(
     ids: string[],
     businessId: string,
-    databaseName: string
+    databaseName: string,
   ): Promise<{ deleted: number; notFound: string[] }> {
     const productModel = this.getProductModel(databaseName);
 
@@ -489,7 +489,7 @@ export class ProductsService {
   async findByIdsForBusiness(
     ids: string[],
     businessId: string,
-    databaseName: string
+    databaseName: string,
   ): Promise<ProductResponseDto[]> {
     const productModel = this.getProductModel(databaseName);
     const products = (await productModel
@@ -509,7 +509,7 @@ export class ProductsService {
     id: string,
     businessId: string,
     databaseName: string,
-    quantityDelta: number
+    quantityDelta: number,
   ): Promise<ProductResponseDto> {
     const productModel = this.getProductModel(databaseName);
     const product = await productModel.findById(id);
@@ -528,17 +528,17 @@ export class ProductsService {
               quantity: { $gte: Math.abs(quantityDelta) },
             },
             { $inc: { quantity: quantityDelta } },
-            { returnDocument: 'after' }
+            { returnDocument: "after" },
           )
         : await productModel.findByIdAndUpdate(
             id,
             { $inc: { quantity: quantityDelta } },
-            { returnDocument: 'after' }
+            { returnDocument: "after" },
           );
 
     if (!updated) {
       throw new BadRequestException(
-        'Insufficient stock to apply quantity update'
+        "Insufficient stock to apply quantity update",
       );
     }
 
@@ -551,12 +551,12 @@ export class ProductsService {
   async existsForBusiness(
     id: string,
     businessId: string,
-    databaseName: string
+    databaseName: string,
   ): Promise<boolean> {
     const productModel = this.getProductModel(databaseName);
     const product = await productModel
       .findOne({ _id: id, businessId })
-      .select('_id')
+      .select("_id")
       .lean();
     return !!product;
   }
@@ -567,18 +567,18 @@ export class ProductsService {
   async importProducts(
     businessId: string,
     databaseName: string,
-    records: Record<string, unknown>[]
+    records: Record<string, unknown>[],
   ): Promise<{ imported: number; failed: number; errors: string[] }> {
     const productModel = this.getProductModel(databaseName);
     const errors: string[] = [];
     let imported = 0;
 
     const expectedColumns = [
-      'name',
-      'description',
-      'unitPrice',
-      'quantity',
-      'cost',
+      "name",
+      "description",
+      "unitPrice",
+      "quantity",
+      "cost",
     ];
     const mappedRecords = await mapColumnsUsingAi(records, expectedColumns);
 
@@ -592,20 +592,20 @@ export class ProductsService {
         const quantityRaw = record.quantity;
 
         if (!name) {
-          throw new Error('Missing required field: name');
+          throw new Error("Missing required field: name");
         }
         if (!description) {
-          throw new Error('Missing required field: description');
+          throw new Error("Missing required field: description");
         }
 
         const parsedUnitPrice = this.parseNumberField(unitPriceRaw);
         if (Number.isNaN(parsedUnitPrice) || parsedUnitPrice < 0) {
-          throw new Error('unitPrice must be a valid positive number');
+          throw new Error("unitPrice must be a valid positive number");
         }
 
         const parsedQuantity = this.parseNumberField(quantityRaw);
         if (Number.isNaN(parsedQuantity) || parsedQuantity < 0) {
-          throw new Error('quantity must be a valid positive number');
+          throw new Error("quantity must be a valid positive number");
         }
 
         const costRaw = record.cost;
@@ -645,32 +645,32 @@ export class ProductsService {
     businessId: string,
     databaseName: string,
     fileBuffer: Buffer,
-    filename: string
+    filename: string,
   ): Promise<ProductResponseDto> {
     const extracted = await extractFromDocument(fileBuffer, filename, {
-      documentType: 'product',
+      documentType: "product",
     });
 
-    if (extracted?.type !== 'product') {
+    if (extracted?.type !== "product") {
       throw new BadRequestException(
-        'Could not extract product information from the document. ' +
-          'Please ensure the image contains clear product details.'
+        "Could not extract product information from the document. " +
+          "Please ensure the image contains clear product details.",
       );
     }
 
     // Validate required fields
     if (!extracted.name) {
       throw new BadRequestException(
-        'Extracted data is missing required field: name. ' +
-          'Please provide a clearer image or enter manually.'
+        "Extracted data is missing required field: name. " +
+          "Please provide a clearer image or enter manually.",
       );
     }
 
     // Build create DTO from extracted data
     const createProductDto: CreateProductDto = {
       businessId,
-      name: extracted.name ?? 'Unnamed Product',
-      description: extracted.description ?? 'No description available',
+      name: extracted.name ?? "Unnamed Product",
+      description: extracted.description ?? "No description available",
       unitPrice: extracted.unitPrice ?? 0,
       quantity: extracted.quantity ?? 0,
       cost: extracted.cost ?? 0,
@@ -681,7 +681,7 @@ export class ProductsService {
 
   private verifyBusinessAccess(
     productBusinessId: string,
-    currentBusinessId: string
+    currentBusinessId: string,
   ): void {
     // Convert both to strings for comparison to handle ObjectId vs string mismatch
     const productId = String(productBusinessId);
@@ -689,20 +689,20 @@ export class ProductsService {
 
     if (productId !== currentId) {
       throw new ForbiddenException(
-        'You do not have permission to access this product'
+        "You do not have permission to access this product",
       );
     }
   }
 
   private parseStringField(value: unknown): string {
-    return typeof value === 'string' ? value.trim() : '';
+    return typeof value === "string" ? value.trim() : "";
   }
 
   private parseNumberField(value: unknown): number {
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
       return value;
     }
-    if (typeof value === 'string' && value.trim() !== '') {
+    if (typeof value === "string" && value.trim() !== "") {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : Number.NaN;
     }
@@ -721,7 +721,7 @@ export class ProductsService {
       unitPrice: product.unitPrice,
       cost: product.cost ?? 0,
       quantity: product.quantity,
-      currency: product.currency ?? 'TND',
+      currency: product.currency ?? "TND",
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };

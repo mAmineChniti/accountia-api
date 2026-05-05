@@ -3,15 +3,15 @@
  * Represents the lifecycle states of an invoice
  */
 export enum InvoiceStatus {
-  DRAFT = 'DRAFT', // Invoice prepared but not yet published
-  ISSUED = 'ISSUED', // Published to recipient
-  VIEWED = 'VIEWED', // Recipient has seen it
-  PAID = 'PAID', // Full payment received
-  PARTIAL = 'PARTIAL', // Partial payment received
-  OVERDUE = 'OVERDUE', // Past due date without full payment
-  DISPUTED = 'DISPUTED', // Recipient disputes the amount
-  VOIDED = 'VOIDED', // Issuer voided the invoice
-  ARCHIVED = 'ARCHIVED', // Kept for historical record
+  DRAFT = "DRAFT", // Invoice prepared but not yet published
+  ISSUED = "ISSUED", // Published to recipient
+  VIEWED = "VIEWED", // Recipient has seen it
+  PAID = "PAID", // Full payment received
+  PARTIAL = "PARTIAL", // Partial payment received
+  OVERDUE = "OVERDUE", // Past due date without full payment
+  DISPUTED = "DISPUTED", // Recipient disputes the amount
+  VOIDED = "VOIDED", // Issuer voided the invoice
+  ARCHIVED = "ARCHIVED", // Kept for historical record
 }
 
 /**

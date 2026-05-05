@@ -1,13 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as nodemailer from "nodemailer";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import {
   SendEmailDto,
   SendEmailResponseDto,
   EmailType,
-} from '@/email/dto/send-email.dto';
+} from "@/email/dto/send-email.dto";
 
 @Injectable()
 export class EmailService {
@@ -19,21 +19,21 @@ export class EmailService {
   constructor(private configService: ConfigService) {
     this.initializeTransporter();
     this.frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+      this.configService.get<string>("FRONTEND_URL") ?? "http://localhost:3000";
 
-    const port = this.configService.get<string>('PORT') ?? '4789';
-    const host = this.configService.get<string>('APP_HOST') ?? 'localhost';
-    const protocol = host === 'localhost' ? 'http' : 'https';
+    const port = this.configService.get<string>("PORT") ?? "4789";
+    const host = this.configService.get<string>("APP_HOST") ?? "localhost";
+    const protocol = host === "localhost" ? "http" : "https";
     this.apiUrl = `${protocol}://${host}:${port}`;
   }
 
   private initializeTransporter(): void {
-    const gmailUsername = this.configService.get<string>('GMAIL_USERNAME');
+    const gmailUsername = this.configService.get<string>("GMAIL_USERNAME");
     const gmailAppPassword =
-      this.configService.get<string>('GMAIL_APP_PASSWORD');
+      this.configService.get<string>("GMAIL_APP_PASSWORD");
     const smtpHost =
-      this.configService.get<string>('SMTP_HOST') ?? 'smtp.gmail.com';
-    const smtpPort = this.configService.get<number>('SMTP_PORT') ?? 587;
+      this.configService.get<string>("SMTP_HOST") ?? "smtp.gmail.com";
+    const smtpPort = this.configService.get<number>("SMTP_PORT") ?? 587;
 
     if (gmailUsername && gmailAppPassword) {
       this.transporter = nodemailer.createTransport({
@@ -45,9 +45,9 @@ export class EmailService {
           pass: gmailAppPassword,
         },
       });
-      this.logger.log('Email transporter initialized successfully');
+      this.logger.log("Email transporter initialized successfully");
     } else {
-      this.logger.warn('Email credentials missing. Email sending is disabled.');
+      this.logger.warn("Email credentials missing. Email sending is disabled.");
     }
   }
 
@@ -57,12 +57,12 @@ export class EmailService {
   async sendEmail(sendEmailDto: SendEmailDto): Promise<SendEmailResponseDto> {
     try {
       if (!this.transporter) {
-        this.logger.error('Cannot send email: Transporter not initialized');
-        return { success: false, error: 'Email service not configured' };
+        this.logger.error("Cannot send email: Transporter not initialized");
+        return { success: false, error: "Email service not configured" };
       }
 
       const { to, subject, html, text, metadata } = sendEmailDto;
-      const fromEmail = this.configService.get<string>('GMAIL_USERNAME');
+      const fromEmail = this.configService.get<string>("GMAIL_USERNAME");
 
       const info = (await this.transporter.sendMail({
         from: `Accountia <${fromEmail}>`,
@@ -71,14 +71,14 @@ export class EmailService {
         html,
         text,
         headers: {
-          'X-Email-Type': metadata?.businessName ?? 'system',
+          "X-Email-Type": metadata?.businessName ?? "system",
         },
       })) as { messageId: string };
 
       this.logger.log(
-        `Email "${subject}" sent to ${to}. ID: ${info.messageId ?? 'unknown'}`
+        `Email "${subject}" sent to ${to}. ID: ${info.messageId ?? "unknown"}`,
       );
-      return { success: true, messageId: info.messageId ?? 'unknown' };
+      return { success: true, messageId: info.messageId ?? "unknown" };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error(`Failed to send email to ${sendEmailDto.to}: ${msg}`);
@@ -93,24 +93,24 @@ export class EmailService {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/confirmation_email.html'
+        "src/email/templates/confirmation_email.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       html = html
-        .replaceAll('{{.ConfirmationLink}}', confirmationLink)
-        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+        .replaceAll("{{.ConfirmationLink}}", confirmationLink)
+        .replaceAll("{{.Year}}", new Date().getFullYear().toString());
 
       const result = await this.sendEmail({
         to: email,
-        subject: 'Confirm Your Accountia Account',
+        subject: "Confirm Your Accountia Account",
         html,
         text: `Please confirm your Accountia account by visiting: ${confirmationLink}`,
         type: EmailType.SYSTEM,
       });
 
       if (!result.success) {
-        throw new Error(result.error ?? 'Failed to send confirmation email');
+        throw new Error(result.error ?? "Failed to send confirmation email");
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -121,23 +121,23 @@ export class EmailService {
 
   async sendPasswordResetEmail(
     email: string,
-    resetToken: string
+    resetToken: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/password_reset.html'
+        "src/email/templates/password_reset.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       html = html
-        .replaceAll('{{.Token}}', resetToken)
-        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+        .replaceAll("{{.Token}}", resetToken)
+        .replaceAll("{{.FrontendUrl}}", this.frontendUrl)
+        .replaceAll("{{.Year}}", new Date().getFullYear().toString());
 
       await this.sendEmail({
         to: email,
-        subject: 'Password Reset Request for Accountia',
+        subject: "Password Reset Request for Accountia",
         html,
         text: `You requested a password reset. Use this token: ${resetToken}`,
         type: EmailType.SYSTEM,
@@ -153,18 +153,18 @@ export class EmailService {
   async sendBusinessApplicationEmail(
     to: string,
     applicantName: string,
-    businessName: string
+    businessName: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/business_application_submitted.html'
+        "src/email/templates/business_application_submitted.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       html = html
-        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
-        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+        .replaceAll("{{.BusinessName}}", EmailService.escapeHtml(businessName))
+        .replaceAll("{{.Year}}", new Date().getFullYear().toString());
 
       await this.sendEmail({
         to,
@@ -183,19 +183,19 @@ export class EmailService {
   async sendBusinessApprovalEmail(
     to: string,
     applicantName: string,
-    businessName: string
+    businessName: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/business_application_approved.html'
+        "src/email/templates/business_application_approved.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       html = html
-        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
-        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+        .replaceAll("{{.BusinessName}}", EmailService.escapeHtml(businessName))
+        .replaceAll("{{.FrontendUrl}}", this.frontendUrl)
+        .replaceAll("{{.Year}}", new Date().getFullYear().toString());
 
       await this.sendEmail({
         to,
@@ -214,23 +214,23 @@ export class EmailService {
     to: string,
     applicantName: string,
     businessName: string,
-    reviewNotes?: string
+    reviewNotes?: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/business_application_rejected.html'
+        "src/email/templates/business_application_rejected.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       html = html
-        .replaceAll('{{.BusinessName}}', EmailService.escapeHtml(businessName))
+        .replaceAll("{{.BusinessName}}", EmailService.escapeHtml(businessName))
         .replaceAll(
-          '{{.ReviewNotes}}',
-          EmailService.escapeHtml(reviewNotes ?? 'No specific reason provided')
+          "{{.ReviewNotes}}",
+          EmailService.escapeHtml(reviewNotes ?? "No specific reason provided"),
         )
-        .replaceAll('{{.FrontendUrl}}', this.frontendUrl)
-        .replaceAll('{{.Year}}', new Date().getFullYear().toString());
+        .replaceAll("{{.FrontendUrl}}", this.frontendUrl)
+        .replaceAll("{{.Year}}", new Date().getFullYear().toString());
 
       await this.sendEmail({
         to,
@@ -251,22 +251,22 @@ export class EmailService {
     to: string,
     clientName: string,
     businessName: string,
-    tempPassword: string
+    tempPassword: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/client_onboarding.html'
+        "src/email/templates/client_onboarding.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       const replacements = {
-        '{{.ClientName}}': EmailService.escapeHtml(clientName),
-        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.TempPassword}}': tempPassword,
-        '{{.Email}}': EmailService.escapeHtml(to),
-        '{{.LoginUrl}}': this.frontendUrl,
-        '{{.Year}}': new Date().getFullYear().toString(),
+        "{{.ClientName}}": EmailService.escapeHtml(clientName),
+        "{{.BusinessName}}": EmailService.escapeHtml(businessName),
+        "{{.TempPassword}}": tempPassword,
+        "{{.Email}}": EmailService.escapeHtml(to),
+        "{{.LoginUrl}}": this.frontendUrl,
+        "{{.Year}}": new Date().getFullYear().toString(),
       };
 
       for (const [placeholder, value] of Object.entries(replacements)) {
@@ -293,19 +293,19 @@ export class EmailService {
     currency: string,
     dueDate: Date,
     businessName: string,
-    customMessage?: string
+    customMessage?: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/invoice_sent.html'
+        "src/email/templates/invoice_sent.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
-      const formattedDate = new Date(dueDate).toLocaleDateString('fr-TN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
+      const formattedDate = new Date(dueDate).toLocaleDateString("fr-TN", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
       });
 
       const customMessageBlock = customMessage
@@ -313,17 +313,17 @@ export class EmailService {
              <p style="font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Message from ${EmailService.escapeHtml(businessName)}</p>
              <p style="font-size:15px;color:#374151;margin:0;">${EmailService.escapeHtml(customMessage)}</p>
            </div>`
-        : '';
+        : "";
 
       const replacements = {
-        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.InvoiceNumber}}': EmailService.escapeHtml(invoiceNumber),
-        '{{.DueDate}}': formattedDate,
-        '{{.Amount}}': amount.toFixed(2),
-        '{{.Currency}}': currency,
-        '{{.LoginUrl}}': `${this.frontendUrl}/login`,
-        '{{.Year}}': new Date().getFullYear().toString(),
-        '{{.CustomMessage}}': customMessageBlock,
+        "{{.BusinessName}}": EmailService.escapeHtml(businessName),
+        "{{.InvoiceNumber}}": EmailService.escapeHtml(invoiceNumber),
+        "{{.DueDate}}": formattedDate,
+        "{{.Amount}}": amount.toFixed(2),
+        "{{.Currency}}": currency,
+        "{{.LoginUrl}}": `${this.frontendUrl}/login`,
+        "{{.Year}}": new Date().getFullYear().toString(),
+        "{{.CustomMessage}}": customMessageBlock,
       };
 
       for (const [placeholder, value] of Object.entries(replacements)) {
@@ -350,36 +350,36 @@ export class EmailService {
     invoiceNumber: string,
     amount: string,
     dueDate: string,
-    intervalDays: number
+    intervalDays: number,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/invoice_reminder.html'
+        "src/email/templates/invoice_reminder.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
-      let title = 'Payment Reminder';
+      let title = "Payment Reminder";
       let message = `This is a reminder regarding invoice <strong>${invoiceNumber}</strong>. Please ensure payment is made at your earliest convenience.`;
       let subject = `Reminder: Invoice ${invoiceNumber} from ${businessName}`;
 
       switch (intervalDays) {
         case 5: {
-          title = 'Gentle Reminder';
+          title = "Gentle Reminder";
           subject = `Gentle Reminder: Invoice ${invoiceNumber} is Overdue`;
           message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> was due on ${dueDate} and is now 5 days overdue.`;
 
           break;
         }
         case 10: {
-          title = 'Account Overdue';
+          title = "Account Overdue";
           subject = `Important: Account Overdue - Invoice ${invoiceNumber}`;
           message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is 10 days past its due date.`;
 
           break;
         }
         case 20: {
-          title = 'Final Notice';
+          title = "Final Notice";
           subject = `URGENT: Final Reminder for Invoice ${invoiceNumber}`;
           message = `Invoice <strong>${invoiceNumber}</strong> for <strong>${amount}</strong> is now 20 days overdue. Please pay immediately.`;
 
@@ -389,16 +389,16 @@ export class EmailService {
       }
 
       const replacements = {
-        '{{.Title}}': title,
-        '{{.ClientName}}': EmailService.escapeHtml(clientName),
-        '{{.Message}}': message,
-        '{{.InvoiceNumber}}': EmailService.escapeHtml(invoiceNumber),
-        '{{.Amount}}': amount,
-        '{{.DueDate}}': dueDate,
-        '{{.ButtonLabel}}': 'Pay Now',
-        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.InvoicesUrl}}': `${this.frontendUrl}/invoices/managed`,
-        '{{.Year}}': new Date().getFullYear().toString(),
+        "{{.Title}}": title,
+        "{{.ClientName}}": EmailService.escapeHtml(clientName),
+        "{{.Message}}": message,
+        "{{.InvoiceNumber}}": EmailService.escapeHtml(invoiceNumber),
+        "{{.Amount}}": amount,
+        "{{.DueDate}}": dueDate,
+        "{{.ButtonLabel}}": "Pay Now",
+        "{{.BusinessName}}": EmailService.escapeHtml(businessName),
+        "{{.InvoicesUrl}}": `${this.frontendUrl}/invoices/managed`,
+        "{{.Year}}": new Date().getFullYear().toString(),
       };
 
       for (const [placeholder, value] of Object.entries(replacements)) {
@@ -423,22 +423,22 @@ export class EmailService {
     invoiceNumber: string,
     amount: number,
     currency: string,
-    businessName: string
+    businessName: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/invoice_payment_confirmation.html'
+        "src/email/templates/invoice_payment_confirmation.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       const replacements = {
-        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.InvoiceNumber}}': EmailService.escapeHtml(invoiceNumber),
-        '{{.Amount}}': amount.toFixed(2),
-        '{{.Currency}}': currency,
-        '{{.InvoicesUrl}}': `${this.frontendUrl}/invoices`,
-        '{{.Year}}': new Date().getFullYear().toString(),
+        "{{.BusinessName}}": EmailService.escapeHtml(businessName),
+        "{{.InvoiceNumber}}": EmailService.escapeHtml(invoiceNumber),
+        "{{.Amount}}": amount.toFixed(2),
+        "{{.Currency}}": currency,
+        "{{.InvoicesUrl}}": `${this.frontendUrl}/invoices`,
+        "{{.Year}}": new Date().getFullYear().toString(),
       };
 
       for (const [placeholder, value] of Object.entries(replacements)) {
@@ -465,26 +465,26 @@ export class EmailService {
     clientName: string,
     clientEmail: string,
     amount: number,
-    currency: string
+    currency: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/invoice_sent_confirmation.html'
+        "src/email/templates/invoice_sent_confirmation.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       const year = new Date().getFullYear().toString();
       html = html
         .replaceAll(
-          '{{.InvoiceNumber}}',
-          EmailService.escapeHtml(invoiceNumber)
+          "{{.InvoiceNumber}}",
+          EmailService.escapeHtml(invoiceNumber),
         )
-        .replaceAll('{{.ClientName}}', EmailService.escapeHtml(clientName))
-        .replaceAll('{{.ClientEmail}}', EmailService.escapeHtml(clientEmail))
-        .replaceAll('{{.Amount}}', amount.toFixed(2))
-        .replaceAll('{{.Currency}}', EmailService.escapeHtml(currency))
-        .replaceAll('{{.Year}}', year);
+        .replaceAll("{{.ClientName}}", EmailService.escapeHtml(clientName))
+        .replaceAll("{{.ClientEmail}}", EmailService.escapeHtml(clientEmail))
+        .replaceAll("{{.Amount}}", amount.toFixed(2))
+        .replaceAll("{{.Currency}}", EmailService.escapeHtml(currency))
+        .replaceAll("{{.Year}}", year);
 
       await this.sendEmail({
         to,
@@ -501,31 +501,31 @@ export class EmailService {
   }
 
   private static escapeHtml(value: string | undefined): string {
-    if (!value) return '';
+    if (!value) return "";
     return String(value)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
   async sendBusinessInviteEmail(
     to: string,
     businessName: string,
     inviterName: string,
-    businessRole: string
+    businessRole: string,
   ): Promise<void> {
     try {
       const templatePath = path.join(
         process.cwd(),
-        'src/email/templates/business_invite.html'
+        "src/email/templates/business_invite.html",
       );
-      let html = await readFile(templatePath, 'utf8');
+      let html = await readFile(templatePath, "utf8");
 
       const roleDisplayMap: Record<string, string> = {
-        ADMIN: 'Admin/Member',
-        CLIENT: 'Client',
+        ADMIN: "Admin/Member",
+        CLIENT: "Client",
       };
       const roleDisplay = roleDisplayMap[businessRole] || businessRole;
 
@@ -533,12 +533,12 @@ export class EmailService {
       const registerLink = `${this.frontendUrl}/en/register`;
 
       const replacements = {
-        '{{.BusinessName}}': EmailService.escapeHtml(businessName),
-        '{{.InviterName}}': EmailService.escapeHtml(inviterName),
-        '{{.BusinessRole}}': EmailService.escapeHtml(roleDisplay),
-        '{{.InvitedEmail}}': EmailService.escapeHtml(to),
-        '{{.RegisterLink}}': registerLink, // No escaping needed for URLs
-        '{{.Year}}': new Date().getFullYear().toString(),
+        "{{.BusinessName}}": EmailService.escapeHtml(businessName),
+        "{{.InviterName}}": EmailService.escapeHtml(inviterName),
+        "{{.BusinessRole}}": EmailService.escapeHtml(roleDisplay),
+        "{{.InvitedEmail}}": EmailService.escapeHtml(to),
+        "{{.RegisterLink}}": registerLink, // No escaping needed for URLs
+        "{{.Year}}": new Date().getFullYear().toString(),
       };
 
       for (const [placeholder, value] of Object.entries(replacements)) {
@@ -565,9 +565,9 @@ export class EmailService {
   async testEmail(to: string): Promise<SendEmailResponseDto> {
     return this.sendEmail({
       to,
-      subject: 'Test Email from Accountia',
-      html: '<p>This is a test email</p>',
-      text: 'This is a test email',
+      subject: "Test Email from Accountia",
+      html: "<p>This is a test email</p>",
+      text: "This is a test email",
       type: EmailType.SYSTEM,
     });
   }

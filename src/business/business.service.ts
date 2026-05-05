@@ -5,80 +5,80 @@ import {
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
-} from '@nestjs/common';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import { ConfigService } from '@nestjs/config';
-import Stripe from 'stripe';
-import type { Connection, Model } from 'mongoose';
-import { randomBytes } from 'node:crypto';
-import { AuditEmitter } from '@/audit/audit.emitter';
-import { AuditAction } from '@/audit/schemas/audit-log.schema';
-import { Business } from '@/business/schemas/business.schema';
-import { BusinessApplication } from '@/business/schemas/business-application.schema';
-import { BusinessUser } from '@/business/schemas/business-user.schema';
-import { BusinessInvite } from '@/business/schemas/business-invite.schema';
-import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
-import { User } from '@/users/schemas/user.schema';
-import { UpdateBusinessDto } from '@/business/dto/update-business.dto';
+} from "@nestjs/common";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import { ConfigService } from "@nestjs/config";
+import Stripe from "stripe";
+import type { Connection, Model } from "mongoose";
+import { randomBytes } from "node:crypto";
+import { AuditEmitter } from "@/audit/audit.emitter";
+import { AuditAction } from "@/audit/schemas/audit-log.schema";
+import { Business } from "@/business/schemas/business.schema";
+import { BusinessApplication } from "@/business/schemas/business-application.schema";
+import { BusinessUser } from "@/business/schemas/business-user.schema";
+import { BusinessInvite } from "@/business/schemas/business-invite.schema";
+import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
+import { User } from "@/users/schemas/user.schema";
+import { UpdateBusinessDto } from "@/business/dto/update-business.dto";
 import {
   CreateBusinessApplicationDto,
   ReviewBusinessApplicationDto,
-} from '@/business/dto/business-application.dto';
-import { AssignBusinessUserDto } from '@/business/dto/business-user.dto';
+} from "@/business/dto/business-application.dto";
+import { AssignBusinessUserDto } from "@/business/dto/business-user.dto";
 import {
   InviteBusinessUserDto,
   BusinessInviteResponseDto,
-} from '@/business/dto/business-invite.dto';
+} from "@/business/dto/business-invite.dto";
 import {
   BusinessResponseDto,
   BusinessesListResponseDto,
   BusinessApplicationListResponseDto,
-} from '@/business/dto/business-response.dto';
-import { BusinessApplicationResponseDto } from '@/business/dto/business-application.dto';
-import { BusinessUserResponseDto } from '@/business/dto/business-user.dto';
-import { BusinessStatisticsResponseDto } from '@/business/dto/business-statistics.dto';
+} from "@/business/dto/business-response.dto";
+import { BusinessApplicationResponseDto } from "@/business/dto/business-application.dto";
+import { BusinessUserResponseDto } from "@/business/dto/business-user.dto";
+import { BusinessStatisticsResponseDto } from "@/business/dto/business-statistics.dto";
 import {
   StripeOnboardingLinkDto,
   StripeConnectStatusDto,
-} from '@/business/dto/stripe-onboarding.dto';
-import { Role } from '@/auth/enums/role.enum';
-import { type UserPayload } from '@/auth/types/auth.types';
-import { EmailService } from '@/email/email.service';
-import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
-import { ChangeClientRoleDto } from '@/business/dto/business-user.dto';
+} from "@/business/dto/stripe-onboarding.dto";
+import { Role } from "@/auth/enums/role.enum";
+import { type UserPayload } from "@/auth/types/auth.types";
+import { EmailService } from "@/email/email.service";
+import { TenantConnectionService } from "@/common/tenant/tenant-connection.service";
+import { ChangeClientRoleDto } from "@/business/dto/business-user.dto";
 import {
   type TenantContext,
   type TenantMetadata,
-} from '@/common/tenant/tenant.types';
-import { NotificationsService } from '@/notifications/notifications.service';
-import { NotificationType } from '@/notifications/schemas/notification.schema';
-import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
-import { Invoice } from '@/invoices/schemas/invoice.schema';
-import { Product } from '@/products/schemas/product.schema';
-import { ObjectId } from 'mongodb';
-import { TensorflowPredictionService } from '@/business/services/tensorflow-prediction.service';
-import { CacheService } from '@/redis/cache.service';
+} from "@/common/tenant/tenant.types";
+import { NotificationsService } from "@/notifications/notifications.service";
+import { NotificationType } from "@/notifications/schemas/notification.schema";
+import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
+import { Invoice } from "@/invoices/schemas/invoice.schema";
+import { Product } from "@/products/schemas/product.schema";
+import { ObjectId } from "mongodb";
+import { TensorflowPredictionService } from "@/business/services/tensorflow-prediction.service";
+import { CacheService } from "@/redis/cache.service";
 
 const toNumberOrZero = (value: unknown): number =>
-  typeof value === 'number' ? value : 0;
+  typeof value === "number" ? value : 0;
 
 const toInvoiceStatus = (
-  value: unknown
-): 'paid' | 'pending' | 'overdue' | undefined => {
-  if (typeof value !== 'string') {
+  value: unknown,
+): "paid" | "pending" | "overdue" | undefined => {
+  if (typeof value !== "string") {
     return undefined;
   }
 
   const normalized = value.trim().toUpperCase();
   const invoiceStatusMap: Partial<
-    Record<InvoiceStatus, 'paid' | 'pending' | 'overdue'>
+    Record<InvoiceStatus, "paid" | "pending" | "overdue">
   > = {
-    [InvoiceStatus.PAID]: 'paid',
-    [InvoiceStatus.OVERDUE]: 'overdue',
-    [InvoiceStatus.DRAFT]: 'pending',
-    [InvoiceStatus.ISSUED]: 'pending',
-    [InvoiceStatus.VIEWED]: 'pending',
-    [InvoiceStatus.PARTIAL]: 'pending',
+    [InvoiceStatus.PAID]: "paid",
+    [InvoiceStatus.OVERDUE]: "overdue",
+    [InvoiceStatus.DRAFT]: "pending",
+    [InvoiceStatus.ISSUED]: "pending",
+    [InvoiceStatus.VIEWED]: "pending",
+    [InvoiceStatus.PARTIAL]: "pending",
   };
 
   const mappedEnumStatus = invoiceStatusMap[normalized as InvoiceStatus];
@@ -86,8 +86,8 @@ const toInvoiceStatus = (
     return mappedEnumStatus;
   }
 
-  if (normalized === 'PENDING') {
-    return 'pending';
+  if (normalized === "PENDING") {
+    return "pending";
   }
 
   return undefined;
@@ -114,10 +114,10 @@ export class BusinessService {
     private notificationsService: NotificationsService,
     private tensorflowPredictionService: TensorflowPredictionService,
     private readonly configService: ConfigService,
-    private readonly cacheService: CacheService
+    private readonly cacheService: CacheService,
   ) {
     const stripeSecretKey = (
-      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      this.configService.get<string>("STRIPE_SECRET_KEY") ??
       process.env.STRIPE_SECRET_KEY
     )?.trim();
     if (stripeSecretKey) {
@@ -128,17 +128,17 @@ export class BusinessService {
   // Business Application Flow
   async submitBusinessApplication(
     createApplicationDto: CreateBusinessApplicationDto,
-    userId: string
+    userId: string,
   ): Promise<BusinessApplicationResponseDto> {
     // Check if user already has a pending application
     const existingApplication = await this.businessApplicationModel.findOne({
       applicantId: userId,
-      status: 'pending',
+      status: "pending",
     });
 
     if (existingApplication) {
       throw new BadRequestException(
-        'You already have a pending business application'
+        "You already have a pending business application",
       );
     }
 
@@ -158,13 +158,13 @@ export class BusinessService {
         .sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
-          savedApplication.businessName
+          savedApplication.businessName,
         )
         .catch((error) => {
           this.logger.warn(
             `Background business application email failed: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
           );
         });
     }
@@ -184,20 +184,20 @@ export class BusinessService {
         this.logger.warn(
           `Background business application notification failed: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
       });
 
     return {
       message:
-        'Business application submitted successfully. We will review your application and respond within 2-3 business days.',
+        "Business application submitted successfully. We will review your application and respond within 2-3 business days.",
       application: {
         id: savedApplication._id.toString(),
         businessName: savedApplication.businessName,
         description: savedApplication.description,
         website: savedApplication.website,
         phone: savedApplication.phone,
-        businessEmail: savedApplication.businessEmail ?? '',
+        businessEmail: savedApplication.businessEmail ?? "",
         applicantId: savedApplication.applicantId,
         status: savedApplication.status,
         createdAt: savedApplication.createdAt,
@@ -208,18 +208,18 @@ export class BusinessService {
   async reviewBusinessApplication(
     applicationId: string,
     reviewDto: ReviewBusinessApplicationDto,
-    reviewer: UserPayload
+    reviewer: UserPayload,
   ): Promise<BusinessApplicationResponseDto> {
     const reviewerId = reviewer.id;
     const application =
       await this.businessApplicationModel.findById(applicationId);
     if (!application) {
-      throw new NotFoundException('Business application not found');
+      throw new NotFoundException("Business application not found");
     }
 
     // only allow reviewing pending applications
-    if (application.status !== 'pending') {
-      throw new BadRequestException('Application has already been reviewed');
+    if (application.status !== "pending") {
+      throw new BadRequestException("Application has already been reviewed");
     }
 
     application.status = reviewDto.status;
@@ -227,14 +227,14 @@ export class BusinessService {
     application.reviewNotes = reviewDto.reviewNotes;
     application.reviewedAt = new Date();
 
-    if (reviewDto.status === 'approved') {
+    if (reviewDto.status === "approved") {
       if (!application.businessEmail) {
         const applicant = await this.userModel.findById(
-          application.applicantId
+          application.applicantId,
         );
         if (!applicant?.email) {
           throw new NotFoundException(
-            'Applicant record with a valid email is required to approve this business application'
+            "Applicant record with a valid email is required to approve this business application",
           );
         }
         application.businessEmail = applicant.email;
@@ -242,14 +242,14 @@ export class BusinessService {
 
       // Create the business within a transaction
       const databaseName = await this.generateUniqueDatabaseName(
-        application.businessName
+        application.businessName,
       );
 
       await this.provisionBusinessTenantDatabase(
         databaseName,
         application.businessName,
         application.applicantId,
-        reviewerId
+        reviewerId,
       );
 
       const business = new this.businessModel({
@@ -259,7 +259,7 @@ export class BusinessService {
         phone: application.phone,
         email: application.businessEmail,
         databaseName,
-        status: 'approved',
+        status: "approved",
       });
 
       const session = await this.connection.startSession();
@@ -279,7 +279,7 @@ export class BusinessService {
               assignedBy: reviewerId,
             },
           ],
-          { session }
+          { session },
         );
 
         await application.save({ session });
@@ -304,13 +304,13 @@ export class BusinessService {
           .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
-            approvedBusinessName
+            approvedBusinessName,
           )
           .catch((error) => {
             this.logger.warn(
               `Background business approval email failed: ${
                 error instanceof Error ? error.message : String(error)
-              }`
+              }`,
             );
           });
       }
@@ -319,8 +319,8 @@ export class BusinessService {
         .emitAction({
           action: AuditAction.APPROVE_BUSINESS,
           userId: reviewer.id,
-          userEmail: reviewer.email ?? 'Unknown',
-          userRole: reviewer.role ?? 'ADMIN',
+          userEmail: reviewer.email ?? "Unknown",
+          userRole: reviewer.role ?? "ADMIN",
           target: approvedBusinessName,
           details: { applicationId },
         })
@@ -328,7 +328,7 @@ export class BusinessService {
           this.logger.warn(
             `Background approve audit emit failed: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
           );
         });
     } else {
@@ -344,13 +344,13 @@ export class BusinessService {
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
             application.businessName,
-            reviewDto.reviewNotes ?? 'No specific reason provided'
+            reviewDto.reviewNotes ?? "No specific reason provided",
           )
           .catch((error) => {
             this.logger.warn(
               `Background business rejection email failed: ${
                 error instanceof Error ? error.message : String(error)
-              }`
+              }`,
             );
           });
       }
@@ -359,8 +359,8 @@ export class BusinessService {
         .emitAction({
           action: AuditAction.REJECT_BUSINESS,
           userId: reviewer.id,
-          userEmail: reviewer.email ?? 'Unknown',
-          userRole: reviewer.role ?? 'ADMIN',
+          userEmail: reviewer.email ?? "Unknown",
+          userRole: reviewer.role ?? "ADMIN",
           target: application.businessName,
           details: { applicationId, reason: reviewDto.reviewNotes },
         })
@@ -368,23 +368,23 @@ export class BusinessService {
           this.logger.warn(
             `Background reject audit emit failed: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
           );
         });
     }
 
     return {
       message:
-        application.status === 'approved'
-          ? 'Business application approved successfully'
-          : 'Business application has been rejected',
+        application.status === "approved"
+          ? "Business application approved successfully"
+          : "Business application has been rejected",
       application: {
         id: application._id.toString(),
         businessName: application.businessName,
         description: application.description,
         website: application.website,
         phone: application.phone,
-        businessEmail: application.businessEmail ?? '',
+        businessEmail: application.businessEmail ?? "",
         applicantId: application.applicantId,
         status: application.status,
         createdAt: application.createdAt,
@@ -398,31 +398,31 @@ export class BusinessService {
    * Returns the businessId so the frontend can immediately proceed.
    */
   async getBusinessApplications(
-    userRole: Role
+    userRole: Role,
   ): Promise<BusinessApplicationListResponseDto> {
     if (userRole !== Role.PLATFORM_OWNER && userRole !== Role.PLATFORM_ADMIN) {
       throw new ForbiddenException(
-        'Only platform administrators can view business applications'
+        "Only platform administrators can view business applications",
       );
     }
 
     const applications = await this.businessApplicationModel
       .find()
       .select(
-        'businessName description website phone businessEmail applicantId status createdAt'
+        "businessName description website phone businessEmail applicantId status createdAt",
       )
       .sort({ createdAt: -1 })
       .lean();
 
     return {
-      message: 'Business applications retrieved successfully',
+      message: "Business applications retrieved successfully",
       applications: applications.map((app) => ({
         id: app._id.toString(),
         businessName: app.businessName,
         description: app.description,
         website: app.website,
         phone: app.phone,
-        businessEmail: app.businessEmail ?? '',
+        businessEmail: app.businessEmail ?? "",
         applicantId: app.applicantId,
         status: app.status,
         createdAt: app.createdAt,
@@ -434,17 +434,17 @@ export class BusinessService {
   async getBusinessById(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<BusinessResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole);
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     return {
-      message: 'Business retrieved successfully',
+      message: "Business retrieved successfully",
       business: {
         id: business._id.toString(),
         name: business.name,
@@ -464,13 +464,13 @@ export class BusinessService {
     businessId: string,
     updateBusinessDto: UpdateBusinessDto,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<BusinessResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     Object.assign(business, updateBusinessDto);
@@ -478,14 +478,14 @@ export class BusinessService {
 
     // Invalidate cache after business update (fire-and-forget, non-blocking)
     void this.cacheService.delPatternSafe(
-      `business:statistics:${businessId}:*`
+      `business:statistics:${businessId}:*`,
     );
     void this.cacheService.delPatternSafe(
-      `tf:forecast:${businessId}:${business.databaseName}:*`
+      `tf:forecast:${businessId}:${business.databaseName}:*`,
     );
 
     return {
-      message: 'Business updated successfully',
+      message: "Business updated successfully",
       business: {
         id: updatedBusiness._id.toString(),
         name: updatedBusiness.name,
@@ -504,13 +504,13 @@ export class BusinessService {
   async deleteBusiness(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string }> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     const session = await this.connection.startSession();
@@ -520,8 +520,8 @@ export class BusinessService {
       await this.businessUserModel.deleteMany({ businessId }, { session });
       await this.businessApplicationModel.updateMany(
         { businessId },
-        { $unset: { businessId: '' } },
-        { session }
+        { $unset: { businessId: "" } },
+        { session },
       );
       await this.businessModel.findByIdAndDelete(businessId, { session });
       await session.commitTransaction();
@@ -537,7 +537,7 @@ export class BusinessService {
 
     try {
       await this.tenantConnectionService.dropTenantDatabase(
-        business.databaseName
+        business.databaseName,
       );
     } catch {
       // Best-effort cleanup: platform deletion should not be blocked if DB drop fails.
@@ -551,8 +551,8 @@ export class BusinessService {
       await this.auditEmitter.emitAction({
         action: AuditAction.DELETE_BUSINESS,
         userId: userId,
-        userEmail: actor?.email ?? 'Unknown',
-        userRole: actor?.role ?? userRole ?? 'Unknown',
+        userEmail: actor?.email ?? "Unknown",
+        userRole: actor?.role ?? userRole ?? "Unknown",
         target: business.name,
         details: { businessId },
       });
@@ -560,7 +560,7 @@ export class BusinessService {
       // ignore audit errors
     }
 
-    return { message: 'Business deleted successfully' };
+    return { message: "Business deleted successfully" };
   }
 
   async getMyBusinesses(userId: string): Promise<BusinessesListResponseDto> {
@@ -576,20 +576,20 @@ export class BusinessService {
           ],
         },
       })
-      .select('businessId')
+      .select("businessId")
       .lean()) as Array<{ businessId: string }>;
 
     // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
       const approvedApplication = await this.businessApplicationModel.findOne({
         applicantId: userId,
-        status: 'approved',
-        businessId: { $exists: true, $ne: '' },
+        status: "approved",
+        businessId: { $exists: true, $ne: "" },
       });
 
       if (approvedApplication?.businessId) {
         const business = await this.businessModel.findById(
-          approvedApplication.businessId
+          approvedApplication.businessId,
         );
         if (business) {
           await this.businessUserModel.findOneAndUpdate(
@@ -601,7 +601,7 @@ export class BusinessService {
               role: BusinessUserRole.OWNER,
               assignedBy: userId,
             },
-            { upsert: true }
+            { upsert: true },
           );
 
           businessUsers = [{ businessId: approvedApplication.businessId }];
@@ -613,19 +613,19 @@ export class BusinessService {
 
     if (businessIds.length === 0) {
       return {
-        message: 'No businesses found',
+        message: "No businesses found",
         businesses: [],
       };
     }
 
     const businesses = await this.businessModel
       .find({ _id: { $in: businessIds } })
-      .select('name phone status createdAt')
+      .select("name phone status createdAt")
       .sort({ createdAt: -1 })
       .lean();
 
     return {
-      message: 'Businesses retrieved successfully',
+      message: "Businesses retrieved successfully",
       businesses: businesses.map((business) => ({
         id: business._id.toString(),
         name: business.name,
@@ -639,18 +639,18 @@ export class BusinessService {
   async getAllBusinesses(userRole: Role): Promise<BusinessesListResponseDto> {
     if (userRole !== Role.PLATFORM_OWNER && userRole !== Role.PLATFORM_ADMIN) {
       throw new ForbiddenException(
-        'Only platform administrators can view all businesses'
+        "Only platform administrators can view all businesses",
       );
     }
 
     const businesses = await this.businessModel
       .find()
-      .select('name phone status createdAt')
+      .select("name phone status createdAt")
       .sort({ createdAt: -1 })
       .lean();
 
     return {
-      message: 'Businesses retrieved successfully',
+      message: "Businesses retrieved successfully",
       businesses: businesses.map((business) => ({
         id: business._id.toString(),
         name: business.name,
@@ -667,12 +667,12 @@ export class BusinessService {
   }> {
     const businesses = await this.businessModel
       .find()
-      .select('name email')
+      .select("name email")
       .sort({ name: 1 })
       .lean();
 
     return {
-      message: 'Businesses retrieved successfully',
+      message: "Businesses retrieved successfully",
       businesses: businesses.map((business) => ({
         id: business._id.toString(),
         name: business.name,
@@ -687,15 +687,15 @@ export class BusinessService {
     metadata: TenantMetadata;
   }> {
     const metadata = await this.tenantConnectionService.getTenantMetadata(
-      tenantContext.databaseName
+      tenantContext.databaseName,
     );
 
     if (!metadata) {
-      throw new NotFoundException('Tenant metadata not found');
+      throw new NotFoundException("Tenant metadata not found");
     }
 
     return {
-      message: 'Tenant metadata retrieved successfully',
+      message: "Tenant metadata retrieved successfully",
       tenant: tenantContext,
       metadata,
     };
@@ -706,15 +706,15 @@ export class BusinessService {
     businessId: string,
     assignDto: AssignBusinessUserDto,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<BusinessUserResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
     const business = await this.businessModel
       .findById(businessId)
-      .select('databaseName');
+      .select("databaseName");
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     // Check if user is already assigned to this business
@@ -725,7 +725,7 @@ export class BusinessService {
 
     if (existingAssignment) {
       throw new BadRequestException(
-        'User is already assigned to this business'
+        "User is already assigned to this business",
       );
     }
 
@@ -745,22 +745,22 @@ export class BusinessService {
           userId: assignDto.userId,
           role: assignDto.role,
           assignedBy: userId,
-        }
+        },
       );
     } catch {
       await this.businessUserModel.findByIdAndDelete(savedBusinessUser._id);
       throw new InternalServerErrorException(
-        'Failed to sync tenant user assignment'
+        "Failed to sync tenant user assignment",
       );
     }
 
     // Invalidate tenant context cache for the assigned user (fire-and-forget)
     void this.cacheService.delSafe(
-      `tenant:context:${assignDto.userId}:${businessId}`
+      `tenant:context:${assignDto.userId}:${businessId}`,
     );
 
     return {
-      message: 'User assigned to business successfully',
+      message: "User assigned to business successfully",
       businessUser: {
         id: savedBusinessUser._id.toString(),
         businessId: savedBusinessUser.businessId,
@@ -776,7 +776,7 @@ export class BusinessService {
     businessId: string,
     targetUserId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string }> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
@@ -786,19 +786,19 @@ export class BusinessService {
     });
 
     if (!businessUser) {
-      throw new NotFoundException('User is not assigned to this business');
+      throw new NotFoundException("User is not assigned to this business");
     }
 
     // Don't allow unassigning the business owner
     if (businessUser.role === BusinessUserRole.OWNER) {
-      throw new BadRequestException('Cannot unassign business owner');
+      throw new BadRequestException("Cannot unassign business owner");
     }
 
     const business = await this.businessModel
       .findById(businessId)
-      .select('databaseName');
+      .select("databaseName");
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     await this.businessUserModel.deleteOne({
@@ -809,7 +809,7 @@ export class BusinessService {
       await this.tenantConnectionService.deactivateTenantUser(
         business.databaseName,
         targetUserId,
-        userId
+        userId,
       );
     } catch {
       await this.businessUserModel.create({
@@ -819,26 +819,26 @@ export class BusinessService {
         assignedBy: businessUser.assignedBy,
       });
       throw new InternalServerErrorException(
-        'Failed to sync tenant user unassignment'
+        "Failed to sync tenant user unassignment",
       );
     }
 
     // Invalidate tenant context cache for the unassigned user (fire-and-forget)
     void this.cacheService.delSafe(
-      `tenant:context:${targetUserId}:${businessId}`
+      `tenant:context:${targetUserId}:${businessId}`,
     );
 
-    return { message: 'User unassigned from business successfully' };
+    return { message: "User unassigned from business successfully" };
   }
 
   // Helper methods
   private async generateUniqueDatabaseName(
-    businessName: string
+    businessName: string,
   ): Promise<string> {
     const slug = this.generateDatabaseSlug(businessName);
 
     for (let attempt = 0; attempt < 5; attempt++) {
-      const suffix = `${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`;
+      const suffix = `${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`;
       const databaseName = `${slug}_${suffix}`.slice(0, 63);
 
       // Just check if it's available, no need to upsert and create dup keys
@@ -850,26 +850,26 @@ export class BusinessService {
     }
 
     throw new InternalServerErrorException(
-      'Failed to allocate a unique tenant database name'
+      "Failed to allocate a unique tenant database name",
     );
   }
 
   private generateDatabaseSlug(businessName: string): string {
     const slug = businessName
       .toLowerCase()
-      .replaceAll(/[^\da-z]/g, '_')
-      .replaceAll(/_+/g, '_')
-      .replaceAll(/(?:^_+)|(?:_+$)/g, '')
+      .replaceAll(/[^\da-z]/g, "_")
+      .replaceAll(/_+/g, "_")
+      .replaceAll(/(?:^_+)|(?:_+$)/g, "")
       .slice(0, 40);
 
-    return slug || 'tenant';
+    return slug || "tenant";
   }
 
   private async provisionBusinessTenantDatabase(
     databaseName: string,
     businessName: string,
     ownerUserId: string,
-    assignedBy: string
+    assignedBy: string,
   ): Promise<void> {
     await this.tenantConnectionService.initializeTenantDatabase({
       databaseName,
@@ -891,7 +891,7 @@ export class BusinessService {
     businessId: string,
     userId: string,
     userRole: Role,
-    requireOwnership = false
+    requireOwnership = false,
   ): Promise<void> {
     // Platform owners and admins can access any business
     if (userRole === Role.PLATFORM_OWNER || userRole === Role.PLATFORM_ADMIN) {
@@ -905,7 +905,7 @@ export class BusinessService {
     });
 
     if (!businessUser) {
-      throw new ForbiddenException('You do not have access to this business');
+      throw new ForbiddenException("You do not have access to this business");
     }
 
     // If ownership is required (for update/delete), owners and admins can proceed
@@ -918,7 +918,7 @@ export class BusinessService {
       ].includes(businessUser.role)
     ) {
       throw new ForbiddenException(
-        'Only business owners, administrators and members can access this business'
+        "Only business owners, administrators and members can access this business",
       );
     }
   }
@@ -926,7 +926,7 @@ export class BusinessService {
   async getBusinessClients(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string; clients: Array<Record<string, unknown>> }> {
     // Check basic business access
     await this.checkBusinessAccess(businessId, userId, userRole);
@@ -944,31 +944,31 @@ export class BusinessService {
           businessUser.role !== BusinessUserRole.OWNER)
       ) {
         throw new ForbiddenException(
-          'Only business owners and admins can view client list'
+          "Only business owners and admins can view client list",
         );
       }
     }
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     // Find all business users with role 'client'
     const businessUsers = await this.businessUserModel
       .find({ businessId, role: BusinessUserRole.CLIENT })
-      .select('userId')
+      .select("userId")
       .lean();
 
     const clientIds = businessUsers.map((bu) => bu.userId);
 
     const clients = await this.userModel
       .find({ _id: { $in: clientIds } })
-      .select('firstName lastName email phoneNumber role createdAt')
+      .select("firstName lastName email phoneNumber role createdAt")
       .lean();
 
     return {
-      message: 'Clients retrieved successfully',
+      message: "Clients retrieved successfully",
       clients: clients.map((c) => ({
         id: c._id.toString(),
         firstName: c.firstName,
@@ -985,7 +985,7 @@ export class BusinessService {
     clientId: string,
     changeRoleDto: ChangeClientRoleDto,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string; businessUser: Record<string, unknown> }> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
@@ -995,7 +995,7 @@ export class BusinessService {
     });
 
     if (!businessUser) {
-      throw new NotFoundException('User not found in this business');
+      throw new NotFoundException("User not found in this business");
     }
 
     businessUser.role = changeRoleDto.role;
@@ -1005,7 +1005,7 @@ export class BusinessService {
     void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
 
     return {
-      message: 'Client role updated successfully',
+      message: "Client role updated successfully",
       businessUser: {
         id: updatedBusinessUser._id.toString(),
         businessId: updatedBusinessUser.businessId,
@@ -1021,7 +1021,7 @@ export class BusinessService {
     businessId: string,
     clientId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string }> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
@@ -1032,11 +1032,11 @@ export class BusinessService {
     });
 
     if (!businessUser) {
-      throw new NotFoundException('User not found in this business');
+      throw new NotFoundException("User not found in this business");
     }
 
     if (businessUser.role === BusinessUserRole.OWNER) {
-      throw new BadRequestException('Cannot remove business owner');
+      throw new BadRequestException("Cannot remove business owner");
     }
 
     const result = await this.businessUserModel.deleteOne({
@@ -1045,14 +1045,14 @@ export class BusinessService {
     });
 
     if (result.deletedCount === 0) {
-      throw new NotFoundException('User association not found');
+      throw new NotFoundException("User association not found");
     }
 
     // Invalidate tenant context cache for the deleted user (fire-and-forget)
     void this.cacheService.delSafe(`tenant:context:${clientId}:${businessId}`);
 
     return {
-      message: 'User removed from business successfully',
+      message: "User removed from business successfully",
     };
   }
 
@@ -1060,7 +1060,7 @@ export class BusinessService {
     businessId: string,
     userId: string,
     userRole: Role,
-    predictionHorizonDays = 90
+    predictionHorizonDays = 90,
   ): Promise<BusinessStatisticsResponseDto> {
     await this.checkBusinessAccess(businessId, userId, userRole, false);
 
@@ -1075,14 +1075,14 @@ export class BusinessService {
 
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     const tenantDb = this.connection.useDb(business.databaseName, {
       useCache: true,
     });
-    const invoicesCol = tenantDb.collection<Invoice>('invoices');
-    const productsCol = tenantDb.collection<Product>('products');
+    const invoicesCol = tenantDb.collection<Invoice>("invoices");
+    const productsCol = tenantDb.collection<Product>("products");
 
     const horizonMonths = Math.max(1, Math.ceil(predictionHorizonDays / 30));
 
@@ -1090,7 +1090,7 @@ export class BusinessService {
       await this.tensorflowPredictionService.forecastBusinessMetrics(
         businessId,
         business.databaseName,
-        horizonMonths
+        horizonMonths,
       );
 
     const revenueMonthly = forecasts.revenue.historical;
@@ -1125,8 +1125,8 @@ export class BusinessService {
           paidAmount: {
             $sum: {
               $cond: [
-                { $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PAID'] },
-                { $ifNull: ['$totalAmount', 0] },
+                { $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "PAID"] },
+                { $ifNull: ["$totalAmount", 0] },
                 0,
               ],
             },
@@ -1135,9 +1135,9 @@ export class BusinessService {
             $sum: {
               $cond: [
                 {
-                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PARTIAL'],
+                  $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "PARTIAL"],
                 },
-                { $ifNull: ['$amountPaid', 0] },
+                { $ifNull: ["$amountPaid", 0] },
                 0,
               ],
             },
@@ -1147,11 +1147,11 @@ export class BusinessService {
               $cond: [
                 {
                   $in: [
-                    { $toUpper: { $ifNull: ['$status', ''] } },
-                    ['DRAFT', 'ISSUED', 'VIEWED'],
+                    { $toUpper: { $ifNull: ["$status", ""] } },
+                    ["DRAFT", "ISSUED", "VIEWED"],
                   ],
                 },
-                { $ifNull: ['$totalAmount', 0] },
+                { $ifNull: ["$totalAmount", 0] },
                 0,
               ],
             },
@@ -1160,9 +1160,9 @@ export class BusinessService {
             $sum: {
               $cond: [
                 {
-                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'OVERDUE'],
+                  $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "OVERDUE"],
                 },
-                { $ifNull: ['$totalAmount', 0] },
+                { $ifNull: ["$totalAmount", 0] },
                 0,
               ],
             },
@@ -1171,7 +1171,7 @@ export class BusinessService {
           paidInvoices: {
             $sum: {
               $cond: [
-                { $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PAID'] },
+                { $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "PAID"] },
                 1,
                 0,
               ],
@@ -1181,7 +1181,7 @@ export class BusinessService {
             $sum: {
               $cond: [
                 {
-                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'PARTIAL'],
+                  $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "PARTIAL"],
                 },
                 1,
                 0,
@@ -1193,8 +1193,8 @@ export class BusinessService {
               $cond: [
                 {
                   $in: [
-                    { $toUpper: { $ifNull: ['$status', ''] } },
-                    ['DRAFT', 'ISSUED', 'VIEWED'],
+                    { $toUpper: { $ifNull: ["$status", ""] } },
+                    ["DRAFT", "ISSUED", "VIEWED"],
                   ],
                 },
                 1,
@@ -1206,7 +1206,7 @@ export class BusinessService {
             $sum: {
               $cond: [
                 {
-                  $eq: [{ $toUpper: { $ifNull: ['$status', ''] } }, 'OVERDUE'],
+                  $eq: [{ $toUpper: { $ifNull: ["$status", ""] } }, "OVERDUE"],
                 },
                 1,
                 0,
@@ -1234,20 +1234,20 @@ export class BusinessService {
             { issuerBusinessId: new ObjectId(businessId) },
             { issuerBusinessId: businessId },
           ],
-          status: { $in: ['PAID', 'PARTIAL'] },
+          status: { $in: ["PAID", "PARTIAL"] },
         },
       },
-      { $unwind: { path: '$lineItems', preserveNullAndEmptyArrays: false } },
+      { $unwind: { path: "$lineItems", preserveNullAndEmptyArrays: false } },
       {
         $group: {
-          _id: { productId: '$lineItems.productId' },
-          quantity: { $sum: { $ifNull: ['$lineItems.quantity', 0] } },
-          revenue: { $sum: { $ifNull: ['$lineItems.amount', 0] } },
+          _id: { productId: "$lineItems.productId" },
+          quantity: { $sum: { $ifNull: ["$lineItems.quantity", 0] } },
+          revenue: { $sum: { $ifNull: ["$lineItems.amount", 0] } },
         },
       },
       {
         $project: {
-          productId: '$_id.productId',
+          productId: "$_id.productId",
           quantity: 1,
           revenue: 1,
           _id: 0,
@@ -1280,10 +1280,10 @@ export class BusinessService {
     const totalProducts = allProducts.length;
     const totalInventoryValue = allProducts.reduce(
       (sum, p) => sum + (p.unitPrice ?? 0) * (p.quantity ?? 0),
-      0
+      0,
     );
     const lowStockProducts = allProducts.filter(
-      (p) => (p.quantity ?? 0) < 10
+      (p) => (p.quantity ?? 0) < 10,
     ).length;
 
     const profitabilityList = allProducts.map((p) => {
@@ -1300,7 +1300,7 @@ export class BusinessService {
 
       return {
         productId: p._id.toString(),
-        productName: p.name ?? 'Unnamed Product',
+        productName: p.name ?? "Unnamed Product",
         unitPrice: p.unitPrice ?? 0,
         unitCost: cost,
         soldQuantity: sales.quantity,
@@ -1343,7 +1343,7 @@ export class BusinessService {
           : undefined;
     }
 
-    let salesTrend: 'growth' | 'decline' | 'stagnation' = 'stagnation';
+    let salesTrend: "growth" | "decline" | "stagnation" = "stagnation";
     if (revenueMonthly.length >= 3) {
       const recent3 = revenueMonthly.slice(-3).map((p) => p.value);
       const avgRecent = recent3.reduce((s, v) => s + v, 0) / 3;
@@ -1355,18 +1355,18 @@ export class BusinessService {
           avgEarlier > 0 ? ((avgRecent - avgEarlier) / avgEarlier) * 100 : 0;
 
         if (change > 5) {
-          salesTrend = 'growth';
+          salesTrend = "growth";
         } else if (change < -5) {
-          salesTrend = 'decline';
+          salesTrend = "decline";
         }
       }
     }
 
-    const periodStart = revenueMonthly[0]?.date ?? '';
-    const periodEnd = revenueMonthly.at(-1)?.date ?? '';
+    const periodStart = revenueMonthly[0]?.date ?? "";
+    const periodEnd = revenueMonthly.at(-1)?.date ?? "";
 
     const result = {
-      message: 'Business statistics retrieved successfully',
+      message: "Business statistics retrieved successfully",
       businessId: business._id.toString(),
       period: { start: periodStart, end: periodEnd },
       kpis: {
@@ -1411,7 +1411,7 @@ export class BusinessService {
   async getClientPodium(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{
     businessId: string;
     podium: Array<{
@@ -1429,14 +1429,14 @@ export class BusinessService {
     // Get business
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     // Connect to tenant database
     const tenantDb = this.connection.useDb(business.databaseName, {
       useCache: true,
     });
-    const invoicesCollection = tenantDb.collection('invoices');
+    const invoicesCollection = tenantDb.collection("invoices");
 
     // Calculate client podium - recipients who have paid all their invoices
     // Includes: Platform users (clients), external recipients, and businesses
@@ -1450,7 +1450,7 @@ export class BusinessService {
     }> = [];
 
     try {
-      const paidStatus = toInvoiceStatus(InvoiceStatus.PAID) ?? 'paid';
+      const paidStatus = toInvoiceStatus(InvoiceStatus.PAID) ?? "paid";
       const paidLabelUpper = paidStatus.toUpperCase();
 
       const topRecipients = await invoicesCollection
@@ -1472,33 +1472,33 @@ export class BusinessService {
           {
             $addFields: {
               normalizedStatus: {
-                $toUpper: { $ifNull: ['$status', ''] },
+                $toUpper: { $ifNull: ["$status", ""] },
               },
               recipientType: {
                 $toUpper: {
                   $trim: {
-                    input: { $ifNull: ['$recipient.type', ''] },
+                    input: { $ifNull: ["$recipient.type", ""] },
                   },
                 },
               },
               recipientPlatformId: {
                 $trim: {
-                  input: { $ifNull: ['$recipient.platformId', ''] },
+                  input: { $ifNull: ["$recipient.platformId", ""] },
                 },
               },
               recipientEmailNormalized: {
                 $toLower: {
                   $trim: {
-                    input: { $ifNull: ['$recipient.email', ''] },
+                    input: { $ifNull: ["$recipient.email", ""] },
                   },
                 },
               },
               recipientDisplayNameNormalized: {
                 $trim: {
-                  input: { $ifNull: ['$recipient.displayName', ''] },
+                  input: { $ifNull: ["$recipient.displayName", ""] },
                 },
               },
-              normalizedTotalAmount: { $ifNull: ['$totalAmount', 0] },
+              normalizedTotalAmount: { $ifNull: ["$totalAmount", 0] },
             },
           },
           {
@@ -1512,32 +1512,32 @@ export class BusinessService {
                 $cond: [
                   {
                     $and: [
-                      { $eq: ['$recipientType', 'PLATFORM_INDIVIDUAL'] },
-                      { $ne: ['$recipientPlatformId', ''] },
+                      { $eq: ["$recipientType", "PLATFORM_INDIVIDUAL"] },
+                      { $ne: ["$recipientPlatformId", ""] },
                     ],
                   },
-                  { $concat: ['user_', '$recipientPlatformId'] },
+                  { $concat: ["user_", "$recipientPlatformId"] },
                   {
                     $cond: [
                       {
                         $and: [
-                          { $eq: ['$recipientType', 'PLATFORM_BUSINESS'] },
-                          { $ne: ['$recipientPlatformId', ''] },
+                          { $eq: ["$recipientType", "PLATFORM_BUSINESS"] },
+                          { $ne: ["$recipientPlatformId", ""] },
                         ],
                       },
-                      { $concat: ['business_', '$recipientPlatformId'] },
+                      { $concat: ["business_", "$recipientPlatformId"] },
                       {
                         $cond: [
                           {
                             $and: [
-                              { $eq: ['$recipientType', 'EXTERNAL'] },
-                              { $ne: ['$recipientEmailNormalized', ''] },
+                              { $eq: ["$recipientType", "EXTERNAL"] },
+                              { $ne: ["$recipientEmailNormalized", ""] },
                             ],
                           },
                           {
-                            $concat: ['external_', '$recipientEmailNormalized'],
+                            $concat: ["external_", "$recipientEmailNormalized"],
                           },
-                          '',
+                          "",
                         ],
                       },
                     ],
@@ -1546,47 +1546,47 @@ export class BusinessService {
               },
               recipientName: {
                 $cond: [
-                  { $eq: ['$recipientType', 'PLATFORM_INDIVIDUAL'] },
+                  { $eq: ["$recipientType", "PLATFORM_INDIVIDUAL"] },
                   {
                     $cond: [
-                      { $ne: ['$recipientDisplayNameNormalized', ''] },
-                      '$recipientDisplayNameNormalized',
+                      { $ne: ["$recipientDisplayNameNormalized", ""] },
+                      "$recipientDisplayNameNormalized",
                       {
                         $cond: [
-                          { $ne: ['$recipientEmailNormalized', ''] },
-                          '$recipientEmailNormalized',
-                          'Unknown',
+                          { $ne: ["$recipientEmailNormalized", ""] },
+                          "$recipientEmailNormalized",
+                          "Unknown",
                         ],
                       },
                     ],
                   },
                   {
                     $cond: [
-                      { $eq: ['$recipientType', 'PLATFORM_BUSINESS'] },
+                      { $eq: ["$recipientType", "PLATFORM_BUSINESS"] },
                       {
                         $cond: [
-                          { $ne: ['$recipientDisplayNameNormalized', ''] },
-                          '$recipientDisplayNameNormalized',
-                          'Unknown Business',
+                          { $ne: ["$recipientDisplayNameNormalized", ""] },
+                          "$recipientDisplayNameNormalized",
+                          "Unknown Business",
                         ],
                       },
                       {
                         $cond: [
-                          { $eq: ['$recipientType', 'EXTERNAL'] },
+                          { $eq: ["$recipientType", "EXTERNAL"] },
                           {
                             $cond: [
-                              { $ne: ['$recipientDisplayNameNormalized', ''] },
-                              '$recipientDisplayNameNormalized',
+                              { $ne: ["$recipientDisplayNameNormalized", ""] },
+                              "$recipientDisplayNameNormalized",
                               {
                                 $cond: [
-                                  { $ne: ['$recipientEmailNormalized', ''] },
-                                  '$recipientEmailNormalized',
-                                  'External Contact',
+                                  { $ne: ["$recipientEmailNormalized", ""] },
+                                  "$recipientEmailNormalized",
+                                  "External Contact",
                                 ],
                               },
                             ],
                           },
-                          'Unknown',
+                          "Unknown",
                         ],
                       },
                     ],
@@ -1597,15 +1597,15 @@ export class BusinessService {
           },
           {
             $match: {
-              recipientKey: { $ne: '' },
+              recipientKey: { $ne: "" },
             },
           },
           {
             $group: {
-              _id: '$recipientKey',
-              recipientName: { $first: '$recipientName' },
-              recipientEmail: { $first: '$recipientEmailNormalized' },
-              totalPaidAmount: { $sum: '$normalizedTotalAmount' },
+              _id: "$recipientKey",
+              recipientName: { $first: "$recipientName" },
+              recipientEmail: { $first: "$recipientEmailNormalized" },
+              totalPaidAmount: { $sum: "$normalizedTotalAmount" },
               totalPaidInvoices: { $sum: 1 },
             },
           },
@@ -1620,7 +1620,7 @@ export class BusinessService {
           {
             $project: {
               _id: 0,
-              recipientKey: '$_id',
+              recipientKey: "$_id",
               recipientName: 1,
               recipientEmail: 1,
               totalPaidAmount: 1,
@@ -1630,14 +1630,14 @@ export class BusinessService {
         ])
         .toArray();
 
-      const medals = ['🥇', '🥈', '🥉'];
+      const medals = ["🥇", "🥈", "🥉"];
       clientPodium = topRecipients.map((recipient, index) => ({
         clientId: recipient.recipientKey,
         clientName: recipient.recipientName,
         clientEmail: recipient.recipientEmail,
         totalPaidAmount: toNumberOrZero(recipient.totalPaidAmount),
         totalPaidInvoices: toNumberOrZero(recipient.totalPaidInvoices),
-        medal: medals[index] || '🏅',
+        medal: medals[index] || "🏅",
       }));
     } catch (error) {
       throw error;
@@ -1655,7 +1655,7 @@ export class BusinessService {
     businessId: string,
     inviteDto: InviteBusinessUserDto,
     inviterId: string,
-    inviterRole: Role
+    inviterRole: Role,
   ): Promise<BusinessInviteResponseDto> {
     // Check if inviter has admin/owner permission
     await this.checkBusinessAccess(businessId, inviterId, inviterRole, true);
@@ -1663,7 +1663,7 @@ export class BusinessService {
     // Validate business exists
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     const normalizedEmail = inviteDto.invitedEmail.toLowerCase().trim();
@@ -1680,7 +1680,7 @@ export class BusinessService {
 
       if (existingAssignment) {
         throw new BadRequestException(
-          'User is already assigned to this business'
+          "User is already assigned to this business",
         );
       }
 
@@ -1700,12 +1700,12 @@ export class BusinessService {
             userId: existingUser._id.toString(),
             role: inviteDto.businessRole,
             assignedBy: inviterId,
-          }
+          },
         );
       } catch {
         await this.businessUserModel.findByIdAndDelete(savedBusinessUser._id);
         throw new InternalServerErrorException(
-          'Failed to sync tenant user assignment'
+          "Failed to sync tenant user assignment",
         );
       }
 
@@ -1729,7 +1729,7 @@ export class BusinessService {
       }
 
       return {
-        message: 'User is already registered and has been assigned directly',
+        message: "User is already registered and has been assigned directly",
       };
     }
 
@@ -1741,7 +1741,7 @@ export class BusinessService {
 
     if (existingInvite) {
       throw new BadRequestException(
-        'An invite already exists for this email in this business'
+        "An invite already exists for this email in this business",
       );
     }
 
@@ -1751,7 +1751,7 @@ export class BusinessService {
       invitedEmail: normalizedEmail,
       inviterId,
       businessRole: inviteDto.businessRole,
-      status: 'pending',
+      status: "pending",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     });
 
@@ -1760,7 +1760,7 @@ export class BusinessService {
     // Get inviter info for email
     const inviterName = inviter
       ? `${inviter.firstName} ${inviter.lastName}`
-      : 'A business owner';
+      : "A business owner";
 
     let emailSent = false;
 
@@ -1770,7 +1770,7 @@ export class BusinessService {
         normalizedEmail,
         business.name,
         inviterName,
-        inviteDto.businessRole
+        inviteDto.businessRole,
       );
 
       const updatedInvite = await this.businessInviteModel.findByIdAndUpdate(
@@ -1778,12 +1778,12 @@ export class BusinessService {
         {
           emailSent: true,
         },
-        { returnDocument: 'after' }
+        { returnDocument: "after" },
       );
       emailSent = updatedInvite?.emailSent ?? false;
     } catch (error) {
       // Log error but don't fail the request
-      console.error('Failed to send invite email:', error);
+      console.error("Failed to send invite email:", error);
     }
 
     if (emailSent) {
@@ -1792,8 +1792,8 @@ export class BusinessService {
         await this.auditEmitter.emitAction({
           action: AuditAction.INVITE_SENT,
           userId: inviterId,
-          userEmail: inviter?.email ?? 'Unknown',
-          userRole: inviter?.role ?? inviterRole ?? 'Unknown',
+          userEmail: inviter?.email ?? "Unknown",
+          userRole: inviter?.role ?? inviterRole ?? "Unknown",
           target: normalizedEmail,
           details: { businessId, businessRole: inviteDto.businessRole },
         });
@@ -1803,7 +1803,7 @@ export class BusinessService {
     }
 
     return {
-      message: 'Invite sent successfully',
+      message: "Invite sent successfully",
       invite: {
         id: savedInvite._id.toString(),
         businessId: savedInvite.businessId,
@@ -1822,24 +1822,24 @@ export class BusinessService {
     businessId: string,
     inviteId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<BusinessInviteResponseDto> {
     // Check permission
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
     const invite = await this.businessInviteModel.findById(inviteId);
     if (!invite) {
-      throw new NotFoundException('Invite not found');
+      throw new NotFoundException("Invite not found");
     }
 
     if (invite.businessId !== businessId) {
       throw new ForbiddenException(
-        'You do not have permission to resend this invite'
+        "You do not have permission to resend this invite",
       );
     }
 
-    if (invite.status !== 'pending') {
-      throw new BadRequestException('Invite is not pending');
+    if (invite.status !== "pending") {
+      throw new BadRequestException("Invite is not pending");
     }
 
     // Get business and inviter info for email
@@ -1847,11 +1847,11 @@ export class BusinessService {
     const inviter = await this.userModel.findById(invite.inviterId);
 
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     if (!inviter) {
-      throw new NotFoundException('Inviter not found');
+      throw new NotFoundException("Inviter not found");
     }
 
     const inviterName = `${inviter.firstName} ${inviter.lastName}`;
@@ -1861,11 +1861,11 @@ export class BusinessService {
         invite.invitedEmail,
         business.name,
         inviterName,
-        invite.businessRole
+        invite.businessRole,
       );
     } catch (error) {
-      console.error('Failed to resend invite email:', error);
-      throw new InternalServerErrorException('Failed to resend invite email');
+      console.error("Failed to resend invite email:", error);
+      throw new InternalServerErrorException("Failed to resend invite email");
     }
 
     invite.emailSent = true;
@@ -1880,8 +1880,8 @@ export class BusinessService {
         await this.auditEmitter.emitAction({
           action: AuditAction.INVITE_SENT,
           userId: userId,
-          userEmail: actor?.email ?? 'Unknown',
-          userRole: actor?.role ?? userRole ?? 'Unknown',
+          userEmail: actor?.email ?? "Unknown",
+          userRole: actor?.role ?? userRole ?? "Unknown",
           target: invite.invitedEmail,
           details: { businessId, inviteId, resend: true },
         });
@@ -1891,7 +1891,7 @@ export class BusinessService {
     }
 
     return {
-      message: 'Invite resent successfully',
+      message: "Invite resent successfully",
       invite: {
         id: invite._id.toString(),
         businessId: invite.businessId,
@@ -1910,7 +1910,7 @@ export class BusinessService {
     // Find all pending invites for this email
     const invites = await this.businessInviteModel.find({
       invitedEmail: email.toLowerCase().trim(),
-      status: 'pending',
+      status: "pending",
     });
 
     if (invites.length === 0) {
@@ -1920,14 +1920,14 @@ export class BusinessService {
     // Process each invite - create business user assignment and sync to tenant
     for (const invite of invites) {
       try {
-        if (invite.status !== 'pending') {
+        if (invite.status !== "pending") {
           continue;
         }
 
         const business = await this.businessModel.findById(invite.businessId);
         if (!business) {
           console.warn(
-            `Business ${invite.businessId} not found for invite processing`
+            `Business ${invite.businessId} not found for invite processing`,
           );
           continue;
         }
@@ -1960,7 +1960,7 @@ export class BusinessService {
               userId,
               role: invite.businessRole,
               assignedBy: invite.inviterId,
-            }
+            },
           );
         } catch (error) {
           // Rollback if tenant sync fails
@@ -1970,14 +1970,14 @@ export class BusinessService {
 
         try {
           await this.businessInviteModel.findByIdAndUpdate(invite._id, {
-            status: 'accepted',
+            status: "accepted",
             acceptedAt: new Date(),
             processedBy: userId,
           });
         } catch (error) {
           console.error(
             `Failed to mark invite ${invite._id.toString()} as accepted for user ${userId}:`,
-            error
+            error,
           );
         }
         // Audit: record invite accepted / user assigned
@@ -2000,7 +2000,7 @@ export class BusinessService {
         // Log but continue processing other invites
         console.error(
           `Failed to process invite ${invite._id.toString()} for user ${userId}:`,
-          error
+          error,
         );
       }
     }
@@ -2011,7 +2011,7 @@ export class BusinessService {
   private ensureStripeEnabled(): InstanceType<typeof Stripe> {
     if (!this.stripeClient) {
       throw new Error(
-        'Stripe client not configured. Please set STRIPE_SECRET_KEY environment variable.'
+        "Stripe client not configured. Please set STRIPE_SECRET_KEY environment variable.",
       );
     }
     return this.stripeClient;
@@ -2020,7 +2020,7 @@ export class BusinessService {
   async getStripeOnboardingLink(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<StripeOnboardingLinkDto> {
     // Check business access
     await this.checkBusinessAccess(businessId, userId, userRole, true);
@@ -2028,7 +2028,7 @@ export class BusinessService {
     // Get business
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     // Ensure Stripe is configured
@@ -2036,9 +2036,9 @@ export class BusinessService {
 
     // Get frontend URL
     const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') ??
+      this.configService.get<string>("FRONTEND_URL") ??
       process.env.FRONTEND_URL ??
-      'http://localhost:3000';
+      "http://localhost:3000";
 
     let stripeConnectId = business.stripeConnectId;
 
@@ -2046,22 +2046,22 @@ export class BusinessService {
       // Create Stripe Express account if not already connected
       if (!stripeConnectId) {
         const account = await stripe.accounts.create({
-          type: 'express',
-          country: 'US', // Default to US; can be made configurable per business
+          type: "express",
+          country: "US", // Default to US; can be made configurable per business
         });
         stripeConnectId = account.id;
 
         // Save the new account ID to the business
         await this.businessModel.updateOne(
           { _id: businessId },
-          { stripeConnectId }
+          { stripeConnectId },
         );
       }
 
       // Create the account link for onboarding
       const accountLink = await stripe.accountLinks.create({
         account: stripeConnectId,
-        type: 'account_onboarding',
+        type: "account_onboarding",
         refresh_url: `${frontendUrl}/business/${businessId}/stripe/refresh`,
         return_url: `${frontendUrl}/business/${businessId}/stripe/callback`,
       });
@@ -2069,33 +2069,33 @@ export class BusinessService {
       // Save the onboarding URL (temporary, expires after 24h)
       await this.businessModel.updateOne(
         { _id: businessId },
-        { stripeOnboardingUrl: accountLink.url }
+        { stripeOnboardingUrl: accountLink.url },
       );
 
       return {
         onboardingUrl: accountLink.url,
         message:
-          'Please complete your Stripe account setup. You will be redirected back after completing onboarding.',
+          "Please complete your Stripe account setup. You will be redirected back after completing onboarding.",
       };
     } catch (error) {
       const stripeErrorMessage =
         error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Stripe onboarding link generation failed for business ${businessId}: ${stripeErrorMessage}`
+        `Stripe onboarding link generation failed for business ${businessId}: ${stripeErrorMessage}`,
       );
 
       const normalized = stripeErrorMessage.toLowerCase();
       if (
-        normalized.includes('signed up for connect') ||
-        normalized.includes('dashboard.stripe.com/connect')
+        normalized.includes("signed up for connect") ||
+        normalized.includes("dashboard.stripe.com/connect")
       ) {
         throw new BadRequestException(
-          'Stripe Connect is not enabled on your Stripe platform account. Activate Connect at https://dashboard.stripe.com/connect, then retry.'
+          "Stripe Connect is not enabled on your Stripe platform account. Activate Connect at https://dashboard.stripe.com/connect, then retry.",
         );
       }
 
       throw new InternalServerErrorException(
-        'Unable to generate Stripe onboarding link right now. Please try again later.'
+        "Unable to generate Stripe onboarding link right now. Please try again later.",
       );
     }
   }
@@ -2103,7 +2103,7 @@ export class BusinessService {
   async getStripeConnectStatus(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<StripeConnectStatusDto> {
     // Check business access
     await this.checkBusinessAccess(businessId, userId, userRole, false);
@@ -2111,7 +2111,7 @@ export class BusinessService {
     // Get business
     const business = await this.businessModel.findById(businessId);
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
 
     // If no Stripe Connect ID, account is not connected
@@ -2119,7 +2119,7 @@ export class BusinessService {
       return {
         isConnected: false,
         message:
-          'Stripe Connect account not yet connected. Complete the onboarding to start receiving payments.',
+          "Stripe Connect account not yet connected. Complete the onboarding to start receiving payments.",
       };
     }
 
@@ -2132,31 +2132,31 @@ export class BusinessService {
       const isFullyConnected = account.charges_enabled ?? false;
 
       this.logger.debug(
-        `Stripe account ${business.stripeConnectId} status: charges_enabled=${isFullyConnected}, details_submitted=${account.details_submitted}, capabilities=${JSON.stringify(account.capabilities)}`
+        `Stripe account ${business.stripeConnectId} status: charges_enabled=${isFullyConnected}, details_submitted=${account.details_submitted}, capabilities=${JSON.stringify(account.capabilities)}`,
       );
 
       return {
         isConnected: isFullyConnected,
         stripeConnectId: business.stripeConnectId,
         message: isFullyConnected
-          ? 'Stripe Connect account is fully configured. Ready to receive payments.'
-          : 'Stripe Connect account is connected but not fully set up. Please complete the required information in your Stripe dashboard.',
+          ? "Stripe Connect account is fully configured. Ready to receive payments."
+          : "Stripe Connect account is connected but not fully set up. Please complete the required information in your Stripe dashboard.",
       };
     } catch (error) {
       // If we can't verify with Stripe, assume not connected
       const errorMessage =
         error instanceof Error
           ? error.message
-          : 'Unknown error verifying account';
+          : "Unknown error verifying account";
       this.logger.warn(
-        `Failed to verify Stripe account ${business.stripeConnectId}: ${errorMessage}`
+        `Failed to verify Stripe account ${business.stripeConnectId}: ${errorMessage}`,
       );
 
       return {
         isConnected: false,
         stripeConnectId: business.stripeConnectId,
         message:
-          'Could not verify Stripe account status. Please try connecting again or check your internet connection.',
+          "Could not verify Stripe account status. Please try connecting again or check your internet connection.",
       };
     }
   }
@@ -2165,7 +2165,7 @@ export class BusinessService {
   async getTeamMembers(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{
     message: string;
     members: Array<{
@@ -2188,7 +2188,7 @@ export class BusinessService {
     const userIds = businessUsers.map((bu) => bu.userId);
     const users = await this.userModel
       .find({ _id: { $in: userIds } })
-      .select('firstName lastName email phoneNumber role createdAt')
+      .select("firstName lastName email phoneNumber role createdAt")
       .lean();
 
     const members = businessUsers.map((bu) => {
@@ -2196,9 +2196,9 @@ export class BusinessService {
       return {
         id: bu._id.toString(),
         userId: bu.userId,
-        firstName: user?.firstName ?? 'Unknown',
-        lastName: user?.lastName ?? 'User',
-        email: user?.email ?? '',
+        firstName: user?.firstName ?? "Unknown",
+        lastName: user?.lastName ?? "User",
+        email: user?.email ?? "",
         phoneNumber: user?.phoneNumber,
         role: bu.role,
         createdAt: bu.createdAt,
@@ -2206,7 +2206,7 @@ export class BusinessService {
     });
 
     return {
-      message: 'Team members retrieved successfully',
+      message: "Team members retrieved successfully",
       members,
     };
   }
@@ -2214,7 +2214,7 @@ export class BusinessService {
   async getPendingInvites(
     businessId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{
     message: string;
     invites: Array<{
@@ -2232,7 +2232,7 @@ export class BusinessService {
     const invites = await this.businessInviteModel
       .find({
         businessId,
-        status: 'pending',
+        status: "pending",
         expiresAt: { $gt: new Date() },
       })
       .sort({ createdAt: -1 })
@@ -2241,12 +2241,12 @@ export class BusinessService {
     const inviterIds = invites.map((i) => i.inviterId);
     const inviters = await this.userModel
       .find({ _id: { $in: inviterIds } })
-      .select('firstName lastName')
+      .select("firstName lastName")
       .lean();
 
     const formattedInvites = invites.map((invite) => {
       const inviter = inviters.find(
-        (u) => u._id.toString() === invite.inviterId
+        (u) => u._id.toString() === invite.inviterId,
       );
       return {
         id: invite._id.toString(),
@@ -2254,7 +2254,7 @@ export class BusinessService {
         businessRole: invite.businessRole,
         inviterName: inviter
           ? `${inviter.firstName} ${inviter.lastName}`
-          : 'System',
+          : "System",
         emailSent: invite.emailSent,
         expiresAt: invite.expiresAt,
         createdAt: invite.createdAt,
@@ -2262,7 +2262,7 @@ export class BusinessService {
     });
 
     return {
-      message: 'Pending invites retrieved successfully',
+      message: "Pending invites retrieved successfully",
       invites: formattedInvites,
     };
   }
@@ -2271,24 +2271,24 @@ export class BusinessService {
     businessId: string,
     inviteId: string,
     userId: string,
-    userRole: Role
+    userRole: Role,
   ): Promise<{ message: string }> {
     await this.checkBusinessAccess(businessId, userId, userRole, true);
 
     const invite = await this.businessInviteModel.findById(inviteId);
     if (!invite) {
-      throw new NotFoundException('Invite not found');
+      throw new NotFoundException("Invite not found");
     }
 
     if (invite.businessId !== businessId) {
       throw new ForbiddenException(
-        'You do not have permission to revoke this invite'
+        "You do not have permission to revoke this invite",
       );
     }
 
-    invite.status = 'revoked';
+    invite.status = "revoked";
     await invite.save();
 
-    return { message: 'Invite revoked successfully' };
+    return { message: "Invite revoked successfully" };
   }
 }

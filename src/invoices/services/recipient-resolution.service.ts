@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectModel, InjectConnection } from '@nestjs/mongoose';
-import type { Model, Connection } from 'mongoose';
-import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
+import { Injectable, Logger } from "@nestjs/common";
+import { InjectModel, InjectConnection } from "@nestjs/mongoose";
+import type { Model, Connection } from "mongoose";
+import { InvoiceReceipt } from "@/invoices/schemas/invoice-receipt.schema";
 
 /**
  * RecipientResolutionService
@@ -29,7 +29,7 @@ export class RecipientResolutionService {
   constructor(
     @InjectModel(InvoiceReceipt.name)
     private invoiceReceiptModel: Model<InvoiceReceipt>,
-    @InjectConnection() private connection: Connection
+    @InjectConnection() private connection: Connection,
   ) {}
 
   /**
@@ -43,10 +43,10 @@ export class RecipientResolutionService {
    */
   async resolveRecipientIdentity(
     recipientEmail: string,
-    newUserId: string
+    newUserId: string,
   ): Promise<void> {
     if (!recipientEmail || !newUserId) {
-      throw new Error('recipientEmail and newUserId are required');
+      throw new Error("recipientEmail and newUserId are required");
     }
 
     try {
@@ -66,7 +66,7 @@ export class RecipientResolutionService {
 
       if (unresolvedReceipts.length === 0) {
         this.logger.debug(
-          `No unresolved receipts found for email: ${normalizedEmail}`
+          `No unresolved receipts found for email: ${normalizedEmail}`,
         );
         return;
       }
@@ -79,12 +79,12 @@ export class RecipientResolutionService {
       }
 
       this.logger.log(
-        `Resolved ${unresolvedReceipts.length} external invoices for email ${normalizedEmail} → user ${newUserId}`
+        `Resolved ${unresolvedReceipts.length} external invoices for email ${normalizedEmail} → user ${newUserId}`,
       );
     } catch (error) {
       this.logger.error(
         `Error resolving recipient identity for ${recipientEmail}: ${error}`,
-        error
+        error,
       );
       throw error;
     }
@@ -106,7 +106,7 @@ export class RecipientResolutionService {
 
       // Normalize all emails
       const normalizedEmails = recipientEmails.map((e) =>
-        e.toLowerCase().trim()
+        e.toLowerCase().trim(),
       );
 
       // Find all pending receipts matching the email list that don't have a resolved user ID
@@ -119,13 +119,13 @@ export class RecipientResolutionService {
 
       if (pendingReceipts.length === 0) {
         this.logger.debug(
-          `No pending receipts found for ${normalizedEmails.length} emails`
+          `No pending receipts found for ${normalizedEmails.length} emails`,
         );
         return;
       }
 
       this.logger.log(
-        `Found ${pendingReceipts.length} pending receipts for batch resolution across ${normalizedEmails.length} emails`
+        `Found ${pendingReceipts.length} pending receipts for batch resolution across ${normalizedEmails.length} emails`,
       );
 
       // NOTE: In production, you would query a user service to find resolved users
@@ -134,7 +134,7 @@ export class RecipientResolutionService {
       // const resolved = await userService.findByEmails(normalizedEmails)
       // Then update receipts with their user IDs
     } catch (error) {
-      this.logger.error('Error in batch resolve identities: ' + error, error);
+      this.logger.error("Error in batch resolve identities: " + error, error);
       throw error;
     }
   }

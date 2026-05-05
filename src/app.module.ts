@@ -1,20 +1,20 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
-import * as Joi from 'joi';
-import { AuthModule } from '@/auth/auth.module';
-import { BusinessModule } from '@/business/business.module';
-import { EmailModule } from '@/email/email.module';
-import { AuditModule } from '@/audit/audit.module';
-import { NotificationsModule } from '@/notifications/notifications.module';
-import { ChatModule } from '@/chat/chat.module';
+import { Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { MongooseModule } from "@nestjs/mongoose";
+import * as Joi from "joi";
+import { AuthModule } from "@/auth/auth.module";
+import { BusinessModule } from "@/business/business.module";
+import { EmailModule } from "@/email/email.module";
+import { AuditModule } from "@/audit/audit.module";
+import { NotificationsModule } from "@/notifications/notifications.module";
+import { ChatModule } from "@/chat/chat.module";
 
-import { ScheduleModule } from '@nestjs/schedule';
-import { ProductsModule } from '@/products/products.module';
-import { InvoicesModule } from '@/invoices/invoices.module';
-import { RedisModule } from '@/redis/redis.module';
-import { AccountantModule } from '@/accountant/accountant.module';
-import { MetricsController } from './metrics.controller';
+import { ScheduleModule } from "@nestjs/schedule";
+import { ProductsModule } from "@/products/products.module";
+import { InvoicesModule } from "@/invoices/invoices.module";
+import { RedisModule } from "@/redis/redis.module";
+import { AccountantModule } from "@/accountant/accountant.module";
+import { MetricsController } from "./metrics.controller";
 
 @Module({
   imports: [
@@ -45,18 +45,18 @@ import { MetricsController } from './metrics.controller';
         STRIPE_FALLBACK_CURRENCY: Joi.string().required(),
         STRIPE_FX_RATES: Joi.string().required(),
         MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
-        REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
+        REDIS_URL: Joi.string().uri().default("redis://localhost:6379"),
         REDIS_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
         // AI Accountant Service (optional - will warn if not configured)
-        AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
-        AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),
+        AI_ACCOUNTANT_URL: Joi.string().uri().default("http://localhost:8000"),
+        AI_ACCOUNTANT_API_KEY: Joi.string().allow("").default(""),
       }),
     }),
 
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.getOrThrow<string>('MONGO_URI'),
+        uri: config.getOrThrow<string>("MONGO_URI"),
       }),
     }),
 

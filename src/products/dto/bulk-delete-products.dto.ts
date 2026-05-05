@@ -4,7 +4,7 @@ import {
   ArrayMaxSize,
   IsMongoId,
   ArrayUnique,
-} from 'class-validator';
+} from "class-validator";
 
 export const BULK_DELETE_MAX_IDS = 100;
 

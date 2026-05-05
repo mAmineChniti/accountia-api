@@ -1,20 +1,20 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '@/app.module';
-import { ValidationPipe } from '@nestjs/common';
-import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ConflictExceptionFilter } from '@/common/filters/conflict-exception.filter';
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "@/app.module";
+import { ValidationPipe } from "@nestjs/common";
+import { LoggingInterceptor } from "@/common/interceptors/logging.interceptor";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { ConflictExceptionFilter } from "@/common/filters/conflict-exception.filter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix("api");
 
   const allowedOrigins = [process.env.FRONTEND_URL];
-  if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:3001');
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push("http://localhost:3001");
   }
   app.enableCors({
     origin: allowedOrigins,
@@ -27,7 +27,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       forbidUnknownValues: true,
       transform: true,
-    })
+    }),
   );
 
   app.useGlobalFilters(new ConflictExceptionFilter());
@@ -35,32 +35,32 @@ async function bootstrap() {
   // global logging interceptor: logs incoming request and outgoing response
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== "production") {
     const config = new DocumentBuilder()
-      .setTitle('Accountia API')
+      .setTitle("Accountia API")
       .setDescription(
-        'Business Management SaaS Platform – Multitenant System for Financial Operations and Team Collaboration'
+        "Business Management SaaS Platform – Multitenant System for Financial Operations and Team Collaboration",
       )
-      .setVersion('1.0')
+      .setVersion("1.0")
       .addBearerAuth(
         {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
         },
-        'access-token'
+        "access-token",
       )
       .build();
 
     const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
+    SwaggerModule.setup("api/docs", app, document);
   }
 
   const port = Number(process.env.PORT ?? 4789);
   await app.listen(port);
 
   const docsUrl =
-    process.env.NODE_ENV === 'production'
+    process.env.NODE_ENV === "production"
       ? `Port ${port} - docs disabled in production`
       : `http://localhost:${String(port)}/api/docs`;
   console.log(`🚀 API running on ${docsUrl}`);

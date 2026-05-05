@@ -12,57 +12,57 @@ import {
   ServiceUnavailableException,
   Inject,
   forwardRef,
-} from '@nestjs/common';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import type { Connection, Model } from 'mongoose';
-import { ConfigService } from '@nestjs/config';
-import Stripe from 'stripe';
-import { JwtService } from '@nestjs/jwt';
-import { JsonWebTokenError, type JwtPayload } from 'jsonwebtoken';
-import { hash, compare } from 'bcrypt';
-import multiavatar from '@multiavatar/multiavatar';
-import { randomBytes, randomUUID } from 'node:crypto';
-import { User } from '@/users/schemas/user.schema';
-import { RegisterDto } from '@/auth/dto/register.dto';
-import { AuditEmitter } from '@/audit/audit.emitter';
-import { AuditAction } from '@/audit/schemas/audit-log.schema';
-import { LoginDto } from '@/auth/dto/login.dto';
-import { RefreshTokenDto } from '@/auth/dto/refresh.dto';
-import { ForgotPasswordDto } from '@/auth/dto/forgot-password.dto';
-import { ResetPasswordDto } from '@/auth/dto/reset-password.dto';
-import { UpdateUserDto } from '@/auth/dto/update-user.dto';
-import { AuthResponseDto } from '@/auth/dto/auth-response.dto';
-import { RegistrationResponseDto } from '@/auth/dto/registration-response.dto';
+} from "@nestjs/common";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import type { Connection, Model } from "mongoose";
+import { ConfigService } from "@nestjs/config";
+import Stripe from "stripe";
+import { JwtService } from "@nestjs/jwt";
+import { JsonWebTokenError, type JwtPayload } from "jsonwebtoken";
+import { hash, compare } from "bcrypt";
+import multiavatar from "@multiavatar/multiavatar";
+import { randomBytes, randomUUID } from "node:crypto";
+import { User } from "@/users/schemas/user.schema";
+import { RegisterDto } from "@/auth/dto/register.dto";
+import { AuditEmitter } from "@/audit/audit.emitter";
+import { AuditAction } from "@/audit/schemas/audit-log.schema";
+import { LoginDto } from "@/auth/dto/login.dto";
+import { RefreshTokenDto } from "@/auth/dto/refresh.dto";
+import { ForgotPasswordDto } from "@/auth/dto/forgot-password.dto";
+import { ResetPasswordDto } from "@/auth/dto/reset-password.dto";
+import { UpdateUserDto } from "@/auth/dto/update-user.dto";
+import { AuthResponseDto } from "@/auth/dto/auth-response.dto";
+import { RegistrationResponseDto } from "@/auth/dto/registration-response.dto";
 import {
   MessageResponseDto,
   PrivateUserResponseDto,
   PrivateUserDto,
-} from '@/auth/dto/user-response.dto';
-import { UsersListResponseDto } from '@/auth/dto/users-list.dto';
-import { EmailService } from '@/email/email.service';
-import { RateLimitingService } from '@/auth/rate-limiting.service';
-import { Role } from '@/auth/enums/role.enum';
-import { RoleResponseDto } from '@/auth/dto/role.dto';
-import { BanResponseDto } from '@/auth/dto/ban-user.dto';
-import { type UserPayload } from '@/auth/types/auth.types';
-import { BusinessInvite } from '@/business/schemas/business-invite.schema';
-import { BusinessUser } from '@/business/schemas/business-user.schema';
-import { BusinessService } from '@/business/business.service';
-import { Business } from '@/business/schemas/business.schema';
-import { TenantConnectionService } from '@/common/tenant/tenant-connection.service';
+} from "@/auth/dto/user-response.dto";
+import { UsersListResponseDto } from "@/auth/dto/users-list.dto";
+import { EmailService } from "@/email/email.service";
+import { RateLimitingService } from "@/auth/rate-limiting.service";
+import { Role } from "@/auth/enums/role.enum";
+import { RoleResponseDto } from "@/auth/dto/role.dto";
+import { BanResponseDto } from "@/auth/dto/ban-user.dto";
+import { type UserPayload } from "@/auth/types/auth.types";
+import { BusinessInvite } from "@/business/schemas/business-invite.schema";
+import { BusinessUser } from "@/business/schemas/business-user.schema";
+import { BusinessService } from "@/business/business.service";
+import { Business } from "@/business/schemas/business.schema";
+import { TenantConnectionService } from "@/common/tenant/tenant-connection.service";
 
 import {
   UserStripeOnboardingLinkDto,
   UserStripeConnectStatusDto,
-} from '@/auth/dto/stripe-connect.dto';
+} from "@/auth/dto/stripe-connect.dto";
 
-import { generateSecret, verify, generateURI } from 'otplib';
+import { generateSecret, verify, generateURI } from "otplib";
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-let qrcodeModule: typeof import('qrcode') | undefined;
+let qrcodeModule: typeof import("qrcode") | undefined;
 
 const getQrcode = async () => {
-  qrcodeModule ??= await import('qrcode');
+  qrcodeModule ??= await import("qrcode");
   return qrcodeModule;
 };
 
@@ -70,14 +70,14 @@ function ensureFrontendUrl(): string {
   const frontendUrl = process.env.FRONTEND_URL;
   if (!frontendUrl) {
     throw new InternalServerErrorException(
-      'Service is temporarily unavailable'
+      "Service is temporarily unavailable",
     );
   }
   return frontendUrl;
 }
 
 function isLock(val?: string): boolean {
-  return !!val && val.startsWith('creating:');
+  return !!val && val.startsWith("creating:");
 }
 
 interface TokenPayload {
@@ -91,8 +91,8 @@ type TwoFactorChallengeResponse = {
 };
 
 type GoogleStateTokenPayload = {
-  type: 'google-oauth-state';
-  mode: 'login' | 'register';
+  type: "google-oauth-state";
+  mode: "login" | "register";
   lang: string;
   redirectUri: string;
   nonce: string;
@@ -109,7 +109,7 @@ type GoogleTokenInfo = {
 };
 
 type GoogleOAuthInitParams = {
-  mode: 'login' | 'register';
+  mode: "login" | "register";
   lang: string;
   redirectUri?: string;
   ip: string;
@@ -137,7 +137,7 @@ export class AuthService {
   private ensureStripeEnabled(): InstanceType<typeof Stripe> {
     if (!this.stripe) {
       throw new ServiceUnavailableException(
-        'Stripe Connect is not configured. Please contact support.'
+        "Stripe Connect is not configured. Please contact support.",
       );
     }
     return this.stripe;
@@ -146,9 +146,9 @@ export class AuthService {
   private static readonly GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
   private static readonly GOOGLE_AUTH_CODE_TTL_MS = 2 * 60 * 1000;
   private static readonly GOOGLE_STATE_NONCE_COLLECTION =
-    'auth_google_state_nonces';
+    "auth_google_state_nonces";
   private static readonly GOOGLE_AUTH_CODE_COLLECTION =
-    'auth_google_oauth_codes';
+    "auth_google_oauth_codes";
   private static readonly LANG_PATTERN = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 
   constructor(
@@ -166,16 +166,16 @@ export class AuthService {
     private tenantConnectionService: TenantConnectionService,
     @Inject(forwardRef(() => BusinessService))
     private businessService: BusinessService,
-    private configService: ConfigService
+    private configService: ConfigService,
   ) {
     const stripeKey =
-      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      this.configService.get<string>("STRIPE_SECRET_KEY") ??
       process.env.STRIPE_SECRET_KEY?.trim();
     if (stripeKey && stripeKey.length > 0) {
       this.stripe = new Stripe(stripeKey);
     } else {
       this.logger.warn(
-        'Stripe not initialized: STRIPE_SECRET_KEY environment variable is missing. Stripe Connect features will be unavailable.'
+        "Stripe not initialized: STRIPE_SECRET_KEY environment variable is missing. Stripe Connect features will be unavailable.",
       );
     }
   }
@@ -184,12 +184,12 @@ export class AuthService {
     await this.cleanupExpiredOAuthEntries();
 
     const rateLimit = await this.rateLimitingService.checkOAuthStateRequests(
-      params.ip
+      params.ip,
     );
     if (!rateLimit.allowed) {
       throw new HttpException(
-        'Too many OAuth requests. Please try again later.',
-        HttpStatus.TOO_MANY_REQUESTS
+        "Too many OAuth requests. Please try again later.",
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
     await this.rateLimitingService.recordOAuthStateRequest(params.ip);
@@ -198,15 +198,15 @@ export class AuthService {
 
     const sanitizedRedirectUri = this.resolveFrontendRedirectUri(
       params.redirectUri,
-      lang
+      lang,
     );
 
-    const nonce = randomBytes(16).toString('hex');
+    const nonce = randomBytes(16).toString("hex");
     const nonceExpiresAt = Date.now() + AuthService.GOOGLE_STATE_TTL_MS;
     await this.setGoogleStateNonce(nonce, nonceExpiresAt);
 
     const payload: GoogleStateTokenPayload = {
-      type: 'google-oauth-state',
+      type: "google-oauth-state",
       mode: params.mode,
       lang,
       redirectUri: sanitizedRedirectUri,
@@ -214,7 +214,7 @@ export class AuthService {
     };
 
     return this.jwtService.sign(payload, {
-      expiresIn: '10m',
+      expiresIn: "10m",
       jwtid: randomUUID(),
     });
   }
@@ -225,19 +225,19 @@ export class AuthService {
   }): Promise<string> {
     try {
       if (!params.state) {
-        throw new BadRequestException('Missing Google OAuth state');
+        throw new BadRequestException("Missing Google OAuth state");
       }
       const stateData = await this.parseGoogleState(params.state);
 
       if (!params.googleUser.email) {
-        throw new UnauthorizedException('Google identity token is not valid');
+        throw new UnauthorizedException("Google identity token is not valid");
       }
 
       const user = await this.findOrCreateGoogleUser(params.googleUser);
 
       if (user.isBanned) {
         throw new ForbiddenException(
-          'Your account has been banned. Please contact support.'
+          "Your account has been banned. Please contact support.",
         );
       }
 
@@ -249,7 +249,7 @@ export class AuthService {
         });
 
         const redirectUrl = new URL(stateData.redirectUri);
-        redirectUrl.searchParams.set('oauthCode', oauthCode);
+        redirectUrl.searchParams.set("oauthCode", oauthCode);
         return redirectUrl.toString();
       }
 
@@ -269,13 +269,13 @@ export class AuthService {
               $slice: -10,
             },
           },
-        }
+        },
       );
 
       const authResponse = this.buildAuthResponse(tokens, user);
       const oauthCode = await this.createGoogleOAuthCode(authResponse);
       const redirectUrl = new URL(stateData.redirectUri);
-      redirectUrl.searchParams.set('oauthCode', oauthCode);
+      redirectUrl.searchParams.set("oauthCode", oauthCode);
 
       return redirectUrl.toString();
     } catch (error) {
@@ -284,7 +284,7 @@ export class AuthService {
       }
 
       throw new InternalServerErrorException(
-        'Google OAuth callback failed unexpectedly'
+        "Google OAuth callback failed unexpectedly",
       );
     }
   }
@@ -292,12 +292,12 @@ export class AuthService {
   async check2FAVerificationLimit(email: string, ip: string): Promise<void> {
     const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       email,
-      ip
+      ip,
     );
     if (!rateLimitResult.allowed) {
       throw new HttpException(
-        'Too many 2FA attempts. Please try again later.',
-        HttpStatus.TOO_MANY_REQUESTS
+        "Too many 2FA attempts. Please try again later.",
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
   }
@@ -305,7 +305,7 @@ export class AuthService {
   async record2FAAttempt(
     email: string,
     ip: string,
-    codeValid: boolean
+    codeValid: boolean,
   ): Promise<void> {
     await (codeValid
       ? this.rateLimitingService.clearLoginAttempts(email, ip)
@@ -313,16 +313,16 @@ export class AuthService {
   }
 
   async setupTwoFactor(
-    userId: string
+    userId: string,
   ): Promise<{ qrCode: string; secret: string }> {
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
     if (user.twoFactorEnabled)
-      throw new BadRequestException('2FA already enabled');
+      throw new BadRequestException("2FA already enabled");
 
     const { toDataURL } = await getQrcode();
 
-    const appName = process.env.APP_NAME ?? 'Accountia';
+    const appName = process.env.APP_NAME ?? "Accountia";
     const secret = generateSecret();
 
     user.twoFactorTempSecret = secret;
@@ -334,14 +334,14 @@ export class AuthService {
       secret,
     });
     const qrCode = await toDataURL(otpauthUrl);
-    return { qrCode: qrCode ?? '', secret };
+    return { qrCode: qrCode ?? "", secret };
   }
 
   async verifyTwoFactor(userId: string, code: string): Promise<boolean> {
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
     if (!user.twoFactorTempSecret)
-      throw new BadRequestException('No 2FA setup in progress');
+      throw new BadRequestException("No 2FA setup in progress");
 
     const result = await verify({
       secret: user.twoFactorTempSecret,
@@ -361,12 +361,12 @@ export class AuthService {
   async disableTwoFactor(
     userId: string,
     code: string,
-    context: { email: string; ip: string }
+    context: { email: string; ip: string },
   ): Promise<void> {
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
     if (!user.twoFactorEnabled)
-      throw new BadRequestException('2FA is not enabled');
+      throw new BadRequestException("2FA is not enabled");
 
     await this.check2FAVerificationLimit(context.email, context.ip);
 
@@ -376,7 +376,7 @@ export class AuthService {
     });
     if (result.valid !== true) {
       await this.record2FAAttempt(context.email, context.ip, false);
-      throw new UnauthorizedException('Invalid 2FA code');
+      throw new UnauthorizedException("Invalid 2FA code");
     }
 
     await this.record2FAAttempt(context.email, context.ip, true);
@@ -389,30 +389,30 @@ export class AuthService {
 
   generateTempToken(user: User): string {
     return this.jwtService.sign(
-      { sub: user._id.toString(), type: '2fa-temp' },
-      { expiresIn: '5m', jwtid: randomUUID() }
+      { sub: user._id.toString(), type: "2fa-temp" },
+      { expiresIn: "5m", jwtid: randomUUID() },
     );
   }
 
   async twoFactorLogin(
     tempToken: string,
     code: string,
-    ip: string
+    ip: string,
   ): Promise<AuthResponseDto> {
     let payload: JwtPayload;
     try {
       payload = this.jwtService.verify(tempToken);
     } catch {
-      throw new UnauthorizedException('Invalid or expired temp token');
+      throw new UnauthorizedException("Invalid or expired temp token");
     }
 
-    if (payload.type !== '2fa-temp') {
-      throw new UnauthorizedException('Invalid token type');
+    if (payload.type !== "2fa-temp") {
+      throw new UnauthorizedException("Invalid token type");
     }
 
     const user = await this.userModel.findById(payload.sub);
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret)
-      throw new UnauthorizedException('2FA not enabled');
+      throw new UnauthorizedException("2FA not enabled");
 
     await this.check2FAVerificationLimit(user.email, ip);
 
@@ -421,7 +421,7 @@ export class AuthService {
 
     if (!isValid) {
       await this.record2FAAttempt(user.email, ip, false);
-      throw new UnauthorizedException('Invalid 2FA code');
+      throw new UnauthorizedException("Invalid 2FA code");
     }
 
     await this.record2FAAttempt(user.email, ip, true);
@@ -440,21 +440,21 @@ export class AuthService {
             $slice: -10,
           },
         },
-      }
+      },
     );
     return this.buildAuthResponse(tokens, user);
   }
 
   private buildAuthResponse(
     tokens: { accessToken: string; refreshToken: string },
-    user: User
+    user: User,
   ): AuthResponseDto {
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       accessTokenExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       refreshTokenExpiresAt: new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000
+        Date.now() + 7 * 24 * 60 * 60 * 1000,
       ).toISOString(),
       user: {
         id: user._id.toString(),
@@ -485,12 +485,12 @@ export class AuthService {
     const normalizedEmail = email.toLowerCase().trim();
 
     if (!acceptTerms) {
-      throw new BadRequestException('You must accept the terms and conditions');
+      throw new BadRequestException("You must accept the terms and conditions");
     }
 
     const existingUsername = await this.userModel.findOne({ username });
     if (existingUsername) {
-      throw new ConflictException('This username is already taken');
+      throw new ConflictException("This username is already taken");
     }
 
     const existingEmail = await this.userModel.findOne({
@@ -498,16 +498,16 @@ export class AuthService {
     });
     if (existingEmail) {
       const error = existingEmail.emailConfirmed
-        ? new ConflictException('This email is already registered')
+        ? new ConflictException("This email is already registered")
         : new ConflictException(
-            'Account exists but email is not confirmed. Please check your email or request a new confirmation.'
+            "Account exists but email is not confirmed. Please check your email or request a new confirmation.",
           );
       throw error;
     }
 
     const pendingInvites = await this.businessInviteModel.find({
       invitedEmail: normalizedEmail,
-      status: 'pending',
+      status: "pending",
     });
 
     const passwordHash = await hash(password, 10);
@@ -519,14 +519,14 @@ export class AuthService {
     try {
       const birthdateDate = new Date(birthdate);
       if (Number.isNaN(birthdateDate.getTime())) {
-        throw new BadRequestException('Failed to parse birthdate');
+        throw new BadRequestException("Failed to parse birthdate");
       }
 
       let finalProfilePicture = profilePicture;
       if (!finalProfilePicture) {
         const svg = multiavatar(username);
         finalProfilePicture =
-          'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+          "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
       }
 
       const user = new this.userModel({
@@ -555,37 +555,37 @@ export class AuthService {
         try {
           await this.businessService.processInvitesForNewUser(
             user._id.toString(),
-            normalizedEmail
+            normalizedEmail,
           );
           invitesProcessed = true;
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           this.logger.error(
-            'Failed to process business invites during registration',
-            error instanceof Error ? error.stack : errorMessage
+            "Failed to process business invites during registration",
+            error instanceof Error ? error.stack : errorMessage,
           );
           await this.auditEmitter.emitAction({
             action: AuditAction.OTHER,
             userId: user._id.toString(),
             userEmail: user.email,
-            userRole: user.role || 'CLIENT',
+            userRole: user.role || "CLIENT",
             details: {
-              reason: 'invite_processing_failed_during_registration',
+              reason: "invite_processing_failed_during_registration",
               invitedToBusinesses: pendingInvites.length,
               error: errorMessage,
             },
           });
           await this.userModel.findByIdAndDelete(user._id);
           throw new InternalServerErrorException(
-            'Failed to process business invitation. Please try again later.'
+            "Failed to process business invitation. Please try again later.",
           );
         }
       } else {
         void this.emailService
           .sendConfirmationEmail(normalizedEmail, user.emailToken!)
           .catch((error) => {
-            this.logger.error('Failed to send confirmation email', error);
+            this.logger.error("Failed to send confirmation email", error);
           });
       }
 
@@ -593,20 +593,20 @@ export class AuthService {
         action: AuditAction.REGISTER,
         userId: user._id.toString(),
         userEmail: user.email,
-        userRole: user.role || 'CLIENT',
+        userRole: user.role || "CLIENT",
         details: {
-          method: 'standard',
+          method: "standard",
           autoConfirmed: isInvited,
           invitedToBusinesses: pendingInvites.length,
         },
       });
 
       let registrationMessage =
-        'Registration successful! Please check your email to confirm your account.';
+        "Registration successful! Please check your email to confirm your account.";
       if (isInvited) {
         registrationMessage = invitesProcessed
-          ? 'Registration successful! You have been automatically added to your invited businesses.'
-          : 'Registration successful! Your business invites are pending and will be processed shortly.';
+          ? "Registration successful! You have been automatically added to your invited businesses."
+          : "Registration successful! Your business invites are pending and will be processed shortly.";
       }
 
       return {
@@ -616,9 +616,9 @@ export class AuthService {
     } catch (error: unknown) {
       if (
         error instanceof Error &&
-        error.message.includes('failed to hash password')
+        error.message.includes("failed to hash password")
       ) {
-        throw new BadRequestException('Unable to process password');
+        throw new BadRequestException("Unable to process password");
       }
       throw error;
     }
@@ -626,18 +626,18 @@ export class AuthService {
 
   async login(
     loginDto: LoginDto,
-    ip: string
+    ip: string,
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     const { email, password } = loginDto;
     const normalizedEmail = email.toLowerCase().trim();
     const rateLimitResult = await this.rateLimitingService.checkLoginAttempts(
       normalizedEmail,
-      ip
+      ip,
     );
     if (!rateLimitResult.allowed) {
       throw new HttpException(
-        'Too many failed login attempts. Please try again later.',
-        HttpStatus.TOO_MANY_REQUESTS
+        "Too many failed login attempts. Please try again later.",
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
     const user = await this.userModel.findOne({ email: normalizedEmail });
@@ -647,25 +647,25 @@ export class AuthService {
         action: AuditAction.FAILED_LOGIN,
         userId: undefined,
         userEmail: normalizedEmail,
-        userRole: 'unknown',
+        userRole: "unknown",
         ipAddress: ip,
-        details: { reason: 'user_not_found' },
+        details: { reason: "user_not_found" },
       });
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException("Invalid email or password");
     }
     if (user.lockUntil && user.lockUntil > new Date()) {
       throw new ForbiddenException(
-        'Account is temporarily locked due to too many failed attempts'
+        "Account is temporarily locked due to too many failed attempts",
       );
     }
     if (!user.emailConfirmed) {
       throw new ForbiddenException(
-        'Email not confirmed. Please confirm your email before logging in.'
+        "Email not confirmed. Please confirm your email before logging in.",
       );
     }
     if (user.isBanned) {
       throw new ForbiddenException(
-        'Your account has been banned. Please contact support.'
+        "Your account has been banned. Please contact support.",
       );
     }
     const isPasswordValid = await compare(password, user.passwordHash);
@@ -676,11 +676,11 @@ export class AuthService {
         action: AuditAction.FAILED_LOGIN,
         userId: user._id.toString(),
         userEmail: normalizedEmail,
-        userRole: user.role || 'Unknown',
+        userRole: user.role || "Unknown",
         ipAddress: ip,
-        details: { reason: 'invalid_password' },
+        details: { reason: "invalid_password" },
       });
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException("Invalid email or password");
     }
     if (user.twoFactorEnabled) {
       const tempToken = this.generateTempToken(user);
@@ -703,16 +703,16 @@ export class AuthService {
             $slice: -10,
           },
         },
-      }
+      },
     );
 
     await this.auditEmitter.emitAction({
       action: AuditAction.LOGIN,
       userId: user._id.toString(),
       userEmail: user.email,
-      userRole: user.role || 'Unknown',
+      userRole: user.role || "Unknown",
       ipAddress: ip,
-      details: { method: 'standard' },
+      details: { method: "standard" },
     });
 
     return this.buildAuthResponse(tokens, user);
@@ -721,13 +721,13 @@ export class AuthService {
   async logout(
     userId: string,
     refreshToken: string,
-    ipAddress?: string
+    ipAddress?: string,
   ): Promise<void> {
     const user = await this.userModel.findById(userId);
 
     await this.userModel.updateOne(
       { _id: userId },
-      { $pull: { refreshTokens: { token: refreshToken } } }
+      { $pull: { refreshTokens: { token: refreshToken } } },
     );
 
     if (user) {
@@ -735,15 +735,15 @@ export class AuthService {
         action: AuditAction.LOGOUT,
         userId: user._id.toString(),
         userEmail: user.email,
-        userRole: user.role || 'Unknown',
+        userRole: user.role || "Unknown",
         ipAddress,
-        details: { reason: 'user_initiated' },
+        details: { reason: "user_initiated" },
       });
     }
   }
 
   async refreshTokens(
-    refreshTokenDto: RefreshTokenDto
+    refreshTokenDto: RefreshTokenDto,
   ): Promise<AuthResponseDto> {
     const { refreshToken } = refreshTokenDto;
 
@@ -753,35 +753,35 @@ export class AuthService {
         sub: string;
       };
 
-      if (payload.type !== 'refresh') {
-        throw new UnauthorizedException('Invalid token type');
+      if (payload.type !== "refresh") {
+        throw new UnauthorizedException("Invalid token type");
       }
 
       const user = await this.userModel.findById(payload.sub);
       if (!user) {
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new UnauthorizedException("Invalid refresh token");
       }
 
       const tokenExists = user.refreshTokens.some(
-        (rt) => rt.token === refreshToken && rt.expiresAt > new Date()
+        (rt) => rt.token === refreshToken && rt.expiresAt > new Date(),
       );
 
       if (!tokenExists) {
-        throw new UnauthorizedException('Invalid or expired refresh token');
+        throw new UnauthorizedException("Invalid or expired refresh token");
       }
 
       const tokens = this.generateTokens(user);
 
       await this.userModel.updateOne(
-        { _id: user._id, 'refreshTokens.token': refreshToken },
+        { _id: user._id, "refreshTokens.token": refreshToken },
         {
           $set: {
-            'refreshTokens.$.token': tokens.refreshToken,
-            'refreshTokens.$.expiresAt': new Date(
-              Date.now() + 7 * 24 * 60 * 60 * 1000
+            "refreshTokens.$.token": tokens.refreshToken,
+            "refreshTokens.$.expiresAt": new Date(
+              Date.now() + 7 * 24 * 60 * 60 * 1000,
             ),
           },
-        }
+        },
       );
 
       return this.buildAuthResponse(tokens, user);
@@ -790,11 +790,11 @@ export class AuthService {
         throw error;
       } else if (
         error instanceof Error &&
-        error.message.includes('jwt expired')
+        error.message.includes("jwt expired")
       ) {
-        throw new UnauthorizedException('Refresh token has expired');
+        throw new UnauthorizedException("Refresh token has expired");
       }
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException("Invalid refresh token");
     }
   }
 
@@ -817,8 +817,8 @@ export class AuthService {
       action: AuditAction.PASSWORD_RESET_REQUEST,
       userId: user._id.toString(),
       userEmail: user.email,
-      userRole: user.role || 'Unknown',
-      details: { method: 'forgot_password' },
+      userRole: user.role || "Unknown",
+      details: { method: "forgot_password" },
     });
   }
 
@@ -831,7 +831,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new BadRequestException('Invalid or expired token');
+      throw new BadRequestException("Invalid or expired token");
     }
 
     user.passwordHash = await hash(newPassword, 10);
@@ -844,13 +844,13 @@ export class AuthService {
       action: AuditAction.PASSWORD_RESET,
       userId: user._id.toString(),
       userEmail: user.email,
-      userRole: user.role || 'Unknown',
-      details: { method: 'reset_token' },
+      userRole: user.role || "Unknown",
+      details: { method: "reset_token" },
     });
   }
 
   async confirmEmail(
-    token: string
+    token: string,
   ): Promise<{ success: boolean; message: string; user?: User }> {
     try {
       const now = new Date();
@@ -869,43 +869,43 @@ export class AuthService {
             emailConfirmationAttempts: 0,
           },
           $unset: {
-            emailToken: '',
-            emailTokenExpiresAt: '',
-            emailTokenGeneratedAt: '',
+            emailToken: "",
+            emailTokenExpiresAt: "",
+            emailTokenGeneratedAt: "",
           },
         },
-        { returnDocument: 'after' }
+        { returnDocument: "after" },
       );
 
       if (!result) {
         const user = await this.userModel.findOne({ emailToken: token });
         if (!user) {
-          return { success: false, message: 'Invalid confirmation token' };
+          return { success: false, message: "Invalid confirmation token" };
         }
         if (user.emailConfirmed) {
-          return { success: false, message: 'Email is already confirmed' };
+          return { success: false, message: "Email is already confirmed" };
         }
         if (!user.emailTokenExpiresAt || user.emailTokenExpiresAt < now) {
-          return { success: false, message: 'Confirmation token has expired' };
+          return { success: false, message: "Confirmation token has expired" };
         }
-        return { success: false, message: 'Invalid confirmation token' };
+        return { success: false, message: "Invalid confirmation token" };
       }
 
       await this.auditEmitter.emitAction({
         action: AuditAction.EMAIL_CONFIRMED,
         userId: result._id.toString(),
         userEmail: result.email,
-        userRole: result.role || 'Unknown',
-        details: { method: 'email_link' },
+        userRole: result.role || "Unknown",
+        details: { method: "email_link" },
       });
 
       return {
         success: true,
-        message: 'Email confirmed successfully',
+        message: "Email confirmed successfully",
         user: result,
       };
     } catch {
-      return { success: false, message: 'Failed to confirm email' };
+      return { success: false, message: "Failed to confirm email" };
     }
   }
 
@@ -913,21 +913,21 @@ export class AuthService {
     const user = await this.userModel.findOne({ email });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     if (user.emailConfirmed) {
-      throw new ConflictException('Email is already confirmed');
+      throw new ConflictException("Email is already confirmed");
     }
 
     const rateLimitResult = await this.rateLimitingService.checkEmailAttempts(
-      user._id.toString()
+      user._id.toString(),
     );
     if (!rateLimitResult.allowed) {
       const waitMinutes = Math.ceil((rateLimitResult.waitTime ?? 0) / 60_000);
       throw new HttpException(
         `Please wait ${waitMinutes} minutes before requesting another confirmation email`,
-        HttpStatus.TOO_MANY_REQUESTS
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
@@ -943,12 +943,12 @@ export class AuthService {
 
     try {
       await this.emailService.sendConfirmationEmail(user.email, newEmailToken);
-      return { message: 'Confirmation email sent successfully' };
+      return { message: "Confirmation email sent successfully" };
     } catch (error) {
       await this.rateLimitingService.refundEmailAttempt(user._id.toString());
-      this.logger.error('Failed to send confirmation email', error);
+      this.logger.error("Failed to send confirmation email", error);
       throw new InternalServerErrorException(
-        'Failed to send confirmation email. Please try again later.'
+        "Failed to send confirmation email. Please try again later.",
       );
     }
   }
@@ -957,7 +957,7 @@ export class AuthService {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
-      throw new NotFoundException('Your user profile could not be retrieved');
+      throw new NotFoundException("Your user profile could not be retrieved");
     }
     const privateUser: PrivateUserDto = {
       username: user.username,
@@ -974,19 +974,19 @@ export class AuthService {
     };
 
     return {
-      message: 'User profile retrieved successfully',
+      message: "User profile retrieved successfully",
       user: privateUser,
     };
   }
 
   async fetchUserById(
     userId: string,
-    requester: { id: string; role: Role }
+    requester: { id: string; role: Role },
   ): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
-      throw new NotFoundException('The specified user could not be found');
+      throw new NotFoundException("The specified user could not be found");
     }
 
     const privateUser: PrivateUserDto = {
@@ -1012,7 +1012,7 @@ export class AuthService {
     }
 
     return {
-      message: 'User retrieved successfully',
+      message: "User retrieved successfully",
       user: privateUser,
     };
   }
@@ -1036,19 +1036,19 @@ export class AuthService {
     }));
 
     return {
-      message: 'Users retrieved successfully',
+      message: "Users retrieved successfully",
       users: formatted,
     };
   }
 
   async updateUser(
     userId: string,
-    updateDto: UpdateUserDto
+    updateDto: UpdateUserDto,
   ): Promise<PrivateUserResponseDto> {
     const user = await this.userModel.findById(userId);
 
     if (!user) {
-      throw new NotFoundException('Your user profile could not be found');
+      throw new NotFoundException("Your user profile could not be found");
     }
 
     const isEmailChanging = updateDto.email && updateDto.email !== user.email;
@@ -1061,17 +1061,17 @@ export class AuthService {
       !updateDto.currentPassword
     ) {
       throw new UnauthorizedException(
-        'Current password is required to update email or password'
+        "Current password is required to update email or password",
       );
     }
 
     if (updateDto.currentPassword && hasLocalPassword) {
       const isPasswordValid = await compare(
         updateDto.currentPassword,
-        user.passwordHash
+        user.passwordHash,
       );
       if (!isPasswordValid) {
-        throw new UnauthorizedException('Current password is incorrect');
+        throw new UnauthorizedException("Current password is incorrect");
       }
     }
 
@@ -1083,7 +1083,7 @@ export class AuthService {
         username: updateDto.username,
       });
       if (existingUser) {
-        throw new ConflictException('This username is already taken');
+        throw new ConflictException("This username is already taken");
       }
       updateData.username = updateDto.username;
       hasUpdates = true;
@@ -1094,7 +1094,7 @@ export class AuthService {
         email: updateDto.email,
       });
       if (existingUser) {
-        throw new ConflictException('This email is already registered');
+        throw new ConflictException("This email is already registered");
       }
       updateData.email = updateDto.email;
       updateData.emailConfirmed = false;
@@ -1107,7 +1107,7 @@ export class AuthService {
         updateData.passwordHash = await hash(updateDto.password, 10);
         hasUpdates = true;
       } catch {
-        throw new BadRequestException('Unable to process password update');
+        throw new BadRequestException("Unable to process password update");
       }
     }
 
@@ -1124,7 +1124,7 @@ export class AuthService {
     if (updateDto.birthdate) {
       const date = new Date(updateDto.birthdate);
       if (Number.isNaN(date.getTime())) {
-        throw new BadRequestException('Invalid birthdate format');
+        throw new BadRequestException("Invalid birthdate format");
       }
       updateData.birthdate = date;
       hasUpdates = true;
@@ -1141,7 +1141,7 @@ export class AuthService {
     }
 
     if (!hasUpdates) {
-      throw new BadRequestException('No update fields provided');
+      throw new BadRequestException("No update fields provided");
     }
 
     if (updateData.email && updateData.emailToken) {
@@ -1158,11 +1158,11 @@ export class AuthService {
               emailToken: updateData.emailToken,
               emailConfirmed: false,
             },
-            { returnDocument: 'after', session }
+            { returnDocument: "after", session },
           );
 
           if (!userResult) {
-            throw new BadRequestException('Failed to update user email');
+            throw new BadRequestException("Failed to update user email");
           }
 
           return userResult;
@@ -1171,7 +1171,7 @@ export class AuthService {
         try {
           await this.emailService.sendConfirmationEmail(
             updateData.email,
-            updateData.emailToken
+            updateData.emailToken,
           );
         } catch (emailError) {
           await this.userModel.findByIdAndUpdate(userId, {
@@ -1179,14 +1179,14 @@ export class AuthService {
               email: originalEmail,
               emailConfirmed: originalEmailConfirmed,
             },
-            $unset: { emailToken: '' },
+            $unset: { emailToken: "" },
           });
           this.logger.error(
-            'Failed to send confirmation email, rolled back email change',
-            emailError
+            "Failed to send confirmation email, rolled back email change",
+            emailError,
           );
           throw new InternalServerErrorException(
-            'Failed to send confirmation email. Email change was reverted. Please try again later.'
+            "Failed to send confirmation email. Email change was reverted. Please try again later.",
           );
         }
 
@@ -1209,7 +1209,7 @@ export class AuthService {
           };
 
           return {
-            message: 'Profile updated successfully',
+            message: "Profile updated successfully",
             user: publicUser,
           };
         }
@@ -1217,9 +1217,9 @@ export class AuthService {
         if (error instanceof HttpException) {
           throw error;
         }
-        this.logger.error('Failed to update user email', error);
+        this.logger.error("Failed to update user email", error);
         throw new InternalServerErrorException(
-          'Failed to update email. Please try again later.'
+          "Failed to update email. Please try again later.",
         );
       } finally {
         await session.endSession();
@@ -1231,11 +1231,11 @@ export class AuthService {
         const updatedUser = await this.userModel.findByIdAndUpdate(
           userId,
           updateData,
-          { returnDocument: 'after' }
+          { returnDocument: "after" },
         );
 
         if (!updatedUser) {
-          throw new BadRequestException('Failed to update user');
+          throw new BadRequestException("Failed to update user");
         }
 
         const publicUser: PrivateUserDto = {
@@ -1252,7 +1252,7 @@ export class AuthService {
         };
 
         return {
-          message: 'Profile updated successfully',
+          message: "Profile updated successfully",
           user: publicUser,
         };
       } catch (error) {
@@ -1260,14 +1260,14 @@ export class AuthService {
           throw error;
         }
         throw new BadRequestException(
-          'An error occurred while updating your profile'
+          "An error occurred while updating your profile",
         );
       }
     }
 
     const finalUser = await this.userModel.findById(userId);
     if (!finalUser) {
-      throw new BadRequestException('Failed to retrieve updated user');
+      throw new BadRequestException("Failed to retrieve updated user");
     }
 
     const publicUser: PrivateUserDto = {
@@ -1285,7 +1285,7 @@ export class AuthService {
 
     return {
       message:
-        'Profile updated successfully. Please check your new email for confirmation.',
+        "Profile updated successfully. Please check your new email for confirmation.",
       user: publicUser,
     };
   }
@@ -1293,7 +1293,7 @@ export class AuthService {
   async deleteUser(userId: string): Promise<MessageResponseDto> {
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('Your user profile could not be found');
+      throw new NotFoundException("Your user profile could not be found");
     }
 
     if (
@@ -1301,7 +1301,7 @@ export class AuthService {
       user.role === Role.PLATFORM_OWNER
     ) {
       throw new ForbiddenException(
-        'Admin accounts cannot be deleted via self-service'
+        "Admin accounts cannot be deleted via self-service",
       );
     }
 
@@ -1319,7 +1319,7 @@ export class AuthService {
             await this.tenantConnectionService.deactivateTenantUser(
               business.databaseName,
               userId,
-              userId
+              userId,
             );
             tenantDatabasesCleaned++;
           }
@@ -1335,40 +1335,40 @@ export class AuthService {
         action: AuditAction.USER_DELETED,
         userId: user._id.toString(),
         userEmail: user.email,
-        userRole: user.role || 'USER',
+        userRole: user.role || "USER",
         details: {
-          method: 'self_delete',
+          method: "self_delete",
           businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
           tenantDatabasesCleaned,
         },
       });
-      return { message: 'Account deleted successfully' };
+      return { message: "Account deleted successfully" };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
       throw new BadRequestException(
-        'An error occurred while deleting your account'
+        "An error occurred while deleting your account",
       );
     }
   }
 
   async deleteUserByAdmin(
     adminId: string,
-    userId: string
+    userId: string,
   ): Promise<MessageResponseDto> {
     if (adminId === userId) {
-      throw new BadRequestException('Administrators cannot delete themselves');
+      throw new BadRequestException("Administrators cannot delete themselves");
     }
 
     const user = await this.userModel.findById(userId);
     if (!user) {
-      throw new NotFoundException('The specified user could not be found');
+      throw new NotFoundException("The specified user could not be found");
     }
 
     const admin = await this.userModel.findById(adminId);
     if (!admin) {
-      throw new NotFoundException('Admin not found');
+      throw new NotFoundException("Admin not found");
     }
 
     if (
@@ -1376,7 +1376,7 @@ export class AuthService {
       user.role === Role.PLATFORM_OWNER
     ) {
       throw new ForbiddenException(
-        'Platform admins cannot delete platform owners'
+        "Platform admins cannot delete platform owners",
       );
     }
 
@@ -1393,7 +1393,7 @@ export class AuthService {
           await this.tenantConnectionService.deactivateTenantUser(
             business.databaseName,
             userId,
-            adminId
+            adminId,
           );
           tenantDatabasesCleaned++;
         }
@@ -1408,22 +1408,22 @@ export class AuthService {
     await this.auditEmitter.emitAction({
       action: AuditAction.USER_DELETED,
       userId: adminId,
-      userEmail: admin.email ?? 'Unknown',
-      userRole: admin.role || 'ADMIN',
+      userEmail: admin.email ?? "Unknown",
+      userRole: admin.role || "ADMIN",
       target: userId,
       details: {
-        method: 'admin_deleted_user',
+        method: "admin_deleted_user",
         businessAssociationsRemoved: businessUserDeleteResult.deletedCount,
         tenantDatabasesCleaned,
       },
     });
-    return { message: 'User deleted successfully' };
+    return { message: "User deleted successfully" };
   }
 
   async updateRefreshToken(
     userId: string,
     oldRefreshToken: string,
-    refreshToken: string
+    refreshToken: string,
   ): Promise<void> {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -1438,7 +1438,7 @@ export class AuthService {
             ],
           },
         },
-      }
+      },
     );
 
     await this.userModel.updateOne(
@@ -1450,7 +1450,7 @@ export class AuthService {
             $slice: -10,
           },
         },
-      }
+      },
     );
   }
 
@@ -1459,7 +1459,7 @@ export class AuthService {
     refreshToken: string;
   } {
     const userId =
-      user instanceof User && '_id' in user ? user._id.toString() : user.id;
+      user instanceof User && "_id" in user ? user._id.toString() : user.id;
 
     const payload: TokenPayload = {
       sub: userId,
@@ -1467,28 +1467,28 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '15m',
+      expiresIn: "15m",
       jwtid: randomUUID(),
     });
 
     const refreshToken = this.jwtService.sign(
-      { ...payload, type: 'refresh' },
+      { ...payload, type: "refresh" },
       {
-        expiresIn: '7d',
+        expiresIn: "7d",
         jwtid: randomUUID(),
-      }
+      },
     );
 
     return { accessToken, refreshToken };
   }
 
   private generateEmailToken(): string {
-    return randomBytes(16).toString('hex');
+    return randomBytes(16).toString("hex");
   }
 
   async validateUser(
     email: string,
-    password: string
+    password: string,
   ): Promise<User | undefined> {
     const user = await this.userModel.findOne({ email });
     if (user && (await compare(password, user.passwordHash))) {
@@ -1517,12 +1517,12 @@ export class AuthService {
 
   private resolveFrontendRedirectUri(
     requestedRedirectUri: string | undefined,
-    lang: string
+    lang: string,
   ): string {
     const frontendUrl = process.env.FRONTEND_URL;
     if (!frontendUrl) {
       throw new InternalServerErrorException(
-        'Service is temporarily unavailable'
+        "Service is temporarily unavailable",
       );
     }
 
@@ -1544,7 +1544,7 @@ export class AuthService {
   }
 
   private async parseGoogleState(state: string): Promise<{
-    mode: 'login' | 'register';
+    mode: "login" | "register";
     lang: string;
     redirectUri: string;
   }> {
@@ -1553,12 +1553,12 @@ export class AuthService {
     try {
       const decoded = this.jwtService.verify<Record<string, unknown>>(state);
       if (!this.isGoogleStateTokenPayload(decoded)) {
-        throw new Error('invalid state');
+        throw new Error("invalid state");
       }
       const parsed = decoded;
       const consumed = await this.consumeGoogleStateNonce(parsed.nonce);
       if (!consumed) {
-        throw new Error('invalid nonce');
+        throw new Error("invalid nonce");
       }
 
       const normalizedLang = this.normalizeLang(parsed.lang);
@@ -1568,67 +1568,67 @@ export class AuthService {
         lang: normalizedLang,
         redirectUri: this.resolveFrontendRedirectUri(
           parsed.redirectUri,
-          normalizedLang
+          normalizedLang,
         ),
       };
     } catch (error) {
       if (
         error instanceof JsonWebTokenError ||
         (error instanceof Error &&
-          (error.message === 'invalid state' ||
-            error.message === 'invalid nonce'))
+          (error.message === "invalid state" ||
+            error.message === "invalid nonce"))
       ) {
-        throw new BadRequestException('Invalid Google OAuth state');
+        throw new BadRequestException("Invalid Google OAuth state");
       }
 
       throw new InternalServerErrorException({
-        message: 'Failed to validate Google OAuth state',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        message: "Failed to validate Google OAuth state",
+        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
 
   private isGoogleStateTokenPayload(
-    payload: unknown
+    payload: unknown,
   ): payload is GoogleStateTokenPayload {
-    if (!payload || typeof payload !== 'object') {
+    if (!payload || typeof payload !== "object") {
       return false;
     }
 
     const candidate = payload as Record<string, unknown>;
     return (
-      candidate.type === 'google-oauth-state' &&
-      typeof candidate.mode === 'string' &&
-      (candidate.mode === 'login' || candidate.mode === 'register') &&
-      typeof candidate.lang === 'string' &&
-      typeof candidate.redirectUri === 'string' &&
-      typeof candidate.nonce === 'string'
+      candidate.type === "google-oauth-state" &&
+      typeof candidate.mode === "string" &&
+      (candidate.mode === "login" || candidate.mode === "register") &&
+      typeof candidate.lang === "string" &&
+      typeof candidate.redirectUri === "string" &&
+      typeof candidate.nonce === "string"
     );
   }
 
   async exchangeGoogleOAuthCode(
-    oauthCode: string
+    oauthCode: string,
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse> {
     await this.cleanupExpiredOAuthEntries();
 
     if (!oauthCode?.trim()) {
-      throw new BadRequestException('OAuth code is required');
+      throw new BadRequestException("OAuth code is required");
     }
 
     const payload = await this.consumeGoogleAuthCode(oauthCode);
     if (!payload) {
-      throw new UnauthorizedException('OAuth code is invalid or expired');
+      throw new UnauthorizedException("OAuth code is invalid or expired");
     }
 
     return payload;
   }
 
   private async createGoogleOAuthCode(
-    payload: AuthResponseDto | TwoFactorChallengeResponse
+    payload: AuthResponseDto | TwoFactorChallengeResponse,
   ): Promise<string> {
     await this.cleanupExpiredOAuthEntries();
 
-    const oauthCode = randomBytes(32).toString('base64url');
+    const oauthCode = randomBytes(32).toString("base64url");
     await this.setGoogleAuthCode(oauthCode, {
       payload,
       expiresAt: Date.now() + AuthService.GOOGLE_AUTH_CODE_TTL_MS,
@@ -1642,10 +1642,10 @@ export class AuthService {
     await this.ensureOAuthIndexes();
 
     const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION,
     );
     const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION,
     );
 
     await Promise.all([
@@ -1656,20 +1656,20 @@ export class AuthService {
 
   private normalizeLang(input: string | undefined): string {
     if (!input) {
-      return 'en';
+      return "en";
     }
 
     const trimmed = input.trim();
     if (!trimmed) {
-      return 'en';
+      return "en";
     }
 
-    const parts = trimmed.replace('_', '-').split('-');
-    const base = parts[0]?.toLowerCase() ?? 'en';
+    const parts = trimmed.replace("_", "-").split("-");
+    const base = parts[0]?.toLowerCase() ?? "en";
     const region = parts[1] ? parts[1].toUpperCase() : undefined;
     const normalized = region ? `${base}-${region}` : base;
 
-    return AuthService.LANG_PATTERN.test(normalized) ? normalized : 'en';
+    return AuthService.LANG_PATTERN.test(normalized) ? normalized : "en";
   }
 
   private async ensureOAuthIndexes(): Promise<void> {
@@ -1678,10 +1678,10 @@ export class AuthService {
     }
 
     const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION,
     );
     const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION,
     );
 
     await Promise.all([
@@ -1696,11 +1696,11 @@ export class AuthService {
 
   private async setGoogleStateNonce(
     nonce: string,
-    expiresAtMs: number
+    expiresAtMs: number,
   ): Promise<void> {
     await this.ensureOAuthIndexes();
     const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION,
     );
 
     await noncesCollection.updateOne(
@@ -1711,14 +1711,14 @@ export class AuthService {
           expiresAt: new Date(expiresAtMs),
         },
       },
-      { upsert: true }
+      { upsert: true },
     );
   }
 
   private async consumeGoogleStateNonce(nonce: string): Promise<boolean> {
     await this.ensureOAuthIndexes();
     const noncesCollection = this.connection.collection(
-      AuthService.GOOGLE_STATE_NONCE_COLLECTION
+      AuthService.GOOGLE_STATE_NONCE_COLLECTION,
     );
     const result = await noncesCollection.deleteOne({
       nonce,
@@ -1732,11 +1732,11 @@ export class AuthService {
     value: {
       payload: AuthResponseDto | TwoFactorChallengeResponse;
       expiresAt: number;
-    }
+    },
   ): Promise<void> {
     await this.ensureOAuthIndexes();
     const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION,
     );
 
     await codesCollection.updateOne(
@@ -1748,16 +1748,16 @@ export class AuthService {
           expiresAt: new Date(value.expiresAt),
         },
       },
-      { upsert: true }
+      { upsert: true },
     );
   }
 
   private async consumeGoogleAuthCode(
-    code: string
+    code: string,
   ): Promise<AuthResponseDto | TwoFactorChallengeResponse | undefined> {
     await this.ensureOAuthIndexes();
     const codesCollection = this.connection.collection(
-      AuthService.GOOGLE_AUTH_CODE_COLLECTION
+      AuthService.GOOGLE_AUTH_CODE_COLLECTION,
     );
     const result = await codesCollection.findOneAndDelete({
       code,
@@ -1770,7 +1770,7 @@ export class AuthService {
   }
 
   private async findOrCreateGoogleUser(
-    tokenInfo: GoogleTokenInfo
+    tokenInfo: GoogleTokenInfo,
   ): Promise<User> {
     const existing = await this.userModel.findOne({ email: tokenInfo.email });
     if (existing) {
@@ -1782,10 +1782,10 @@ export class AuthService {
       return existing;
     }
 
-    const baseUsername = tokenInfo.email.split('@')[0] ?? 'accountia-user';
+    const baseUsername = tokenInfo.email.split("@")[0] ?? "accountia-user";
     const username = await this.generateUniqueUsername(baseUsername);
     const names = this.extractNames(tokenInfo);
-    const randomPassword = randomBytes(32).toString('hex');
+    const randomPassword = randomBytes(32).toString("hex");
     const passwordHash = await hash(randomPassword, 10);
 
     const user = new this.userModel({
@@ -1794,7 +1794,7 @@ export class AuthService {
       passwordHash,
       firstName: names.firstName,
       lastName: names.lastName,
-      birthdate: new Date('2000-01-01T00:00:00.000Z'),
+      birthdate: new Date("2000-01-01T00:00:00.000Z"),
       phoneNumber: undefined,
       acceptTerms: true,
       profilePicture: tokenInfo.picture,
@@ -1818,23 +1818,23 @@ export class AuthService {
 
     const fullName = tokenInfo.name?.trim();
     if (fullName) {
-      const [first, ...rest] = fullName.split(' ');
+      const [first, ...rest] = fullName.split(" ");
       return {
-        firstName: first || 'Google',
-        lastName: rest.join(' ') || 'User',
+        firstName: first || "Google",
+        lastName: rest.join(" ") || "User",
       };
     }
 
-    return { firstName: 'Google', lastName: 'User' };
+    return { firstName: "Google", lastName: "User" };
   }
 
   private async generateUniqueUsername(base: string): Promise<string> {
     const sanitized = base
       .toLowerCase()
-      .replaceAll(/[^\d_a-z-]/g, '-')
-      .replaceAll(/-+/g, '-')
+      .replaceAll(/[^\d_a-z-]/g, "-")
+      .replaceAll(/-+/g, "-")
       .slice(0, 20)
-      .replaceAll(/(?:^-+)|(?:-+$)/g, '');
+      .replaceAll(/(?:^-+)|(?:-+$)/g, "");
 
     const root =
       sanitized.length >= 5 ? sanitized : `user-${sanitized}`.slice(0, 20);
@@ -1846,20 +1846,20 @@ export class AuthService {
       if (!existing) return candidate;
 
       attempts += 1;
-      const suffix = `-${randomBytes(2).toString('hex')}`;
+      const suffix = `-${randomBytes(2).toString("hex")}`;
       candidate = `${root.slice(0, Math.max(5, 20 - suffix.length))}${suffix}`;
     }
 
-    return `user-${randomBytes(4).toString('hex')}`;
+    return `user-${randomBytes(4).toString("hex")}`;
   }
 
   async banUser(
     adminId: string,
     userId: string,
-    reason?: string
+    reason?: string,
   ): Promise<BanResponseDto> {
     if (adminId === userId) {
-      throw new BadRequestException('You cannot ban yourself');
+      throw new BadRequestException("You cannot ban yourself");
     }
 
     const [admin, user] = await Promise.all([
@@ -1867,15 +1867,15 @@ export class AuthService {
       this.userModel.findById(userId),
     ]);
 
-    if (!admin) throw new NotFoundException('Admin not found');
-    if (!user) throw new NotFoundException('User not found');
+    if (!admin) throw new NotFoundException("Admin not found");
+    if (!user) throw new NotFoundException("User not found");
 
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
     ) {
       throw new ForbiddenException(
-        'Platform Admin cannot ban Platform Owner or Platform Admin'
+        "Platform Admin cannot ban Platform Owner or Platform Admin",
       );
     }
 
@@ -1884,12 +1884,12 @@ export class AuthService {
       user.role === Role.PLATFORM_OWNER
     ) {
       throw new ForbiddenException(
-        'Platform Owner cannot ban another Platform Owner'
+        "Platform Owner cannot ban another Platform Owner",
       );
     }
 
     if (user.isBanned) {
-      throw new BadRequestException('User is already banned');
+      throw new BadRequestException("User is already banned");
     }
 
     user.isBanned = true;
@@ -1903,13 +1903,13 @@ export class AuthService {
       action: AuditAction.BAN_USER,
       userId: adminId,
       userEmail: admin.email,
-      userRole: admin.role || 'ADMIN',
+      userRole: admin.role || "ADMIN",
       target: user.email,
       details: { targetUserId: userId, reason },
     });
 
     return {
-      message: 'User banned successfully',
+      message: "User banned successfully",
       userId: user._id.toString(),
       isBanned: true,
       reason,
@@ -1918,7 +1918,7 @@ export class AuthService {
 
   async unbanUser(adminId: string, userId: string): Promise<BanResponseDto> {
     if (adminId === userId) {
-      throw new BadRequestException('You cannot unban yourself');
+      throw new BadRequestException("You cannot unban yourself");
     }
 
     const [admin, user] = await Promise.all([
@@ -1926,15 +1926,15 @@ export class AuthService {
       this.userModel.findById(userId),
     ]);
 
-    if (!admin) throw new NotFoundException('Admin not found');
-    if (!user) throw new NotFoundException('User not found');
+    if (!admin) throw new NotFoundException("Admin not found");
+    if (!user) throw new NotFoundException("User not found");
 
     if (
       admin.role === Role.PLATFORM_ADMIN &&
       (user.role === Role.PLATFORM_OWNER || user.role === Role.PLATFORM_ADMIN)
     ) {
       throw new ForbiddenException(
-        'Platform Admin cannot unban Platform Owner or Platform Admin'
+        "Platform Admin cannot unban Platform Owner or Platform Admin",
       );
     }
 
@@ -1943,12 +1943,12 @@ export class AuthService {
       user.role === Role.PLATFORM_OWNER
     ) {
       throw new ForbiddenException(
-        'Platform Owner cannot unban another Platform Owner'
+        "Platform Owner cannot unban another Platform Owner",
       );
     }
 
     if (!user.isBanned) {
-      throw new BadRequestException('User is not banned');
+      throw new BadRequestException("User is not banned");
     }
 
     user.isBanned = false;
@@ -1960,14 +1960,14 @@ export class AuthService {
     await this.auditEmitter.emitAction({
       action: AuditAction.UNBAN_USER,
       userId: adminId,
-      userEmail: admin.email ?? 'Unknown',
-      userRole: admin.role || 'ADMIN',
+      userEmail: admin.email ?? "Unknown",
+      userRole: admin.role || "ADMIN",
       target: userId,
-      details: { method: 'admin_unban' },
+      details: { method: "admin_unban" },
     });
 
     return {
-      message: 'User unbanned successfully',
+      message: "User unbanned successfully",
       userId: user._id.toString(),
       isBanned: false,
     };
@@ -1976,26 +1976,26 @@ export class AuthService {
   async changeUserRole(
     userId: string,
     newRole: Role,
-    currentUser: UserPayload
+    currentUser: UserPayload,
   ): Promise<RoleResponseDto> {
     if (userId === currentUser.id)
-      throw new ForbiddenException('You cannot change your own role');
+      throw new ForbiddenException("You cannot change your own role");
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
     const previousRole = user.role;
     if (
       currentUser.role === Role.PLATFORM_ADMIN &&
       previousRole === Role.PLATFORM_OWNER
     )
       throw new ForbiddenException(
-        'Platform Admin cannot change Platform Owner role'
+        "Platform Admin cannot change Platform Owner role",
       );
     if (
       currentUser.role === Role.PLATFORM_ADMIN &&
       (newRole === Role.PLATFORM_OWNER || newRole === Role.PLATFORM_ADMIN)
     )
       throw new ForbiddenException(
-        'Platform Admin cannot assign Platform Owner or Platform Admin roles'
+        "Platform Admin cannot assign Platform Owner or Platform Admin roles",
       );
 
     user.role = newRole;
@@ -2004,14 +2004,14 @@ export class AuthService {
     await this.auditEmitter.emitAction({
       action: AuditAction.ROLE_CHANGE,
       userId: currentUser.id,
-      userEmail: currentUser.email ?? 'Unknown',
-      userRole: currentUser.role ?? 'ADMIN',
+      userEmail: currentUser.email ?? "Unknown",
+      userRole: currentUser.role ?? "ADMIN",
       target: user._id.toString(),
       details: { previousRole, newRole },
     });
 
     return {
-      message: 'User role updated successfully',
+      message: "User role updated successfully",
       userId: user._id.toString(),
       newRole: user.role,
       previousRole,
@@ -2019,10 +2019,10 @@ export class AuthService {
   }
 
   async getStripeOnboardingLink(
-    userId: string
+    userId: string,
   ): Promise<UserStripeOnboardingLinkDto> {
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     // Check Stripe is enabled before acquiring lock
     const stripe = this.ensureStripeEnabled();
@@ -2032,10 +2032,10 @@ export class AuthService {
     const locked = await this.userModel.findOneAndUpdate(
       { _id: userId, stripeConnectId: { $exists: false } },
       { $setOnInsert: { stripeConnectId: lockId } },
-      { new: true, upsert: false }
+      { new: true, upsert: false },
     );
 
-    const lang = 'en';
+    const lang = "en";
     const frontendUrl = ensureFrontendUrl();
     const invoicesPath = new URL(`/${lang}/invoices`, frontendUrl).toString();
 
@@ -2043,7 +2043,7 @@ export class AuthService {
       // We acquired the lock; create the Stripe account and replace the lock.
       try {
         const account = await stripe.accounts.create({
-          type: 'express',
+          type: "express",
           email: user.email,
           capabilities: {
             card_payments: { requested: true },
@@ -2053,40 +2053,40 @@ export class AuthService {
 
         await this.userModel.updateOne(
           { _id: userId, stripeConnectId: lockId },
-          { $set: { stripeConnectId: account.id } }
+          { $set: { stripeConnectId: account.id } },
         );
 
         const accountLink = await stripe.accountLinks.create({
           account: account.id,
           refresh_url: invoicesPath,
           return_url: invoicesPath,
-          type: 'account_onboarding',
+          type: "account_onboarding",
         });
 
         await this.userModel.updateOne(
           { _id: userId },
-          { $set: { stripeOnboardingUrl: accountLink.url } }
+          { $set: { stripeOnboardingUrl: accountLink.url } },
         );
 
         return {
-          message: 'Stripe onboarding link generated',
+          message: "Stripe onboarding link generated",
           onboardingUrl: accountLink.url,
         };
       } catch (error: unknown) {
         this.logger.error(
-          'Failed to create Stripe account or account link',
-          error as Error
+          "Failed to create Stripe account or account link",
+          error as Error,
         );
         // Clear lock if still present (before rethrowing)
         try {
           await this.userModel.updateOne(
             { _id: userId, stripeConnectId: lockId },
-            { $unset: { stripeConnectId: '' } }
+            { $unset: { stripeConnectId: "" } },
           );
         } catch (error_) {
           this.logger.error(
-            'Failed to clear stripeConnectId lock',
-            error_ as Error
+            "Failed to clear stripeConnectId lock",
+            error_ as Error,
           );
         }
 
@@ -2096,14 +2096,14 @@ export class AuthService {
         }
 
         throw new InternalServerErrorException(
-          'Failed to create Stripe onboarding link'
+          "Failed to create Stripe onboarding link",
         );
       }
     }
 
     // Another process already set stripeConnectId; reload user and act accordingly.
     let reloaded = await this.userModel.findById(userId);
-    if (!reloaded) throw new NotFoundException('User not found');
+    if (!reloaded) throw new NotFoundException("User not found");
 
     // If stripeConnectId is still a lock placeholder, wait briefly for the winner to finish.
     if (isLock(reloaded.stripeConnectId)) {
@@ -2112,17 +2112,17 @@ export class AuthService {
       while (attempts < maxAttempts && isLock(reloaded.stripeConnectId)) {
         await new Promise((r) => setTimeout(r, 400));
         reloaded = await this.userModel.findById(userId);
-        if (!reloaded) throw new NotFoundException('User not found');
+        if (!reloaded) throw new NotFoundException("User not found");
         attempts += 1;
       }
     }
 
     if (!reloaded.stripeConnectId || isLock(reloaded.stripeConnectId)) {
       this.logger.error(
-        'Unable to obtain stripeConnectId after concurrent creation attempt'
+        "Unable to obtain stripeConnectId after concurrent creation attempt",
       );
       throw new InternalServerErrorException(
-        'Failed to obtain Stripe connect ID'
+        "Failed to obtain Stripe connect ID",
       );
     }
 
@@ -2131,41 +2131,41 @@ export class AuthService {
         account: reloaded.stripeConnectId,
         refresh_url: invoicesPath,
         return_url: invoicesPath,
-        type: 'account_onboarding',
+        type: "account_onboarding",
       });
 
       await this.userModel.updateOne(
         { _id: userId },
-        { $set: { stripeOnboardingUrl: accountLink.url } }
+        { $set: { stripeOnboardingUrl: accountLink.url } },
       );
 
       return {
-        message: 'Stripe onboarding link generated',
+        message: "Stripe onboarding link generated",
         onboardingUrl: accountLink.url,
       };
     } catch (error: unknown) {
       this.logger.error(
-        'Failed to create Stripe account link for existing connect id',
-        error as Error
+        "Failed to create Stripe account link for existing connect id",
+        error as Error,
       );
       // Rethrow HttpException unchanged
       if (error instanceof HttpException) {
         throw error;
       }
       throw new InternalServerErrorException(
-        'Failed to create Stripe onboarding link'
+        "Failed to create Stripe onboarding link",
       );
     }
   }
 
   async getStripeConnectStatus(
-    userId: string
+    userId: string,
   ): Promise<UserStripeConnectStatusDto> {
     const user = await this.userModel.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     let isConnected = false;
-    let message = 'Connect your Stripe account to start receiving payments.';
+    let message = "Connect your Stripe account to start receiving payments.";
 
     if (user.stripeConnectId) {
       // Call ensureStripeEnabled outside try to let ServiceUnavailableException propagate
@@ -2173,17 +2173,17 @@ export class AuthService {
       try {
         const account = await stripe.accounts.retrieve(user.stripeConnectId);
         isConnected = account.charges_enabled;
-        message = isConnected ? 'Connected' : 'Setup incomplete';
+        message = isConnected ? "Connected" : "Setup incomplete";
       } catch (error: unknown) {
         // Rethrow HttpException/ServiceUnavailableException unchanged
         if (error instanceof HttpException) {
           throw error;
         }
         this.logger.error(
-          'Stripe error while retrieving account status',
-          error as Error
+          "Stripe error while retrieving account status",
+          error as Error,
         );
-        message = 'Stripe verification failed';
+        message = "Stripe verification failed";
       }
     }
 

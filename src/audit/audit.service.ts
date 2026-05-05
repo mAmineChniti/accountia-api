@@ -1,15 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
-import { AuditLog, AuditAction } from './schemas/audit-log.schema';
-import { CreateAuditLogDto, PaginatedAuditLogsDto } from './dto/audit-log.dto';
+import { Injectable, Logger } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import type { Model } from "mongoose";
+import { AuditLog, AuditAction } from "./schemas/audit-log.schema";
+import { CreateAuditLogDto, PaginatedAuditLogsDto } from "./dto/audit-log.dto";
 
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
   constructor(
-    @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLog>
+    @InjectModel(AuditLog.name) private auditLogModel: Model<AuditLog>,
   ) {}
 
   async logAction(createDto: CreateAuditLogDto): Promise<AuditLog | undefined> {
@@ -28,7 +28,7 @@ export class AuditService {
   async getLogs(
     page = 1,
     limit = 10,
-    action?: AuditAction
+    action?: AuditAction,
   ): Promise<PaginatedAuditLogsDto> {
     const skip = (page - 1) * limit;
     const query = action ? { action } : {};

@@ -1,15 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from "@nestjs/swagger";
 
 // ─── Client Podium (unchanged) ────────────────────────────────────────────────
 
 export class ClientPodiumEntryDto {
-  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
+  @ApiProperty({ example: "507f1f77bcf86cd799439011" })
   clientId!: string;
 
-  @ApiProperty({ example: 'John Doe' })
+  @ApiProperty({ example: "John Doe" })
   clientName!: string;
 
-  @ApiProperty({ example: 'john@example.com' })
+  @ApiProperty({ example: "john@example.com" })
   clientEmail!: string;
 
   @ApiProperty({ example: 15_000.5 })
@@ -18,7 +18,7 @@ export class ClientPodiumEntryDto {
   @ApiProperty({ example: 12 })
   totalPaidInvoices!: number;
 
-  @ApiProperty({ example: '🥇' })
+  @ApiProperty({ example: "🥇" })
   medal!: string;
 }
 
@@ -30,7 +30,7 @@ export class ClientPodiumDto {
 // ─── Time-Series Primitives ───────────────────────────────────────────────────
 
 export class MonthlyDataPointDto {
-  @ApiProperty({ example: '2024-01', description: 'ISO month (YYYY-MM)' })
+  @ApiProperty({ example: "2024-01", description: "ISO month (YYYY-MM)" })
   date!: string;
 
   @ApiProperty({ example: 12_500 })
@@ -41,14 +41,14 @@ export class TimeSeriesDataDto {
   @ApiProperty({
     type: [MonthlyDataPointDto],
     isArray: true,
-    description: 'Real observed business data',
+    description: "Real observed business data",
   })
   historical!: MonthlyDataPointDto[];
 
   @ApiProperty({
     type: [MonthlyDataPointDto],
     isArray: true,
-    description: 'TensorFlow forecast (future only)',
+    description: "TensorFlow forecast (future only)",
   })
   predicted!: MonthlyDataPointDto[];
 }
@@ -58,28 +58,28 @@ export class TimeSeriesDataDto {
 export class FinancialKpisDto {
   @ApiProperty({
     example: 125_000,
-    description: 'Total revenue (accrual basis)',
+    description: "Total revenue (accrual basis)",
   })
   totalRevenue!: number;
 
-  @ApiProperty({ example: 75_000, description: 'Cost of Goods Sold' })
+  @ApiProperty({ example: 75_000, description: "Cost of Goods Sold" })
   totalCOGS!: number;
 
-  @ApiProperty({ example: 50_000, description: 'Revenue − COGS' })
+  @ApiProperty({ example: 50_000, description: "Revenue − COGS" })
   grossProfit!: number;
 
   @ApiProperty({
     example: 50_000,
-    description: 'Gross profit (no separate OpEx data available)',
+    description: "Gross profit (no separate OpEx data available)",
   })
   netProfit!: number;
 
-  @ApiProperty({ example: 40, description: '(GrossProfit / Revenue) × 100' })
+  @ApiProperty({ example: 40, description: "(GrossProfit / Revenue) × 100" })
   profitMarginPercent!: number;
 
   @ApiProperty({
     example: 12.5,
-    description: 'Revenue growth vs previous comparable period (%)',
+    description: "Revenue growth vs previous comparable period (%)",
   })
   revenueGrowthRatePercent!: number | undefined;
 }
@@ -96,7 +96,7 @@ export class RevenueTimeSeriesDto {
   @ApiProperty({ type: TimeSeriesDataDto })
   grossProfit!: TimeSeriesDataDto;
 
-  @ApiProperty({ type: TimeSeriesDataDto, description: 'Units sold over time' })
+  @ApiProperty({ type: TimeSeriesDataDto, description: "Units sold over time" })
   salesVolume!: TimeSeriesDataDto;
 }
 
@@ -133,21 +133,21 @@ export class ProductStatisticsDto {
 
   @ApiProperty({
     example: 4500.75,
-    description: 'Sum of (unitPrice × quantity) across all products',
+    description: "Sum of (unitPrice × quantity) across all products",
   })
   totalInventoryValue!: number;
 
-  @ApiProperty({ example: 3, description: 'Products with quantity ≤ 5' })
+  @ApiProperty({ example: 3, description: "Products with quantity ≤ 5" })
   lowStockProducts!: number;
 }
 
 // ─── Product Profitability ─────────────────────────────────────────────────────
 
 export class ProductProfitabilityDto {
-  @ApiProperty({ example: '507f1f77bcf86cd799439099' })
+  @ApiProperty({ example: "507f1f77bcf86cd799439099" })
   productId!: string;
 
-  @ApiProperty({ example: 'HP EliteBook' })
+  @ApiProperty({ example: "HP EliteBook" })
   productName!: string;
 
   @ApiProperty({ example: 1500 })
@@ -175,39 +175,39 @@ export class ProductProfitabilityDto {
 // ─── Sales Analytics ──────────────────────────────────────────────────────────
 
 export class SalesAnalyticsDto {
-  @ApiProperty({ type: TimeSeriesDataDto, description: 'Units sold per month' })
+  @ApiProperty({ type: TimeSeriesDataDto, description: "Units sold per month" })
   salesVolume!: TimeSeriesDataDto;
 
   @ApiProperty({
     type: [ProductProfitabilityDto],
     isArray: true,
-    description: 'Top 5 products by revenue',
+    description: "Top 5 products by revenue",
   })
   topProducts!: ProductProfitabilityDto[];
 
   @ApiProperty({
     type: [ProductProfitabilityDto],
     isArray: true,
-    description: 'Bottom 5 products by profit margin',
+    description: "Bottom 5 products by profit margin",
   })
   underperformingProducts!: ProductProfitabilityDto[];
 
-  @ApiProperty({ example: 'growth', enum: ['growth', 'decline', 'stagnation'] })
-  salesTrend!: 'growth' | 'decline' | 'stagnation';
+  @ApiProperty({ example: "growth", enum: ["growth", "decline", "stagnation"] })
+  salesTrend!: "growth" | "decline" | "stagnation";
 }
 
 // ─── Main Response ─────────────────────────────────────────────────────────────
 
 export class BusinessStatisticsResponseDto {
-  @ApiProperty({ example: 'Business statistics retrieved successfully' })
+  @ApiProperty({ example: "Business statistics retrieved successfully" })
   message!: string;
 
-  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
+  @ApiProperty({ example: "507f1f77bcf86cd799439011" })
   businessId!: string;
 
   @ApiProperty({
-    example: { start: '2023-01', end: '2024-12' },
-    description: 'Date range of historical data',
+    example: { start: "2023-01", end: "2024-12" },
+    description: "Date range of historical data",
   })
   period!: { start: string; end: string };
 

@@ -5,16 +5,16 @@ import {
   ServiceUnavailableException,
   Logger,
   BadRequestException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { InjectConnection, InjectModel } from '@nestjs/mongoose';
-import type { Connection, Model } from 'mongoose';
-import Stripe from 'stripe';
-import { InvoiceReceipt } from '@/invoices/schemas/invoice-receipt.schema';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { InjectConnection, InjectModel } from "@nestjs/mongoose";
+import type { Connection, Model } from "mongoose";
+import Stripe from "stripe";
+import { InvoiceReceipt } from "@/invoices/schemas/invoice-receipt.schema";
 
 type StripeClient = InstanceType<typeof Stripe>;
 type StripeCheckoutSession = Awaited<
-  ReturnType<StripeClient['checkout']['sessions']['retrieve']>
+  ReturnType<StripeClient["checkout"]["sessions"]["retrieve"]>
 >;
 
 interface StripeSessionMetadata {
@@ -29,14 +29,14 @@ import {
   CreateInvoiceCheckoutSessionDto,
   InvoiceCheckoutSessionResponseDto,
   MockInvoicePaymentDto,
-} from '@/invoices/dto/invoice.dto';
-import { InvoiceStatus } from '@/invoices/enums/invoice-status.enum';
-import { InvoiceIssuanceService } from '@/invoices/services/invoice-issuance.service';
-import type { UserPayload } from '@/auth/types/auth.types';
-import { EmailService } from '@/email/email.service';
-import { Business } from '@/business/schemas/business.schema';
-import { NotificationsService } from '@/notifications/notifications.service';
-import { NotificationType } from '@/notifications/schemas/notification.schema';
+} from "@/invoices/dto/invoice.dto";
+import { InvoiceStatus } from "@/invoices/enums/invoice-status.enum";
+import { InvoiceIssuanceService } from "@/invoices/services/invoice-issuance.service";
+import type { UserPayload } from "@/auth/types/auth.types";
+import { EmailService } from "@/email/email.service";
+import { Business } from "@/business/schemas/business.schema";
+import { NotificationsService } from "@/notifications/notifications.service";
+import { NotificationType } from "@/notifications/schemas/notification.schema";
 
 @Injectable()
 export class InvoicePaymentService {
@@ -59,48 +59,48 @@ export class InvoicePaymentService {
     private readonly emailService: EmailService,
     private readonly notificationsService: NotificationsService,
     @InjectConnection() private readonly mainConnection: Connection,
-    @InjectModel(Business.name) private readonly businessModel: Model<Business>
+    @InjectModel(Business.name) private readonly businessModel: Model<Business>,
   ) {
     const stripeSecretKey = (
-      this.configService.get<string>('STRIPE_SECRET_KEY') ??
+      this.configService.get<string>("STRIPE_SECRET_KEY") ??
       process.env.STRIPE_SECRET_KEY
     )?.trim();
     this.stripeWebhookSecret = (
-      this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ??
+      this.configService.get<string>("STRIPE_WEBHOOK_SECRET") ??
       process.env.STRIPE_WEBHOOK_SECRET
     )?.trim();
     this.stripeFallbackCurrency = (
-      this.configService.get<string>('STRIPE_FALLBACK_CURRENCY') ??
+      this.configService.get<string>("STRIPE_FALLBACK_CURRENCY") ??
       process.env.STRIPE_FALLBACK_CURRENCY ??
-      'tnd'
+      "tnd"
     )
       .trim()
       .toLowerCase();
 
     this.fallbackFxRates = this.parseFallbackFxRates(
-      this.configService.get<string>('STRIPE_FX_RATES') ??
+      this.configService.get<string>("STRIPE_FX_RATES") ??
         process.env.STRIPE_FX_RATES ??
-        'TND:0.32'
+        "TND:0.32",
     );
 
     this.paymentMethodConfigurationId = (
-      this.configService.get<string>('PAYMENT_METHOD_CONFIGURATION') ??
+      this.configService.get<string>("PAYMENT_METHOD_CONFIGURATION") ??
       process.env.PAYMENT_METHOD_CONFIGURATION
     )?.trim();
 
     const mockFlag =
-      this.configService.get<string>('MOCK_INVOICE_PAYMENTS') ??
+      this.configService.get<string>("MOCK_INVOICE_PAYMENTS") ??
       process.env.MOCK_INVOICE_PAYMENTS ??
-      'false';
+      "false";
     this.mockInvoicePaymentsEnabled =
-      String(mockFlag).trim().toLowerCase() === 'true';
+      String(mockFlag).trim().toLowerCase() === "true";
 
     if (stripeSecretKey) {
       this.stripeClient = new Stripe(stripeSecretKey);
-      this.logger.log('Stripe payment provider initialized');
+      this.logger.log("Stripe payment provider initialized");
     } else {
       this.logger.warn(
-        'Stripe payment provider not configured: STRIPE_SECRET_KEY is missing'
+        "Stripe payment provider not configured: STRIPE_SECRET_KEY is missing",
       );
     }
   }
@@ -108,7 +108,7 @@ export class InvoicePaymentService {
   private ensureStripeEnabled(): InstanceType<typeof Stripe> {
     if (!this.stripeClient) {
       throw new ServiceUnavailableException(
-        'Online payment is not configured yet. Please contact support.'
+        "Online payment is not configured yet. Please contact support.",
       );
     }
     return this.stripeClient;
@@ -116,7 +116,7 @@ export class InvoicePaymentService {
 
   private assertRecipientCanPay(
     receipt: InvoiceReceipt,
-    user: UserPayload
+    user: UserPayload,
   ): void {
     const receiptUserId = receipt.recipientUserId?.toString();
     const normalizedReceiptEmail = receipt.recipientEmail?.toLowerCase().trim();
@@ -129,7 +129,7 @@ export class InvoicePaymentService {
 
     if (!allowedByUserId && !allowedByEmail) {
       throw new ForbiddenException(
-        'You do not have access to pay this invoice'
+        "You do not have access to pay this invoice",
       );
     }
   }
@@ -146,12 +146,12 @@ export class InvoicePaymentService {
 
   private parseFallbackFxRates(rawValue: string): Map<string, number> {
     const rates = new Map<string, number>();
-    for (const part of rawValue.split(',')) {
+    for (const part of rawValue.split(",")) {
       const trimmed = part.trim();
       if (!trimmed) {
         continue;
       }
-      const [fromCurrencyRaw, rateRaw] = trimmed.split(':');
+      const [fromCurrencyRaw, rateRaw] = trimmed.split(":");
       if (!fromCurrencyRaw || !rateRaw) {
         continue;
       }
@@ -183,7 +183,7 @@ export class InvoicePaymentService {
    * @returns The stripeConnectId if found, undefined otherwise
    */
   private async resolveStripeAccount(
-    businessId: string
+    businessId: string,
   ): Promise<string | undefined> {
     const business = await this.businessModel.findById(businessId).exec();
     return this.resolveStripeAccountFromBusiness(business ?? {});
@@ -191,7 +191,7 @@ export class InvoicePaymentService {
 
   private convertToFallbackCurrency(
     amount: number,
-    invoiceCurrency: string
+    invoiceCurrency: string,
   ): { convertedAmount: number; rate: number } | undefined {
     const fromCurrency = invoiceCurrency.trim().toLowerCase();
     if (fromCurrency === this.stripeFallbackCurrency) {
@@ -214,18 +214,18 @@ export class InvoicePaymentService {
   async createCheckoutSession(
     receiptId: string,
     user: UserPayload,
-    _options?: CreateInvoiceCheckoutSessionDto
+    _options?: CreateInvoiceCheckoutSessionDto,
   ): Promise<InvoiceCheckoutSessionResponseDto> {
     const startTime = Date.now();
     this.logger.log(
-      `Starting checkout session creation for receipt ${receiptId}, user ${user.id}`
+      `Starting checkout session creation for receipt ${receiptId}, user ${user.id}`,
     );
 
     const stripe = this.ensureStripeEnabled();
 
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
-      throw new NotFoundException('Invoice receipt not found');
+      throw new NotFoundException("Invoice receipt not found");
     }
     this.logger.debug(`Receipt loaded in ${Date.now() - startTime}ms`);
 
@@ -233,22 +233,22 @@ export class InvoicePaymentService {
 
     const invoice = await this.issuanceService.getInvoiceById(
       receipt.invoiceId.toString(),
-      receipt.issuerTenantDatabaseName
+      receipt.issuerTenantDatabaseName,
     );
     this.logger.debug(`Invoice loaded in ${Date.now() - startTime}ms`);
 
     if (!this.isPayableStatus(invoice.status)) {
       throw new BadRequestException(
-        `Invoice cannot be paid in status ${invoice.status}`
+        `Invoice cannot be paid in status ${invoice.status}`,
       );
     }
 
     const remainingAmount = Math.max(
       0,
-      invoice.totalAmount - invoice.amountPaid
+      invoice.totalAmount - invoice.amountPaid,
     );
     if (remainingAmount <= 0) {
-      throw new BadRequestException('Invoice is already fully paid');
+      throw new BadRequestException("Invoice is already fully paid");
     }
 
     // Retrieve business from platform DB to enforce 404
@@ -256,7 +256,7 @@ export class InvoicePaymentService {
       .findById(receipt.issuerBusinessId)
       .exec();
     if (!business) {
-      throw new NotFoundException('Business not found');
+      throw new NotFoundException("Business not found");
     }
     this.logger.debug(`Business loaded in ${Date.now() - startTime}ms`);
 
@@ -264,7 +264,7 @@ export class InvoicePaymentService {
     const connectedAccountId = this.resolveStripeAccountFromBusiness(business);
     if (!connectedAccountId) {
       this.logger.warn(
-        `Business "${receipt.issuerBusinessName}" has no Stripe Connect account. Falling back to platform Stripe account for checkout.`
+        `Business "${receipt.issuerBusinessName}" has no Stripe Connect account. Falling back to platform Stripe account for checkout.`,
       );
     }
 
@@ -286,7 +286,7 @@ export class InvoicePaymentService {
     const createCheckoutSession = async (
       currency: string,
       amount: number,
-      metadata: Record<string, string>
+      metadata: Record<string, string>,
     ) => {
       // Use Stripe Connect to route payments to the business's connected account
       const requestOptions = connectedAccountId
@@ -307,16 +307,16 @@ export class InvoicePaymentService {
           ) {
             // Ensure the business profile name is set to avoid checkout errors
             this.logger.debug(
-              `Updating Stripe profile for account ${connectedAccountId}`
+              `Updating Stripe profile for account ${connectedAccountId}`,
             );
             await stripe.accounts.update(
               connectedAccountId,
               {
                 business_profile: {
-                  name: business.name ?? 'Accountia Business',
+                  name: business.name ?? "Accountia Business",
                 },
               },
-              { timeout: 10_000 } // 10 second timeout for profile update
+              { timeout: 10_000 }, // 10 second timeout for profile update
             );
             // Update cache
             this.recentlyUpdatedStripeAccounts.set(connectedAccountId, now);
@@ -331,31 +331,31 @@ export class InvoicePaymentService {
             }
           } else {
             this.logger.debug(
-              `Skipping profile update for account ${connectedAccountId} (cached)`
+              `Skipping profile update for account ${connectedAccountId} (cached)`,
             );
           }
         } catch (error) {
           this.logger.warn(
-            `Could not auto-fix business name for account ${connectedAccountId}: ${error instanceof Error ? error.message : String(error)}`
+            `Could not auto-fix business name for account ${connectedAccountId}: ${error instanceof Error ? error.message : String(error)}`,
           );
           // Non-blocking: continue with checkout session creation
         }
       }
 
       this.logger.debug(
-        `Creating Stripe checkout session for currency: ${currency}, amount: ${amount}`
+        `Creating Stripe checkout session for currency: ${currency}, amount: ${amount}`,
       );
       return stripe.checkout.sessions.create(
         {
-          ui_mode: 'embedded_page' as never,
-          mode: 'payment',
-          redirect_on_completion: 'never',
+          ui_mode: "embedded_page" as never,
+          mode: "payment",
+          redirect_on_completion: "never",
           ...(paymentMethodConfigurationId
             ? {
                 payment_method_configuration: paymentMethodConfigurationId,
               }
             : {
-                payment_method_types: ['card'],
+                payment_method_types: ["card"],
               }),
           customer_email: user.email,
           metadata,
@@ -375,7 +375,7 @@ export class InvoicePaymentService {
             },
           ],
         },
-        { ...requestOptions, timeout: 15_000 } // 15 second timeout for session creation
+        { ...requestOptions, timeout: 15_000 }, // 15 second timeout for session creation
       );
     };
 
@@ -383,52 +383,52 @@ export class InvoicePaymentService {
     let session;
     try {
       this.logger.debug(
-        `Attempting to create Stripe session with currency: ${invoiceCurrency}`
+        `Attempting to create Stripe session with currency: ${invoiceCurrency}`,
       );
       session = await createCheckoutSession(
         invoiceCurrency,
         remainingAmount,
-        baseMetadata
+        baseMetadata,
       );
       this.logger.debug(
-        `Stripe session created in ${Date.now() - startTime}ms`
+        `Stripe session created in ${Date.now() - startTime}ms`,
       );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const message = errorMessage.toLowerCase();
-      const isInvalidCurrency = message.includes('invalid currency');
+      const isInvalidCurrency = message.includes("invalid currency");
       const isTimeout =
-        message.includes('timeout') || message.includes('etimedout');
+        message.includes("timeout") || message.includes("etimedout");
 
       if (isTimeout) {
         this.logger.error(
-          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage}`
+          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage}`,
         );
         throw new ServiceUnavailableException(
-          'Payment service is currently slow. Please try again in a few moments.'
+          "Payment service is currently slow. Please try again in a few moments.",
         );
       }
 
       if (!isInvalidCurrency) {
         this.logger.error(
-          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage}`
+          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage}`,
         );
         throw error;
       }
 
       const conversion = this.convertToFallbackCurrency(
         remainingAmount,
-        invoiceCurrency
+        invoiceCurrency,
       );
       if (!conversion) {
         throw new BadRequestException(
-          `Unsupported invoice currency ${invoice.currency}. Configure STRIPE_FX_RATES for fallback currency ${this.stripeFallbackCurrency}.`
+          `Unsupported invoice currency ${invoice.currency}. Configure STRIPE_FX_RATES for fallback currency ${this.stripeFallbackCurrency}.`,
         );
       }
 
       this.logger.warn(
-        `Stripe currency fallback used for invoice ${invoice.invoiceNumber}: ${invoiceCurrency} -> ${this.stripeFallbackCurrency} (rate=${conversion.rate})`
+        `Stripe currency fallback used for invoice ${invoice.invoiceNumber}: ${invoiceCurrency} -> ${this.stripeFallbackCurrency} (rate=${conversion.rate})`,
       );
 
       session = await createCheckoutSession(
@@ -439,10 +439,10 @@ export class InvoicePaymentService {
           checkoutCurrency: this.stripeFallbackCurrency,
           conversionRate: conversion.rate.toString(),
           convertedAmount: conversion.convertedAmount.toFixed(2),
-        }
+        },
       );
       this.logger.debug(
-        `Stripe fallback session created in ${Date.now() - startTime}ms`
+        `Stripe fallback session created in ${Date.now() - startTime}ms`,
       );
     }
 
@@ -452,7 +452,7 @@ export class InvoicePaymentService {
     if (connectedAccountId) {
       await this.invoiceReceiptModel.updateOne(
         { _id: receiptId },
-        { $set: { stripeConnectedAccountId: connectedAccountId } }
+        { $set: { stripeConnectedAccountId: connectedAccountId } },
       );
     }
 
@@ -460,7 +460,7 @@ export class InvoicePaymentService {
       const clientSecret = sessionObj.client_secret as string | undefined;
       if (!clientSecret || !sessionObj.id) {
         throw new ServiceUnavailableException(
-          'Unable to create payment session. Please try again.'
+          "Unable to create payment session. Please try again.",
         );
       }
 
@@ -476,11 +476,11 @@ export class InvoicePaymentService {
 
     const totalTime = Date.now() - startTime;
     this.logger.log(
-      `Checkout session completed in ${totalTime}ms (URL: ${sessionObj.url.slice(0, 50)}...)`
+      `Checkout session completed in ${totalTime}ms (URL: ${sessionObj.url.slice(0, 50)}...)`,
     );
 
     return {
-      clientSecret: sessionObj.client_secret! ?? '',
+      clientSecret: sessionObj.client_secret! ?? "",
       sessionId: sessionObj.id,
       checkoutUrl: sessionObj.url,
       receiptId,
@@ -490,29 +490,29 @@ export class InvoicePaymentService {
   async simulateIndividualPayment(
     receiptId: string,
     user: UserPayload,
-    _mockPaymentDto?: MockInvoicePaymentDto
+    _mockPaymentDto?: MockInvoicePaymentDto,
   ) {
     if (!this.mockInvoicePaymentsEnabled) {
       throw new ForbiddenException(
-        'Mock payments are disabled. Set MOCK_INVOICE_PAYMENTS=true to enable demo payments.'
+        "Mock payments are disabled. Set MOCK_INVOICE_PAYMENTS=true to enable demo payments.",
       );
     }
 
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
-      throw new NotFoundException('Invoice receipt not found');
+      throw new NotFoundException("Invoice receipt not found");
     }
 
     this.assertRecipientCanPay(receipt, user);
 
     const invoice = await this.issuanceService.getInvoiceById(
       receipt.invoiceId.toString(),
-      receipt.issuerTenantDatabaseName
+      receipt.issuerTenantDatabaseName,
     );
 
     if (!this.isPayableStatus(invoice.status)) {
       throw new BadRequestException(
-        `Invoice cannot be paid in status ${invoice.status}`
+        `Invoice cannot be paid in status ${invoice.status}`,
       );
     }
 
@@ -524,9 +524,9 @@ export class InvoicePaymentService {
         {
           newStatus: InvoiceStatus.PAID,
           amountPaid: invoice.totalAmount,
-          reason: 'Demo mock payment',
+          reason: "Demo mock payment",
         },
-        user.id
+        user.id,
       );
 
       try {
@@ -546,7 +546,7 @@ export class InvoicePaymentService {
         this.logger.warn(
           `Failed to create paid notification for invoice ${invoice.id}: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
       }
 
@@ -556,20 +556,20 @@ export class InvoicePaymentService {
           invoice.invoiceNumber,
           invoice.totalAmount,
           invoice.currency,
-          receipt.issuerBusinessName
+          receipt.issuerBusinessName,
         );
       } catch (error) {
         this.logger.warn(
           `Failed to send payment confirmation for invoice ${invoice.id}: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
       }
     }
 
     const updatedInvoice = await this.issuanceService.getInvoiceById(
       invoice.id,
-      receipt.issuerTenantDatabaseName
+      receipt.issuerTenantDatabaseName,
     );
 
     return updatedInvoice;
@@ -578,10 +578,10 @@ export class InvoicePaymentService {
   async confirmPaymentStatus(
     sessionId: string,
     receiptId: string,
-    user: UserPayload
+    user: UserPayload,
   ): Promise<{ success: boolean; status: string }> {
     this.logger.log(
-      `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`
+      `Manual confirmation requested for Session: ${sessionId}, Receipt: ${receiptId}`,
     );
     const stripe = this.ensureStripeEnabled();
 
@@ -589,7 +589,7 @@ export class InvoicePaymentService {
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
       this.logger.error(`Receipt ${receiptId} not found during confirmation`);
-      throw new NotFoundException('Invoice receipt not found');
+      throw new NotFoundException("Invoice receipt not found");
     }
 
     // Resolve the Stripe Connect account: prefer the value stored directly on the receipt
@@ -619,47 +619,47 @@ export class InvoicePaymentService {
         session = (await stripe.checkout.sessions.retrieve(
           sessionId,
           undefined,
-          effectiveRequestOptions
+          effectiveRequestOptions,
         )) as StripeCheckoutSession;
         this.logger.debug(
-          `Attempt ${i + 1}: Stripe session status is "${session.payment_status}"`
+          `Attempt ${i + 1}: Stripe session status is "${session.payment_status}"`,
         );
-        if (session.payment_status === 'paid') {
+        if (session.payment_status === "paid") {
           break;
         }
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         const errAny = error as unknown as { type?: string; code?: string };
-        const errType = errAny?.type ?? 'unknown';
-        const errCode = errAny?.code ?? 'unknown';
+        const errType = errAny?.type ?? "unknown";
+        const errCode = errAny?.code ?? "unknown";
         this.logger.error(
-          `Error retrieving session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+          `Error retrieving session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`,
         );
 
         // Detect non-retryable Stripe errors and surface permanent failures.
-        const isResourceMissing = errAny?.code === 'resource_missing';
+        const isResourceMissing = errAny?.code === "resource_missing";
         const isAuthError =
-          errAny?.type === 'StripeAuthenticationError' ||
-          errAny?.code === 'authentication_required';
-        const isInvalidRequest = errAny?.type === 'StripeInvalidRequestError';
+          errAny?.type === "StripeAuthenticationError" ||
+          errAny?.code === "authentication_required";
+        const isInvalidRequest = errAny?.type === "StripeInvalidRequestError";
 
         if (isResourceMissing) {
           // If we were using a connected account, try platform account as fallback
           if (stripeConnectId && !usingPlatformAccount) {
             this.logger.log(
-              `Retrying session retrieval on platform account for session ${sessionId}`
+              `Retrying session retrieval on platform account for session ${sessionId}`,
             );
             try {
               session = (await stripe.checkout.sessions.retrieve(
-                sessionId
+                sessionId,
               )) as StripeCheckoutSession;
               this.logger.debug(
-                `Platform account retry: Stripe session status is "${session.payment_status}"`
+                `Platform account retry: Stripe session status is "${session.payment_status}"`,
               );
               // Pin the working requestOptions for subsequent attempts
               effectiveRequestOptions = undefined;
               usingPlatformAccount = true;
-              if (session.payment_status === 'paid') {
+              if (session.payment_status === "paid") {
                 break;
               }
               // Fall through to normal loop flow (with backoff) if not paid
@@ -669,15 +669,15 @@ export class InvoicePaymentService {
                   ? platformError.message
                   : String(platformError);
               this.logger.error(
-                `Platform account retry failed for session ${sessionId}: ${platformErrMsg}`
+                `Platform account retry failed for session ${sessionId}: ${platformErrMsg}`,
               );
               throw new BadRequestException(
-                `Stripe resource missing: ${platformErrMsg}`
+                `Stripe resource missing: ${platformErrMsg}`,
               );
             }
           } else {
             this.logger.error(
-              `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+              `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`,
             );
             // Missing resource indicates a bad request from the client
             throw new BadRequestException(`Stripe resource missing: ${errMsg}`);
@@ -686,10 +686,10 @@ export class InvoicePaymentService {
 
         if (isAuthError || isInvalidRequest) {
           this.logger.error(
-            `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`
+            `Non-retryable Stripe error for session ${sessionId}: ${errMsg} (type=${errType}, code=${errCode})`,
           );
           // Authentication or invalid request — surface failed status so client stops polling
-          return { success: false, status: 'failed' };
+          return { success: false, status: "failed" };
         }
       }
 
@@ -701,15 +701,15 @@ export class InvoicePaymentService {
       }
     }
 
-    if (session?.payment_status !== 'paid') {
+    if (session?.payment_status !== "paid") {
       this.logger.warn(
-        `Payment not confirmed for session ${sessionId}. Final status: ${session?.payment_status}`
+        `Payment not confirmed for session ${sessionId}. Final status: ${session?.payment_status}`,
       );
       // Return 'pending' so that the Stripe webhook handler remains authoritative
       // for final payment state instead of blocking the request here.
       return {
         success: false,
-        status: session?.payment_status ?? 'pending',
+        status: session?.payment_status ?? "pending",
       };
     }
 
@@ -717,7 +717,7 @@ export class InvoicePaymentService {
     this.assertRecipientCanPay(receipt, user);
 
     this.logger.log(
-      `Confirmed! Updating invoice ${receipt.invoiceId} for business ${receipt.issuerBusinessId}`
+      `Confirmed! Updating invoice ${receipt.invoiceId} for business ${receipt.issuerBusinessId}`,
     );
     const success = await this.completeInvoicePayment({
       invoiceId: receipt.invoiceId.toString(),
@@ -728,18 +728,18 @@ export class InvoicePaymentService {
       issuerBusinessName: receipt.issuerBusinessName,
     });
 
-    return { success, status: session?.payment_status ?? 'unknown' };
+    return { success, status: session?.payment_status ?? "unknown" };
   }
 
   async finalizeCheckoutSessionFromReturn(
     sessionId: string,
-    receiptId: string
+    receiptId: string,
   ): Promise<boolean> {
     const stripe = this.ensureStripeEnabled();
 
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
-      throw new NotFoundException('Invoice receipt not found');
+      throw new NotFoundException("Invoice receipt not found");
     }
 
     // Prefer the connected account stored on the receipt (set at session creation time)
@@ -756,7 +756,7 @@ export class InvoicePaymentService {
       session = await stripe.checkout.sessions.retrieve(
         sessionId,
         undefined,
-        requestOptions
+        requestOptions,
       );
     } catch (error) {
       const errAny = error as {
@@ -764,16 +764,16 @@ export class InvoicePaymentService {
         code?: string;
         message?: string;
       };
-      const isResourceMissing = errAny?.code === 'resource_missing';
+      const isResourceMissing = errAny?.code === "resource_missing";
 
       this.logger.error(
-        `Stripe session retrieval failed (sessionId=${sessionId}, stripeConnectId=${stripeConnectId ?? 'none'}): type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'}, message=${errAny?.message ?? 'unknown'}`
+        `Stripe session retrieval failed (sessionId=${sessionId}, stripeConnectId=${stripeConnectId ?? "none"}): type=${errAny?.type ?? "unknown"}, code=${errAny?.code ?? "unknown"}, message=${errAny?.message ?? "unknown"}`,
       );
 
       // Only retry on platform account if resource is missing on connected account
       if (isResourceMissing && stripeConnectId) {
         this.logger.log(
-          `Retrying session retrieval on platform account for session ${sessionId}`
+          `Retrying session retrieval on platform account for session ${sessionId}`,
         );
         session = await stripe.checkout.sessions.retrieve(sessionId);
       } else {
@@ -783,7 +783,7 @@ export class InvoicePaymentService {
     }
 
     const sessionObj = session;
-    if (sessionObj.payment_status !== 'paid') {
+    if (sessionObj.payment_status !== "paid") {
       return false;
     }
 
@@ -820,7 +820,7 @@ export class InvoicePaymentService {
   }): Promise<boolean> {
     const invoice = await this.issuanceService.getInvoiceById(
       input.invoiceId,
-      input.issuerTenantDatabaseName
+      input.issuerTenantDatabaseName,
     );
 
     if (invoice.status === InvoiceStatus.PAID) {
@@ -835,14 +835,14 @@ export class InvoicePaymentService {
         newStatus: InvoiceStatus.PAID,
         amountPaid: invoice.totalAmount,
       },
-      input.payerUserId ?? ''
+      input.payerUserId ?? "",
     );
 
     // Keep API response fast: run side effects in background after payment state is persisted.
     void this.notificationsService
       .createNotification({
         type: NotificationType.INVOICE_PAID,
-        message: `Invoice ${invoice.invoiceNumber} was paid by ${input.payerEmail ?? 'a client'}`,
+        message: `Invoice ${invoice.invoiceNumber} was paid by ${input.payerEmail ?? "a client"}`,
         targetBusinessId: input.issuerBusinessId,
         payload: {
           invoiceId: input.invoiceId,
@@ -856,7 +856,7 @@ export class InvoicePaymentService {
         this.logger.warn(
           `Failed to create paid notification for invoice ${input.invoiceId}: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
       });
 
@@ -867,13 +867,13 @@ export class InvoicePaymentService {
           invoice.invoiceNumber,
           invoice.totalAmount,
           invoice.currency,
-          input.issuerBusinessName
+          input.issuerBusinessName,
         )
         .catch((error: unknown) => {
           this.logger.warn(
             `Payment confirmation email failed for ${input.payerEmail}: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
           );
         });
     }
@@ -883,48 +883,48 @@ export class InvoicePaymentService {
 
   async handleStripeWebhook(
     signatureHeader: string | undefined,
-    rawBody: Buffer
+    rawBody: Buffer,
   ): Promise<void> {
     const stripe = this.ensureStripeEnabled();
 
     if (!this.stripeWebhookSecret) {
       throw new ServiceUnavailableException(
-        'Stripe webhook secret is not configured'
+        "Stripe webhook secret is not configured",
       );
     }
 
     if (!signatureHeader) {
-      throw new BadRequestException('Missing Stripe signature header');
+      throw new BadRequestException("Missing Stripe signature header");
     }
 
     let event: ReturnType<
-      InstanceType<typeof Stripe>['webhooks']['constructEvent']
+      InstanceType<typeof Stripe>["webhooks"]["constructEvent"]
     >;
     try {
       event = stripe.webhooks.constructEvent(
         rawBody,
         signatureHeader,
-        this.stripeWebhookSecret
+        this.stripeWebhookSecret,
       );
     } catch (error) {
       throw new BadRequestException(
         `Invalid Stripe webhook signature: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
 
     if (
-      event.type === 'account.updated' ||
-      event.type === 'account.external_account.created'
+      event.type === "account.updated" ||
+      event.type === "account.external_account.created"
     ) {
       await this.handleStripeAccountEvent(event);
       return;
     }
 
     if (
-      event.type !== 'checkout.session.completed' &&
-      event.type !== 'checkout.session.async_payment_succeeded'
+      event.type !== "checkout.session.completed" &&
+      event.type !== "checkout.session.async_payment_succeeded"
     ) {
       return;
     }
@@ -934,7 +934,7 @@ export class InvoicePaymentService {
       payment_status?: string;
       metadata?: Record<string, string>;
     };
-    if (session.payment_status !== 'paid') {
+    if (session.payment_status !== "paid") {
       return;
     }
 
@@ -953,7 +953,7 @@ export class InvoicePaymentService {
       !payerUserId
     ) {
       this.logger.warn(
-        `Stripe session ${session.id} missing invoice metadata. Skipping state transition.`
+        `Stripe session ${session.id} missing invoice metadata. Skipping state transition.`,
       );
       return;
     }
@@ -962,7 +962,7 @@ export class InvoicePaymentService {
       ? await this.invoiceReceiptModel.findById(receiptId).exec()
       : undefined;
     const issuerBusinessName =
-      receipt?.issuerBusinessName ?? 'Unknown Business';
+      receipt?.issuerBusinessName ?? "Unknown Business";
 
     await this.completeInvoicePayment({
       invoiceId,
@@ -975,13 +975,15 @@ export class InvoicePaymentService {
   }
 
   private async handleStripeAccountEvent(
-    event: ReturnType<InstanceType<typeof Stripe>['webhooks']['constructEvent']>
+    event: ReturnType<
+      InstanceType<typeof Stripe>["webhooks"]["constructEvent"]
+    >,
   ): Promise<void> {
     const stripeAccountId = (event.data.object as { id?: string }).id;
 
     if (!stripeAccountId) {
       this.logger.warn(
-        `Stripe account webhook ${event.type} missing account id in payload`
+        `Stripe account webhook ${event.type} missing account id in payload`,
       );
       return;
     }
@@ -992,7 +994,7 @@ export class InvoicePaymentService {
 
     if (!business) {
       this.logger.warn(
-        `No business found for Stripe account ${stripeAccountId} on event ${event.type}`
+        `No business found for Stripe account ${stripeAccountId} on event ${event.type}`,
       );
       return;
     }
@@ -1003,7 +1005,7 @@ export class InvoicePaymentService {
     }
 
     const updateDoc: Record<string, unknown> = {
-      $unset: { stripeOnboardingUrl: '' },
+      $unset: { stripeOnboardingUrl: "" },
     };
     if (Object.keys(setPayload).length > 0) {
       updateDoc.$set = setPayload;
@@ -1012,7 +1014,7 @@ export class InvoicePaymentService {
     await this.businessModel.updateOne({ _id: business._id }, updateDoc).exec();
 
     this.logger.log(
-      `Stripe account ${stripeAccountId} synced for business ${String(business._id)} via ${event.type}. Cleared onboarding URL.`
+      `Stripe account ${stripeAccountId} synced for business ${String(business._id)} via ${event.type}. Cleared onboarding URL.`,
     );
   }
 }

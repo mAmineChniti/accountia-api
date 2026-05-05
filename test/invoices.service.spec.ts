@@ -1,18 +1,18 @@
-import { Test, type TestingModule } from '@nestjs/testing';
-import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
-import { InvoiceIssuanceService } from '../src/invoices/services/invoice-issuance.service';
-import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
-import { NotificationsService } from '../src/notifications/notifications.service';
-import { InvoiceReceipt } from '../src/invoices/schemas/invoice-receipt.schema';
-import { Business } from '../src/business/schemas/business.schema';
-import { InvoiceStatus } from '../src/invoices/enums/invoice-status.enum';
-import { InvoiceRecipientType } from '../src/invoices/enums/invoice-recipient.enum';
-import { Types } from 'mongoose';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { ObjectId } from 'mongodb';
-import { type CreateInvoiceDto } from '../src/invoices/dto/invoice.dto';
+import { Test, type TestingModule } from "@nestjs/testing";
+import { getModelToken, getConnectionToken } from "@nestjs/mongoose";
+import { InvoiceIssuanceService } from "../src/invoices/services/invoice-issuance.service";
+import { TenantConnectionService } from "../src/common/tenant/tenant-connection.service";
+import { NotificationsService } from "../src/notifications/notifications.service";
+import { InvoiceReceipt } from "../src/invoices/schemas/invoice-receipt.schema";
+import { Business } from "../src/business/schemas/business.schema";
+import { InvoiceStatus } from "../src/invoices/enums/invoice-status.enum";
+import { InvoiceRecipientType } from "../src/invoices/enums/invoice-recipient.enum";
+import { Types } from "mongoose";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { ObjectId } from "mongodb";
+import { type CreateInvoiceDto } from "../src/invoices/dto/invoice.dto";
 
-describe('InvoiceIssuanceService', () => {
+describe("InvoiceIssuanceService", () => {
   let service: InvoiceIssuanceService;
   let mockInvoiceReceiptModel: {
     findOne: jest.Mock;
@@ -29,7 +29,7 @@ describe('InvoiceIssuanceService', () => {
   let mockTenantDb: { collection: jest.Mock };
 
   const businessId = new Types.ObjectId().toString();
-  const databaseName = 'tenant_db';
+  const databaseName = "tenant_db";
   const userId = new Types.ObjectId().toString();
 
   const createMockInvoice = (overrides = {}) => {
@@ -40,22 +40,22 @@ describe('InvoiceIssuanceService', () => {
     return {
       _id: id,
       issuerBusinessId: bizId,
-      invoiceNumber: 'INV-20250404-TEST',
+      invoiceNumber: "INV-20250404-TEST",
       recipient: {
         type: InvoiceRecipientType.EXTERNAL,
-        email: 'test@example.com',
-        displayName: 'Test Recipient',
-        resolutionStatus: 'PENDING',
+        email: "test@example.com",
+        displayName: "Test Recipient",
+        resolutionStatus: "PENDING",
       },
       status: InvoiceStatus.DRAFT,
       totalAmount: 100,
-      currency: 'TND',
+      currency: "TND",
       amountPaid: 0,
       lineItems: [
         {
           _id: new Types.ObjectId(),
           productId: new Types.ObjectId(),
-          productName: 'P1',
+          productName: "P1",
           quantity: 2,
           unitPrice: 50,
           amount: 100,
@@ -90,7 +90,7 @@ describe('InvoiceIssuanceService', () => {
 
     mockTenantDb = {
       collection: jest.fn().mockImplementation((name: string) => {
-        if (name === 'products') return mockProductsCollection;
+        if (name === "products") return mockProductsCollection;
         return;
       }),
     };
@@ -123,7 +123,7 @@ describe('InvoiceIssuanceService', () => {
       getTenantModel: jest
         .fn()
         .mockImplementation(({ modelName }: { modelName: string }) => {
-          if (modelName === 'Invoice') return mockInvoiceModel;
+          if (modelName === "Invoice") return mockInvoiceModel;
           return;
         }),
     };
@@ -161,32 +161,32 @@ describe('InvoiceIssuanceService', () => {
     service = module.get<InvoiceIssuanceService>(InvoiceIssuanceService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe('createDraftInvoice', () => {
-    it('should create a draft invoice and sync to platform', async () => {
+  describe("createDraftInvoice", () => {
+    it("should create a draft invoice and sync to platform", async () => {
       const dto: Partial<CreateInvoiceDto> = {
         recipient: {
           type: InvoiceRecipientType.EXTERNAL,
-          email: 'test@example.com',
-          displayName: 'Test Recipient',
+          email: "test@example.com",
+          displayName: "Test Recipient",
         },
         lineItems: [
           {
-            productId: 'prod1',
-            productName: 'Product 1',
+            productId: "prod1",
+            productName: "Product 1",
             quantity: 2,
             unitPrice: 50,
           },
         ],
-        currency: 'TND',
+        currency: "TND",
       };
 
       const mockProduct = {
         _id: new ObjectId(),
-        name: 'Product 1',
+        name: "Product 1",
         quantity: 10,
       };
       mockProductsCollection.findOne.mockResolvedValue(mockProduct);
@@ -195,30 +195,30 @@ describe('InvoiceIssuanceService', () => {
       const mockCreatedInvoice = createMockInvoice(dto);
       mockInvoiceModel.create.mockResolvedValue(mockCreatedInvoice);
       mockBusinessModel.findById.mockReturnThis();
-      mockBusinessModel.exec.mockResolvedValue({ name: 'My Business' });
+      mockBusinessModel.exec.mockResolvedValue({ name: "My Business" });
 
       const result = await service.createDraftInvoice(
         businessId,
         databaseName,
         dto as CreateInvoiceDto,
-        userId
+        userId,
       );
 
       expect(mockInvoiceModel.create).toHaveBeenCalled();
       expect(result.status).toBe(InvoiceStatus.DRAFT);
-      expect(mockConnection.db.collection).toHaveBeenCalledWith('invoices');
+      expect(mockConnection.db.collection).toHaveBeenCalledWith("invoices");
     });
 
-    it('should rollback if product reservation fails', async () => {
+    it("should rollback if product reservation fails", async () => {
       const dto: Partial<CreateInvoiceDto> = {
         recipient: {
           type: InvoiceRecipientType.EXTERNAL,
-          email: 'test@example.com',
+          email: "test@example.com",
         },
         lineItems: [
           {
-            productId: 'prod1',
-            productName: 'Product 1',
+            productId: "prod1",
+            productName: "Product 1",
             quantity: 100,
             unitPrice: 10,
           },
@@ -227,7 +227,7 @@ describe('InvoiceIssuanceService', () => {
 
       mockProductsCollection.findOne.mockResolvedValue({
         _id: new ObjectId(),
-        name: 'P1',
+        name: "P1",
         quantity: 10,
       });
       mockProductsCollection.updateOne.mockResolvedValue({ modifiedCount: 0 });
@@ -237,14 +237,14 @@ describe('InvoiceIssuanceService', () => {
           businessId,
           databaseName,
           dto as CreateInvoiceDto,
-          userId
-        )
+          userId,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('getIssuerInvoices', () => {
-    it('should return paginated invoices', async () => {
+  describe("getIssuerInvoices", () => {
+    it("should return paginated invoices", async () => {
       const mockInvoices = [createMockInvoice()];
       mockInvoiceModel.countDocuments
         .mockResolvedValueOnce(10)
@@ -256,7 +256,7 @@ describe('InvoiceIssuanceService', () => {
         businessId,
         databaseName,
         1,
-        10
+        10,
       );
 
       expect(result.total).toBe(10);
@@ -265,8 +265,8 @@ describe('InvoiceIssuanceService', () => {
     });
   });
 
-  describe('transitionInvoiceState', () => {
-    it('should transition DRAFT to ISSUED and send notification', async () => {
+  describe("transitionInvoiceState", () => {
+    it("should transition DRAFT to ISSUED and send notification", async () => {
       const invoiceId = new Types.ObjectId().toString();
       const mockInvoice = createMockInvoice({
         _id: new Types.ObjectId(invoiceId),
@@ -276,14 +276,14 @@ describe('InvoiceIssuanceService', () => {
       mockInvoiceModel.findById.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
       mockBusinessModel.findById.mockReturnThis();
-      mockBusinessModel.exec.mockResolvedValue({ name: 'Biz' });
+      mockBusinessModel.exec.mockResolvedValue({ name: "Biz" });
 
       await service.transitionInvoiceState(
         invoiceId,
         businessId,
         databaseName,
         { newStatus: InvoiceStatus.ISSUED },
-        userId
+        userId,
       );
 
       expect(mockInvoice.status).toBe(InvoiceStatus.ISSUED);
@@ -291,7 +291,7 @@ describe('InvoiceIssuanceService', () => {
       expect(mockInvoiceReceiptModel.create).toHaveBeenCalled();
     });
 
-    it('should throw error for invalid transition', async () => {
+    it("should throw error for invalid transition", async () => {
       const invoiceId = new Types.ObjectId().toString();
       const mockInvoice = createMockInvoice({
         _id: new Types.ObjectId(invoiceId),
@@ -307,14 +307,14 @@ describe('InvoiceIssuanceService', () => {
           businessId,
           databaseName,
           { newStatus: InvoiceStatus.ISSUED },
-          userId
-        )
+          userId,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('updateDraftInvoice', () => {
-    it('should update a draft invoice', async () => {
+  describe("updateDraftInvoice", () => {
+    it("should update a draft invoice", async () => {
       const invoiceId = new Types.ObjectId().toString();
       const mockInvoice = createMockInvoice({
         _id: new Types.ObjectId(invoiceId),
@@ -324,22 +324,22 @@ describe('InvoiceIssuanceService', () => {
       mockInvoiceModel.findById.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
 
-      const dto = { description: 'Updated' };
+      const dto = { description: "Updated" };
       const result = await service.updateDraftInvoice(
         invoiceId,
         businessId,
         databaseName,
         dto,
-        userId
+        userId,
       );
 
       expect(mockInvoice.save).toHaveBeenCalled();
       expect(result).toBeDefined();
     });
 
-    it('should throw ForbiddenException if user does not own invoice', async () => {
+    it("should throw ForbiddenException if user does not own invoice", async () => {
       const invoiceId = new Types.ObjectId().toString();
-      const mockInvoice = createMockInvoice({ issuerBusinessId: 'other-biz' });
+      const mockInvoice = createMockInvoice({ issuerBusinessId: "other-biz" });
       mockInvoiceModel.findById.mockReturnThis();
       mockInvoiceModel.exec.mockResolvedValue(mockInvoice);
 
@@ -349,8 +349,8 @@ describe('InvoiceIssuanceService', () => {
           businessId,
           databaseName,
           {},
-          userId
-        )
+          userId,
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
   });

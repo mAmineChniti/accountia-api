@@ -1,8 +1,8 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
+import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { Document } from "mongoose";
+import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
 
-@Schema({ collection: 'business_invites', timestamps: true })
+@Schema({ collection: "business_invites", timestamps: true })
 export class BusinessInvite extends Document {
   @Prop({ required: true })
   businessId: string;
@@ -33,10 +33,10 @@ export class BusinessInvite extends Document {
 
   @Prop({
     type: String,
-    enum: ['pending', 'accepted', 'revoked'],
-    default: 'pending',
+    enum: ["pending", "accepted", "revoked"],
+    default: "pending",
   })
-  status: 'pending' | 'accepted' | 'revoked';
+  status: "pending" | "accepted" | "revoked";
 
   @Prop()
   acceptedAt?: Date;
@@ -58,5 +58,5 @@ BusinessInviteSchema.index({ invitedEmail: 1 });
 BusinessInviteSchema.index({ businessId: 1 });
 BusinessInviteSchema.index(
   { invitedEmail: 1, businessId: 1 },
-  { unique: true }
+  { unique: true },
 );

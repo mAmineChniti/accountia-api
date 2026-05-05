@@ -4,12 +4,12 @@ import {
   ForbiddenException,
   Injectable,
   SetMetadata,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { BusinessUserRole } from '@/business/enums/business-user-role.enum';
-import type { AuthenticatedRequest } from '@/auth/types/auth.types';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { BusinessUserRole } from "@/business/enums/business-user-role.enum";
+import type { AuthenticatedRequest } from "@/auth/types/auth.types";
 
-export const BUSINESS_ROLES_KEY = 'business_roles';
+export const BUSINESS_ROLES_KEY = "business_roles";
 
 /**
  * Decorator to specify allowed business-level roles for an endpoint.
@@ -31,7 +31,7 @@ export class BusinessRolesGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const allowedRoles = this.reflector.getAllAndOverride<BusinessUserRole[]>(
       BUSINESS_ROLES_KEY,
-      [context.getHandler(), context.getClass()]
+      [context.getHandler(), context.getClass()],
     );
 
     // If no roles are specified, allow access (guard is not being used)
@@ -43,18 +43,18 @@ export class BusinessRolesGuard implements CanActivate {
     const tenant = request.tenant;
 
     if (!tenant) {
-      throw new ForbiddenException('No tenant context found');
+      throw new ForbiddenException("No tenant context found");
     }
 
     // Platform admins always have access
-    if (tenant.membershipRole === 'platform-admin') {
+    if (tenant.membershipRole === "platform-admin") {
       return true;
     }
 
     // Check if user's business role is in allowed roles
     if (!allowedRoles.includes(tenant.membershipRole)) {
       throw new ForbiddenException(
-        `This action requires one of the following roles: ${allowedRoles.join(', ')}`
+        `This action requires one of the following roles: ${allowedRoles.join(", ")}`,
       );
     }
 

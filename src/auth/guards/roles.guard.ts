@@ -4,11 +4,11 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { ROLES_KEY } from '@/auth/decorators/roles.decorator';
-import { Role } from '@/auth/enums/role.enum';
-import { AuthenticatedRequest } from '@/auth/types/auth.types';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { ROLES_KEY } from "@/auth/decorators/roles.decorator";
+import { Role } from "@/auth/enums/role.enum";
+import { AuthenticatedRequest } from "@/auth/types/auth.types";
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -28,12 +28,12 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
 
     if (!user) {
-      throw new UnauthorizedException('No authenticated user found');
+      throw new UnauthorizedException("No authenticated user found");
     }
 
     const hasRole = requiredRoles.includes(user.role);
     if (!hasRole) {
-      throw new ForbiddenException('Insufficient permissions');
+      throw new ForbiddenException("Insufficient permissions");
     }
 
     return true;

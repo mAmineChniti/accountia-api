@@ -1,26 +1,27 @@
-import { Controller, Get, Res } from '@nestjs/common';
-import type { Response } from 'express';
-import * as client from 'prom-client';
+import { Controller, Get, Res } from "@nestjs/common";
+import type { Response } from "express";
+import * as promClient from "prom-client";
 
-import { ApiTags, ApiOkResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOkResponse } from "@nestjs/swagger";
 
-@ApiTags('metrics')
-@Controller('metrics')
+let defaultMetricsRegistered = false;
+
+@ApiTags("metrics")
+@Controller("metrics")
 export class MetricsController {
   constructor() {
-    // Collecte les métriques par défaut (CPU, Mémoire, etc.)
-    if (
-      client.register.getSingleMetric('process_cpu_seconds_total') === undefined
-    ) {
-      client.collectDefaultMetrics();
+    // Collect the full default metrics set once for the shared registry.
+    if (!defaultMetricsRegistered) {
+      promClient.collectDefaultMetrics();
+      defaultMetricsRegistered = true;
     }
   }
 
   @Get()
-  @ApiOkResponse({ type: String, description: 'Prometheus metrics' })
+  @ApiOkResponse({ type: String, description: "Prometheus metrics" })
   async getMetrics(@Res() res: Response) {
-    res.set('Content-Type', client.register.contentType);
-    const metrics = await client.register.metrics();
+    res.set("Content-Type", promClient.register.contentType);
+    const metrics = await promClient.register.metrics();
     res.end(metrics);
   }
 }

@@ -1,23 +1,23 @@
-import { Test, type TestingModule } from '@nestjs/testing';
-import { getModelToken, getConnectionToken } from '@nestjs/mongoose';
-import { BusinessService } from '../src/business/business.service';
-import { Business } from '../src/business/schemas/business.schema';
-import { BusinessUser } from '../src/business/schemas/business-user.schema';
-import { BusinessInvite } from '../src/business/schemas/business-invite.schema';
-import { User } from '../src/users/schemas/user.schema';
-import { BusinessApplication } from '../src/business/schemas/business-application.schema';
-import { EmailService } from '../src/email/email.service';
-import { TenantConnectionService } from '../src/common/tenant/tenant-connection.service';
-import { AuditEmitter } from '../src/audit/audit.emitter';
-import { NotificationsService } from '../src/notifications/notifications.service';
-import { ConfigService } from '@nestjs/config';
-import { CacheService } from '../src/redis/cache.service';
-import { TensorflowPredictionService } from '../src/business/services/tensorflow-prediction.service';
-import { Role } from '../src/auth/enums/role.enum';
-import { Types } from 'mongoose';
-import { NotFoundException } from '@nestjs/common';
+import { Test, type TestingModule } from "@nestjs/testing";
+import { getModelToken, getConnectionToken } from "@nestjs/mongoose";
+import { BusinessService } from "../src/business/business.service";
+import { Business } from "../src/business/schemas/business.schema";
+import { BusinessUser } from "../src/business/schemas/business-user.schema";
+import { BusinessInvite } from "../src/business/schemas/business-invite.schema";
+import { User } from "../src/users/schemas/user.schema";
+import { BusinessApplication } from "../src/business/schemas/business-application.schema";
+import { EmailService } from "../src/email/email.service";
+import { TenantConnectionService } from "../src/common/tenant/tenant-connection.service";
+import { AuditEmitter } from "../src/audit/audit.emitter";
+import { NotificationsService } from "../src/notifications/notifications.service";
+import { ConfigService } from "@nestjs/config";
+import { CacheService } from "../src/redis/cache.service";
+import { TensorflowPredictionService } from "../src/business/services/tensorflow-prediction.service";
+import { Role } from "../src/auth/enums/role.enum";
+import { Types } from "mongoose";
+import { NotFoundException } from "@nestjs/common";
 
-describe('BusinessService (Statistics)', () => {
+describe("BusinessService (Statistics)", () => {
   let service: BusinessService;
   let mockBusinessModel: { findById: jest.Mock };
   let mockCacheService: { get: jest.Mock; set: jest.Mock };
@@ -26,7 +26,7 @@ describe('BusinessService (Statistics)', () => {
 
   const businessId = new Types.ObjectId().toString();
   const userId = new Types.ObjectId().toString();
-  const databaseName = 'tenant_business_1';
+  const databaseName = "tenant_business_1";
 
   beforeEach(async () => {
     mockBusinessModel = {
@@ -41,11 +41,11 @@ describe('BusinessService (Statistics)', () => {
     mockTensorflowService = {
       forecastBusinessMetrics: jest.fn().mockResolvedValue({
         revenue: {
-          historical: [{ date: '2024-01-01', value: 1000 }],
+          historical: [{ date: "2024-01-01", value: 1000 }],
           forecast: [],
         },
         cogs: {
-          historical: [{ date: '2024-01-01', value: 500 }],
+          historical: [{ date: "2024-01-01", value: 500 }],
           forecast: [],
         },
         salesVolume: { historical: [], forecast: [] },
@@ -77,7 +77,7 @@ describe('BusinessService (Statistics)', () => {
           useValue: {
             findOne: jest
               .fn()
-              .mockResolvedValue({ userId, businessId, role: 'OWNER' }),
+              .mockResolvedValue({ userId, businessId, role: "OWNER" }),
           },
         },
         {
@@ -89,7 +89,7 @@ describe('BusinessService (Statistics)', () => {
           useValue: {
             findOne: jest
               .fn()
-              .mockResolvedValue({ _id: userId, email: 'owner@test.com' }),
+              .mockResolvedValue({ _id: userId, email: "owner@test.com" }),
           },
         },
         {
@@ -119,30 +119,30 @@ describe('BusinessService (Statistics)', () => {
     service = module.get<BusinessService>(BusinessService);
   });
 
-  it('should return statistics from cache if available', async () => {
+  it("should return statistics from cache if available", async () => {
     const mockCachedData = { businessId, kpis: { totalRevenue: 100 } };
     mockCacheService.get.mockResolvedValue(mockCachedData);
 
     const result = await service.getBusinessStatistics(
       businessId,
       userId,
-      Role.CLIENT
+      Role.CLIENT,
     );
 
     expect(result.kpis.totalRevenue).toBe(100);
     expect(mockBusinessModel.findById).not.toHaveBeenCalled();
     expect(mockConnection.useDb).not.toHaveBeenCalled();
     expect(
-      mockTensorflowService.forecastBusinessMetrics
+      mockTensorflowService.forecastBusinessMetrics,
     ).not.toHaveBeenCalled();
     // Ensure we returned a clone of cached data, not the same reference
     expect(result).not.toBe(mockCachedData);
     expect(mockCacheService.get).toHaveBeenCalledWith(
-      `business:statistics:${businessId}:90`
+      `business:statistics:${businessId}:90`,
     );
   });
 
-  it('should calculate statistics and cache them if not cached', async () => {
+  it("should calculate statistics and cache them if not cached", async () => {
     mockBusinessModel.findById.mockResolvedValue({
       _id: businessId,
       databaseName,
@@ -159,10 +159,10 @@ describe('BusinessService (Statistics)', () => {
       },
     ];
 
-    const mockLineItemAgg = [{ productId: 'p1', quantity: 10, revenue: 1000 }];
+    const mockLineItemAgg = [{ productId: "p1", quantity: 10, revenue: 1000 }];
 
     const mockProducts = [
-      { _id: 'p1', name: 'Product 1', unitPrice: 100, cost: 50, quantity: 20 },
+      { _id: "p1", name: "Product 1", unitPrice: 100, cost: 50, quantity: 20 },
     ];
 
     const mockCollection = {
@@ -184,7 +184,7 @@ describe('BusinessService (Statistics)', () => {
     const result = await service.getBusinessStatistics(
       businessId,
       userId,
-      Role.CLIENT
+      Role.CLIENT,
     );
 
     expect(result.businessId).toBe(businessId);
@@ -194,15 +194,15 @@ describe('BusinessService (Statistics)', () => {
     expect(mockCacheService.set).toHaveBeenCalledWith(
       `business:statistics:${businessId}:90`,
       expect.any(Object),
-      300
+      300,
     );
   });
 
-  it('should throw NotFoundException if business not found', async () => {
+  it("should throw NotFoundException if business not found", async () => {
     mockBusinessModel.findById.mockResolvedValue(undefined as never);
 
     await expect(
-      service.getBusinessStatistics(businessId, userId, Role.CLIENT)
+      service.getBusinessStatistics(businessId, userId, Role.CLIENT),
     ).rejects.toThrow(NotFoundException);
     expect(mockBusinessModel.findById).toHaveBeenCalledWith(businessId);
   });

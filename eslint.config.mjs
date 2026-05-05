@@ -1,10 +1,10 @@
-import tseslint from 'typescript-eslint';
-import parser from '@typescript-eslint/parser';
-import eslintNestJs from '@darraghor/eslint-plugin-nestjs-typed';
-import globals from 'globals';
-import { defineConfig, globalIgnores } from 'eslint/config';
-import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
-import unicornPlugin from 'eslint-plugin-unicorn';
+import tseslint from "typescript-eslint";
+import parser from "@typescript-eslint/parser";
+import eslintNestJs from "@darraghor/eslint-plugin-nestjs-typed";
+import globals from "globals";
+import { defineConfig, globalIgnores } from "eslint/config";
+import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended";
+import unicornPlugin from "eslint-plugin-unicorn";
 
 export default defineConfig(
   tseslint.configs.recommendedTypeChecked,
@@ -12,43 +12,37 @@ export default defineConfig(
   eslintPluginPrettierRecommended,
   unicornPlugin.configs.all,
   [
-    globalIgnores([
-      'dist/**',
-      'node_modules/**',
-      'coverage/**',
-      'venv/**',
-      'check-ids.js',
-    ]),
+    globalIgnores(["dist/**", "node_modules/**", "coverage/**"]),
     {
-      files: ['eslint.config.mjs', '*.config.mjs', '*.config.js'],
+      files: ["eslint.config.mjs", "*.config.mjs", "*.config.js"],
       languageOptions: {
-        parser: 'espree',
+        parser: "espree",
         parserOptions: {
-          ecmaVersion: 'latest',
-          sourceType: 'module',
+          ecmaVersion: "latest",
+          sourceType: "module",
         },
       },
     },
     {
-      files: ['**/*.{ts,js,mjs,cjs}'],
+      files: ["**/*.{ts,js,mjs,cjs}"],
       rules: {
-        '@typescript-eslint/array-type': 'off',
-        '@typescript-eslint/consistent-type-definitions': 'off',
-        '@typescript-eslint/no-deprecated': 'warn',
-        '@typescript-eslint/consistent-type-imports': [
-          'warn',
-          { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+        "@typescript-eslint/array-type": "off",
+        "@typescript-eslint/consistent-type-definitions": "off",
+        "@typescript-eslint/no-deprecated": "warn",
+        "@typescript-eslint/consistent-type-imports": [
+          "warn",
+          { prefer: "type-imports", fixStyle: "inline-type-imports" },
         ],
-        '@typescript-eslint/no-unused-vars': [
-          'warn',
-          { argsIgnorePattern: '^_' },
+        "@typescript-eslint/no-unused-vars": [
+          "warn",
+          { argsIgnorePattern: "^_" },
         ],
-        '@typescript-eslint/no-misused-promises': [
-          'error',
+        "@typescript-eslint/no-misused-promises": [
+          "error",
           { checksVoidReturn: { attributes: false } },
         ],
-        'unicorn/no-keyword-prefix': 'off',
-        'unicorn/prevent-abbreviations': 'off',
+        "unicorn/no-keyword-prefix": "off",
+        "unicorn/prevent-abbreviations": "off",
       },
     },
     {
@@ -61,8 +55,8 @@ export default defineConfig(
           ...globals.jest,
         },
         parser,
-        ecmaVersion: 'latest',
-        sourceType: 'module',
+        ecmaVersion: "latest",
+        sourceType: "module",
         parserOptions: {
           projectService: true,
           tsconfigRootDir: import.meta.dirname,
@@ -70,5 +64,5 @@ export default defineConfig(
       },
     },
     eslintNestJs.configs.flatRecommended,
-  ]
+  ],
 );
