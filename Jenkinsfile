@@ -13,7 +13,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo 'Installation des dépendances...'
-                sh 'npm ci --legacy-peer-deps'
+                sh 'npm i --legacy-peer-deps'
             }
         }
 
