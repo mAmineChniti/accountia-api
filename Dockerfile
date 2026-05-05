@@ -1,28 +1,51 @@
-FROM node:20-bookworm
+FROM node:20-bookworm-slim AS base
 
-# Création du dossier de travail
 WORKDIR /usr/src/app
 
-# Installation des dépendances système nécessaires pour tes librairies (pdf2pic, sharp, etc.)
-RUN apt-get update && apt-get install -y \
+ENV npm_config_fund=false \
+    npm_config_update_notifier=false
+
+FROM base AS deps
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    g++ \
+    make \
     ghostscript \
     graphicsmagick \
     && rm -rf /var/lib/apt/lists/*
 
-# Copie des fichiers de configuration NPM
 COPY package*.json ./
 
-# Installation des dépendances Node
-RUN npm install --legacy-peer-deps
+RUN npm i --legacy-peer-deps
 
-# Copie du reste du code source
+FROM base AS build
+
+COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY . .
 
-# Compilation du projet NestJS (génère le dossier /dist)
-RUN npm run build
+RUN npm run build \
+    && npm cache clean --force
 
-# Exposition du port utilisé par l'API
+FROM node:20-bookworm-slim AS runtime
+
+WORKDIR /usr/src/app
+
+ENV NODE_ENV=production \
+    PORT=4789 \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ghostscript \
+    graphicsmagick \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build --chown=node:node /usr/src/app/node_modules ./node_modules
+COPY --from=build --chown=node:node /usr/src/app/dist ./dist
+
+USER node
+
 EXPOSE 4789
 
-# Commande de démarrage
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/main.js"]

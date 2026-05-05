@@ -6,81 +6,73 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE = "accountia-api-app"
-        SCANNER_HOME = tool 'SonarScanner'
-        SOURCE_DIR = "/var/jenkins_home/workspace/accountia-api"
-        BUILD_DIR = "/tmp/accountia_api_build"
+        DOCKER_IMAGE = 'mAmineChniti/accountia-api'
+        IMAGE_TAG = '1.0'
+        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-credentials'
         NODE_OPTIONS = "--max-old-space-size=4096"
+        CI = "true"
     }
 
     stages {
-        stage('Clean & Copy') {
-            steps {
-                echo 'Préparation du dossier de build...'
-                sh "rm -rf ${BUILD_DIR} && mkdir -p ${BUILD_DIR}"
-                // Copie instantanée en ignorant les gros dossiers (node_modules, dist, .git)
-                sh "cd ${SOURCE_DIR} && tar --exclude=node_modules --exclude=dist --exclude=.git --exclude=coverage --exclude=jenkins_home -cf - . | tar -xf - -C ${BUILD_DIR}"
-            }
-        }
-
         stage('Install Dependencies') {
             steps {
-                dir("${BUILD_DIR}") {
-                    echo 'Installation des dépendances Linux...'
-                    sh 'npm install --legacy-peer-deps'
-                }
+                echo 'Installation des dépendances...'
+                sh 'npm ci --legacy-peer-deps'
             }
         }
 
         stage('Lint Check') {
             steps {
-                dir("${BUILD_DIR}") {
-                    echo 'Vérification du style de code (ESLint)...'
-                    sh 'npm run lint:check || true'
-                }
+                echo 'Vérification ESLint...'
+                sh 'npm run lint:check'
+            }
+        }
+
+        stage('Format Check') {
+            steps {
+                echo 'Vérification du formatage Prettier...'
+                sh 'npm run format:check'
             }
         }
 
         stage('Unit Tests') {
             steps {
-                dir("${BUILD_DIR}") {
-                    echo 'Exécution des tests unitaires (Jest)...'
-                    sh 'npm run test:cov || true'
-                }
+                echo 'Exécution des tests unitaires...'
+                sh 'npm run test:cov -- --runInBand'
+            }
+        }
+
+        stage('E2E Tests') {
+            steps {
+                echo 'Exécution des tests end-to-end...'
+                sh 'npm run test:e2e -- --runInBand'
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                dir("${BUILD_DIR}") {
-                    echo 'Analyse de la qualité du code (SonarQube)...'
-                    withSonarQubeEnv('SonarQube') {
-                        sh "${SCANNER_HOME}/bin/sonar-scanner"
+                sh 'sonar-scanner'
+            }
+        }
+
+        stage('Build Project') {
+            steps {
+                echo 'Compilation du projet...'
+                sh 'npm run build'
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    sh 'docker build -t "$DOCKER_IMAGE:$IMAGE_TAG" -t "$DOCKER_IMAGE:latest" .'
+                    withCredentials([usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_PASSWORD')]) {
+                        sh '''
+                            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+                            docker push "$DOCKER_IMAGE:$IMAGE_TAG"
+                            docker push "$DOCKER_IMAGE:latest"
+                        '''
                     }
-                }
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                dir("${BUILD_DIR}") {
-                    echo 'Construction de l\'image Docker...'
-                    sh "docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} ."
-                    sh "docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest"
-                }
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                dir("${SOURCE_DIR}") {
-                    echo 'Déploiement...'
-                    // Arrête et supprime l'ancien conteneur s'il existe
-                    sh "docker stop accountia-api-app || true"
-                    sh "docker rm accountia-api-app || true"
-                    // Lance le nouveau conteneur sur le port 4789
-                    // N'oublie pas de passer les variables d'environnement nécessaires en production (ex: --env-file .env)
-                    sh "docker run -d --name accountia-api-app -p 4789:4789 accountia-api-app:latest"
                 }
             }
         }
@@ -88,10 +80,14 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline Accountia API terminé avec succès ! ✅'
+            echo 'Pipeline CI/CD Accountia API terminé avec succès !'
         }
         failure {
-            echo 'Le pipeline a échoué. Vérifie les logs ci-dessus. ❌'
+            echo 'Le pipeline a échoué. Vérifie les logs ci-dessus.'
+        }
+
+        cleanup {
+            sh 'docker logout || true'
         }
     }
 }

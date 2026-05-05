@@ -24,6 +24,7 @@ import { PurchaseOrdersModule } from '@/purchase-orders/purchase-orders.module';
 import { RecurringInvoicesModule } from '@/recurring-invoices/recurring-invoices.module';
 import { ReportsModule } from '@/reports/reports.module';
 import { VendorsModule } from '@/vendors/vendors.module';
+import { AlertsController } from './alerts.controller';
 
 @Module({
   imports: [
@@ -89,7 +90,7 @@ import { VendorsModule } from '@/vendors/vendors.module';
     ReportsModule,
     VendorsModule,
   ],
-  controllers: [MetricsController],
+  controllers: [MetricsController, AlertsController],
   providers: [],
 })
 export class AppModule {}
