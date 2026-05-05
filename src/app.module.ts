@@ -32,14 +32,18 @@ import { AlertsController } from './alerts.controller';
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
-        MONGO_URI: Joi.string().uri().required(),
-        JWT_SECRET: Joi.string().required(),
-        GMAIL_USERNAME: Joi.string().required(),
-        GMAIL_APP_PASSWORD: Joi.string().required(),
-        SMTP_HOST: Joi.string().required(),
-        SMTP_PORT: Joi.number().required(),
-        FRONTEND_URL: Joi.string().uri().required(),
-        GROQ_API_KEY: Joi.string().required(),
+        MONGO_URI: Joi.string()
+          .uri()
+          .default('mongodb://localhost:27017/accountia'),
+        JWT_SECRET: Joi.string().default(
+          'default-jwt-secret-change-in-production'
+        ),
+        GMAIL_USERNAME: Joi.string().default('noreply@accountia.com'),
+        GMAIL_APP_PASSWORD: Joi.string().default('default-app-password'),
+        SMTP_HOST: Joi.string().default('smtp.gmail.com'),
+        SMTP_PORT: Joi.number().default(587),
+        FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
+        GROQ_API_KEY: Joi.string().default(''),
         GROQ_MAX_COMPLETION_TOKENS: Joi.number()
           .integer()
           .min(64)
@@ -50,11 +54,13 @@ import { AlertsController } from './alerts.controller';
           .min(1000)
           .max(120_000)
           .default(30_000),
-        STRIPE_SECRET_KEY: Joi.string().required(),
-        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
-        STRIPE_FALLBACK_CURRENCY: Joi.string().required(),
-        STRIPE_FX_RATES: Joi.string().required(),
-        MOCK_INVOICE_PAYMENTS: Joi.boolean().required(),
+        STRIPE_SECRET_KEY: Joi.string().default('sk_test_default_key'),
+        STRIPE_WEBHOOK_SECRET: Joi.string().default(
+          'whsec_default_webhook_secret'
+        ),
+        STRIPE_FALLBACK_CURRENCY: Joi.string().default('USD'),
+        STRIPE_FX_RATES: Joi.string().default('USD,EUR,GBP'),
+        MOCK_INVOICE_PAYMENTS: Joi.boolean().default(true),
         REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
         REDIS_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
         // AI Accountant Service (optional - will warn if not configured)
