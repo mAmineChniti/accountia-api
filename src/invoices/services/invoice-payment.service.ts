@@ -345,6 +345,11 @@ export class InvoicePaymentService {
       this.logger.debug(
         `Creating Stripe checkout session for currency: ${currency}, amount: ${amount}`
       );
+      const trimmedDescription = invoice.description?.trim();
+      const defaultDescription = `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`;
+      const paymentDescription =
+        [trimmedDescription].find((value) => value?.length) ??
+        defaultDescription;
       return stripe.checkout.sessions.create(
         {
           ui_mode: 'embedded_page' as never,
@@ -367,9 +372,7 @@ export class InvoicePaymentService {
                 unit_amount: Math.round(amount * 100),
                 product_data: {
                   name: `Invoice ${invoice.invoiceNumber}`,
-                  description:
-                    invoice.description?.trim() ??
-                    `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`,
+                  description: paymentDescription,
                 },
               },
             },
@@ -394,16 +397,16 @@ export class InvoicePaymentService {
         `Stripe session created in ${Date.now() - startTime}ms`
       );
     } catch (error) {
+      const errAny = error as unknown as { type?: string; code?: string };
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const message = errorMessage.toLowerCase();
       const isInvalidCurrency = message.includes('invalid currency');
-      const isTimeout =
-        message.includes('timeout') || message.includes('etimedout');
+      const isTimeout = errAny?.code === 'ETIMEDOUT';
 
       if (isTimeout) {
         this.logger.error(
-          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage}`
+          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage} (type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'})`
         );
         throw new ServiceUnavailableException(
           'Payment service is currently slow. Please try again in a few moments.'
@@ -412,7 +415,7 @@ export class InvoicePaymentService {
 
       if (!isInvalidCurrency) {
         this.logger.error(
-          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage}`
+          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage} (type=${errAny?.type ?? 'unknown'}, code=${errAny?.code ?? 'unknown'})`
         );
         throw error;
       }
