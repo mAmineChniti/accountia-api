@@ -47,6 +47,9 @@ export class InvoicePaymentService {
   private readonly fallbackFxRates: Map<string, number>;
   private readonly mockInvoicePaymentsEnabled: boolean;
   private readonly paymentMethodConfigurationId?: string;
+  // Cache for recently updated Stripe account profiles to avoid redundant API calls
+  private readonly recentlyUpdatedStripeAccounts = new Map<string, number>();
+  private readonly STRIPE_PROFILE_UPDATE_CACHE_TTL = 60_000; // 1 minute
 
   constructor(
     private readonly configService: ConfigService,
@@ -213,12 +216,18 @@ export class InvoicePaymentService {
     user: UserPayload,
     _options?: CreateInvoiceCheckoutSessionDto
   ): Promise<InvoiceCheckoutSessionResponseDto> {
+    const startTime = Date.now();
+    this.logger.log(
+      `Starting checkout session creation for receipt ${receiptId}, user ${user.id}`
+    );
+
     const stripe = this.ensureStripeEnabled();
 
     const receipt = await this.invoiceReceiptModel.findById(receiptId).exec();
     if (!receipt) {
       throw new NotFoundException('Invoice receipt not found');
     }
+    this.logger.debug(`Receipt loaded in ${Date.now() - startTime}ms`);
 
     this.assertRecipientCanPay(receipt, user);
 
@@ -226,6 +235,7 @@ export class InvoicePaymentService {
       receipt.invoiceId.toString(),
       receipt.issuerTenantDatabaseName
     );
+    this.logger.debug(`Invoice loaded in ${Date.now() - startTime}ms`);
 
     if (!this.isPayableStatus(invoice.status)) {
       throw new BadRequestException(
@@ -248,6 +258,8 @@ export class InvoicePaymentService {
     if (!business) {
       throw new NotFoundException('Business not found');
     }
+    this.logger.debug(`Business loaded in ${Date.now() - startTime}ms`);
+
     // Use the already-loaded business to get connect ID (avoid duplicate DB lookup)
     const connectedAccountId = this.resolveStripeAccountFromBusiness(business);
     if (!connectedAccountId) {
@@ -284,17 +296,55 @@ export class InvoicePaymentService {
 
       if (connectedAccountId) {
         try {
-          // Ensure the business profile name is set to avoid checkout errors
-          await stripe.accounts.update(connectedAccountId, {
-            business_profile: { name: business.name ?? 'Accountia Business' },
-          });
+          // Check if we recently updated this account profile to avoid redundant calls
+          const lastUpdateTime =
+            this.recentlyUpdatedStripeAccounts.get(connectedAccountId);
+          const now = Date.now();
+
+          if (
+            !lastUpdateTime ||
+            now - lastUpdateTime > this.STRIPE_PROFILE_UPDATE_CACHE_TTL
+          ) {
+            // Ensure the business profile name is set to avoid checkout errors
+            this.logger.debug(
+              `Updating Stripe profile for account ${connectedAccountId}`
+            );
+            await stripe.accounts.update(
+              connectedAccountId,
+              {
+                business_profile: {
+                  name: business.name ?? 'Accountia Business',
+                },
+              },
+              { timeout: 10_000 } // 10 second timeout for profile update
+            );
+            // Update cache
+            this.recentlyUpdatedStripeAccounts.set(connectedAccountId, now);
+            // Clean up old cache entries
+            if (this.recentlyUpdatedStripeAccounts.size > 100) {
+              const oldestEntry = [
+                ...this.recentlyUpdatedStripeAccounts.entries(),
+              ].toSorted((a, b) => a[1] - b[1])[0];
+              if (oldestEntry) {
+                this.recentlyUpdatedStripeAccounts.delete(oldestEntry[0]);
+              }
+            }
+          } else {
+            this.logger.debug(
+              `Skipping profile update for account ${connectedAccountId} (cached)`
+            );
+          }
         } catch (error) {
           this.logger.warn(
             `Could not auto-fix business name for account ${connectedAccountId}: ${error instanceof Error ? error.message : String(error)}`
           );
+          // Non-blocking: continue with checkout session creation
         }
       }
 
+      this.logger.debug(
+        `Creating Stripe checkout session for currency: ${currency}, amount: ${amount}`
+      );
       return stripe.checkout.sessions.create(
         {
           ui_mode: 'embedded_page' as never,
@@ -318,31 +368,52 @@ export class InvoicePaymentService {
                 product_data: {
                   name: `Invoice ${invoice.invoiceNumber}`,
                   description:
-                    invoice.description ??
+                    invoice.description?.trim() ??
                     `Payment for invoice ${invoice.invoiceNumber} issued by ${receipt.issuerBusinessName}`,
                 },
               },
             },
           ],
         },
-        requestOptions
+        { ...requestOptions, timeout: 15_000 } // 15 second timeout for session creation
       );
     };
 
     const invoiceCurrency = invoice.currency.trim().toLowerCase();
     let session;
     try {
+      this.logger.debug(
+        `Attempting to create Stripe session with currency: ${invoiceCurrency}`
+      );
       session = await createCheckoutSession(
         invoiceCurrency,
         remainingAmount,
         baseMetadata
       );
+      this.logger.debug(
+        `Stripe session created in ${Date.now() - startTime}ms`
+      );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message.toLowerCase() : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const message = errorMessage.toLowerCase();
       const isInvalidCurrency = message.includes('invalid currency');
+      const isTimeout =
+        message.includes('timeout') || message.includes('etimedout');
+
+      if (isTimeout) {
+        this.logger.error(
+          `Stripe API timeout after ${Date.now() - startTime}ms: ${errorMessage}`
+        );
+        throw new ServiceUnavailableException(
+          'Payment service is currently slow. Please try again in a few moments.'
+        );
+      }
 
       if (!isInvalidCurrency) {
+        this.logger.error(
+          `Stripe API error after ${Date.now() - startTime}ms: ${errorMessage}`
+        );
         throw error;
       }
 
@@ -370,6 +441,9 @@ export class InvoicePaymentService {
           convertedAmount: conversion.convertedAmount.toFixed(2),
         }
       );
+      this.logger.debug(
+        `Stripe fallback session created in ${Date.now() - startTime}ms`
+      );
     }
 
     const sessionObj = session as StripeCheckoutSession;
@@ -390,6 +464,8 @@ export class InvoicePaymentService {
         );
       }
 
+      const totalTime = Date.now() - startTime;
+      this.logger.log(`Checkout session completed in ${totalTime}ms`);
       return {
         clientSecret,
         sessionId: sessionObj.id,
@@ -397,6 +473,11 @@ export class InvoicePaymentService {
         receiptId,
       };
     }
+
+    const totalTime = Date.now() - startTime;
+    this.logger.log(
+      `Checkout session completed in ${totalTime}ms (URL: ${sessionObj.url.slice(0, 50)}...)`
+    );
 
     return {
       clientSecret: sessionObj.client_secret! ?? '',

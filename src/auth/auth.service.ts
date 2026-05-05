@@ -1834,7 +1834,7 @@ export class AuthService {
       .replaceAll(/[^\d_a-z-]/g, '-')
       .replaceAll(/-+/g, '-')
       .slice(0, 20)
-      .replaceAll(/^-+|-+$/g, '');
+      .replaceAll(/(?:^-+)|(?:-+$)/g, '');
 
     const root =
       sanitized.length >= 5 ? sanitized : `user-${sanitized}`.slice(0, 20);

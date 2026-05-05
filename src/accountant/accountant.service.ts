@@ -127,7 +127,7 @@ export class AccountantService {
     this.ensureEnabled();
 
     // debug logging removed
-
+    console.log(`[DEBUG] createAccountingJob: payload=${JSON.stringify(dto)}`);
     try {
       const response = await this.httpClient.post('api/accounting/jobs', {
         json: dto,
@@ -149,7 +149,9 @@ export class AccountantService {
     this.ensureEnabled();
 
     // debug logging removed
-
+    console.log(
+      `[DEBUG] getJobStatus: taskId=${taskId}, businessId=${businessId}`
+    );
     try {
       const response = await this.httpClient.get(
         `api/accounting/jobs/${encodeURIComponent(taskId)}`,
@@ -176,10 +178,12 @@ export class AccountantService {
     this.ensureEnabled();
 
     // debug logging removed
-
+    console.log(
+      `[DEBUG] getJobResults: taskId=${taskId}, businessId=${businessId}`
+    );
     try {
       const response = await this.httpClient.get(
-        `api/accounting/jobs/${encodeURIComponent(taskId)}/results`,
+        `api/accounting/jobs/${encodeURIComponent(taskId)}`,
         {
           searchParams: {
             businessId: businessId,

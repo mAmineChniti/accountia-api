@@ -14,6 +14,7 @@ import { ProductsModule } from '@/products/products.module';
 import { InvoicesModule } from '@/invoices/invoices.module';
 import { RedisModule } from '@/redis/redis.module';
 import { AccountantModule } from '@/accountant/accountant.module';
+import { MetricsController } from './metrics.controller';
 
 @Module({
   imports: [
@@ -70,7 +71,7 @@ import { AccountantModule } from '@/accountant/accountant.module';
     InvoicesModule,
     AccountantModule,
   ],
-  controllers: [],
+  controllers: [MetricsController],
   providers: [],
 })
 export class AppModule {}
