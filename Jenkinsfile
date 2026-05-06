@@ -105,6 +105,7 @@ pipeline {
 
         cleanup {
             archiveArtifacts artifacts: 'coverage/**,.scannerwork/report-task.txt', allowEmptyArchive: true
+            sh 'rm -rf sonar-scanner-* .scannerwork/ || true'
             sh 'docker logout || true'
         }
     }
