@@ -65,7 +65,9 @@ import { AlertsController } from './alerts.controller';
         REDIS_TLS_REJECT_UNAUTHORIZED: Joi.boolean().default(false),
         // AI Accountant Service (optional - will warn if not configured)
         AI_ACCOUNTANT_URL: Joi.string().uri().default('http://localhost:8000'),
-        AI_ACCOUNTANT_API_KEY: Joi.string().allow('').default(''),
+        AI_ACCOUNTANT_API_KEY: Joi.string()
+          .allow('')
+          .default('whateverwhatever'),
       }),
     }),
 
