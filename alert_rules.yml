@@ -1,20 +1,32 @@
 groups:
   - name: accountia_api_alerts
     rules:
-      - alert: InstanceDown
-        expr: up == 0
+      - alert: AccountiaApiDown
+        expr: up{job="accountia-api"} == 0
         for: 1m
         labels:
           severity: critical
+          service: accountia-api
         annotations:
           summary: 'Accountia API is down'
           description: 'Prometheus cannot scrape the API metrics endpoint for more than one minute.'
 
-      - alert: HighProcessMemoryUsage
-        expr: process_resident_memory_bytes > 200000000
+      - alert: AccountiaApiHighMemory
+        expr: process_resident_memory_bytes{job="accountia-api"} > 200000000
         for: 5m
         labels:
           severity: warning
+          service: accountia-api
         annotations:
           summary: 'High memory usage on Accountia API'
           description: 'API process memory is above 200MB for more than 5 minutes.'
+
+      - alert: AccountiaApiHighCPU
+        expr: rate(process_cpu_seconds_total{job="accountia-api"}[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: accountia-api
+        annotations:
+          summary: 'High CPU usage on Accountia API'
+          description: 'API CPU usage is above 80% for more than 5 minutes.'
