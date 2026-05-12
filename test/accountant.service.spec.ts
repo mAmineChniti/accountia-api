@@ -1,5 +1,9 @@
 import { type ConfigService } from '@nestjs/config';
-import { ServiceUnavailableException, NotFoundException } from '@nestjs/common';
+import {
+  Logger,
+  ServiceUnavailableException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto/create-job.dto';
 
 // Shared mocked ky instance used by the service under test
@@ -26,7 +30,6 @@ jest.mock('ky', () => ({
   HTTPError: MockHTTPError,
 }));
 
-import { Logger } from '@nestjs/common';
 import { AccountantService } from '../src/accountant/accountant.service';
 
 describe('AccountantService', () => {
@@ -57,6 +60,10 @@ describe('AccountantService', () => {
     });
 
     svc = new AccountantService(configService as ConfigService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('createAccountingJob - returns upstream response on success', async () => {

@@ -392,7 +392,7 @@ Example response:
       throw new Error('AI returned empty response');
     }
 
-    logger.log(`AI RAW RESPONSE: ${content}`);
+    logger.debug(`AI response received (length: ${content.length})`);
 
     // Parse the JSON response safely
     const parsedUnknown = JSON.parse(content) as Record<string, unknown>;
@@ -402,7 +402,7 @@ Example response:
 
     // Ensure the type is set correctly based on what we requested
     parsedUnknown.type = options.documentType;
-    const parsed = parsedUnknown as ExtractionResult;
+    const parsed = parsedUnknown as unknown as ExtractionResult;
     logger.log(
       `Successfully extracted ${options.documentType} data using text-based AI`
     );

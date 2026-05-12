@@ -615,14 +615,22 @@ export class InvoiceImportService {
 
     // Build line items from extracted data
     const lineItems =
-      extracted.lineItems?.map((item, index) => ({
+      extracted.lineItems?.map((item, index) => {
         // Use product name as the ID so the issuance service can resolve it by name
-        productId: item.productName ?? `Item ${index + 1}`,
-        productName: item.productName ?? `Item ${index + 1}`,
-        quantity: item.quantity ?? 1,
-        unitPrice: item.unitPrice ?? 0,
-        description: item.description,
-      })) ?? [];
+        const normalizedName = item.productName?.trim();
+        const resolvedName =
+          normalizedName && normalizedName.length > 0
+            ? normalizedName
+            : `Item ${index + 1}`;
+
+        return {
+          productId: resolvedName,
+          productName: resolvedName,
+          quantity: item.quantity ?? 1,
+          unitPrice: item.unitPrice ?? 0,
+          description: item.description,
+        };
+      }) ?? [];
 
     if (lineItems.length === 0) {
       throw new BadRequestException(

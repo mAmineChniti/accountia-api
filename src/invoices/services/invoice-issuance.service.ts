@@ -289,19 +289,24 @@ export class InvoiceIssuanceService {
       })
       .toArray()) as Array<{ name: string; _id: ObjectId }>;
 
-    const partialMatch = allProducts
-      .filter((p) => {
-        const requestedLower = productIdOrName.toLowerCase();
-        const dbNameLower = p.name.toLowerCase();
-        return (
-          requestedLower.includes(dbNameLower) ||
-          dbNameLower.includes(requestedLower)
-        );
-      })
-      .toSorted((a, b) => b.name.length - a.name.length)[0];
+    const candidates = allProducts.filter((p) => {
+      const requestedLower = productIdOrName.toLowerCase();
+      const dbNameLower = p.name.toLowerCase();
+      return (
+        requestedLower.includes(dbNameLower) ||
+        dbNameLower.includes(requestedLower)
+      );
+    });
 
-    if (partialMatch) {
-      return partialMatch._id.toString();
+    if (candidates.length === 1) {
+      return candidates[0]._id.toString();
+    }
+
+    if (candidates.length > 1) {
+      throw new BadRequestException(
+        `Product "${productIdOrName}" matches multiple products. ` +
+          `Please use a more specific name or MongoDB ObjectId.`
+      );
     }
 
     throw new NotFoundException(
