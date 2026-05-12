@@ -1,4 +1,0 @@
-recipientType,invoiceNumber,issuedDate,dueDate,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,currency,description
-INV-2026-0900-900,PLATFORM_INDIVIDUAL,2026-05-01,2026-05-15,hibakhadraoui2003,"Hiba Khadraoui","Ordinateur Portable","Ordinateur Portable",1,2499.99,USD,"Achat matériel informatique"
-INV-2026-0900-700,PLATFORM_INDIVIDUAL,2026-05-02,2026-05-16,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Ecran 4K","Ecran 4K",2,499.00,USD,"Équipement bureau"
-

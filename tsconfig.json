@@ -25,5 +25,5 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
   },
-  "include": ["src", "test", "eslint.config.mjs", "scripts"]
+  "include": ["src", "test", "eslint.config.mjs"]
 }

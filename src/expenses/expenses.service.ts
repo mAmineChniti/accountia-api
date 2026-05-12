@@ -73,8 +73,7 @@ export class ExpensesService {
     const [total, expenses] = await Promise.all([
       model.countDocuments(conditions),
       model
-        // eslint-disable-next-line unicorn/no-array-callback-reference
-        .find(conditions)
+        .find(() => conditions)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
