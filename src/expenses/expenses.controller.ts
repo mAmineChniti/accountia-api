@@ -87,6 +87,11 @@ export class ExpensesController {
   }
 
   @Post()
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new expense' })
   @ApiCreatedResponse({ type: ExpenseResponseDto })
@@ -107,6 +112,11 @@ export class ExpensesController {
   }
 
   @Get()
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({ summary: 'List expenses' })
   @ApiOkResponse({ type: ExpenseListResponseDto })
   @ApiQuery({ name: 'businessId', required: true, type: String })

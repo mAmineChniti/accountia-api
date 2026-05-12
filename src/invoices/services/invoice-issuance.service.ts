@@ -275,14 +275,44 @@ export class InvoiceIssuanceService {
       $or: [{ businessId: businessObjectId }, { businessId }],
     });
 
-    if (!product) {
-      throw new NotFoundException(
-        `Product "${productIdOrName}" not found for this business. ` +
-          `Please use a valid product name or MongoDB ObjectId.`
+    if (product) {
+      return product._id.toString();
+    }
+
+    // Fallback: Try to find a product whose name is a SUBSTRING of the requested name
+    // (e.g. if requested is "Wireless Mouse - Blue" and we have "Wireless Mouse")
+    // OR vice versa: the requested name is a substring of the product name
+    // (e.g. if requested is "Souris" and we have "Souris Sans Fil")
+    const allProducts = (await productsCollection
+      .find({
+        $or: [{ businessId: businessObjectId }, { businessId }],
+      })
+      .toArray()) as Array<{ name: string; _id: ObjectId }>;
+
+    const candidates = allProducts.filter((p) => {
+      const requestedLower = productIdOrName.toLowerCase();
+      const dbNameLower = p.name.toLowerCase();
+      return (
+        requestedLower.includes(dbNameLower) ||
+        dbNameLower.includes(requestedLower)
+      );
+    });
+
+    if (candidates.length === 1) {
+      return candidates[0]._id.toString();
+    }
+
+    if (candidates.length > 1) {
+      throw new BadRequestException(
+        `Product "${productIdOrName}" matches multiple products. ` +
+          `Please use a more specific name or MongoDB ObjectId.`
       );
     }
 
-    return product._id.toString();
+    throw new NotFoundException(
+      `Product "${productIdOrName}" not found for this business. ` +
+        `Please use a valid product name or MongoDB ObjectId.`
+    );
   }
 
   private async reserveProductQuantities(

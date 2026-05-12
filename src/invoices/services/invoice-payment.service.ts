@@ -35,6 +35,7 @@ import { InvoiceIssuanceService } from '@/invoices/services/invoice-issuance.ser
 import type { UserPayload } from '@/auth/types/auth.types';
 import { EmailService } from '@/email/email.service';
 import { Business } from '@/business/schemas/business.schema';
+import { BusinessUser } from '@/business/schemas/business-user.schema';
 import { NotificationsService } from '@/notifications/notifications.service';
 import { NotificationType } from '@/notifications/schemas/notification.schema';
 
@@ -59,7 +60,9 @@ export class InvoicePaymentService {
     private readonly emailService: EmailService,
     private readonly notificationsService: NotificationsService,
     @InjectConnection() private readonly mainConnection: Connection,
-    @InjectModel(Business.name) private readonly businessModel: Model<Business>
+    @InjectModel(Business.name) private readonly businessModel: Model<Business>,
+    @InjectModel(BusinessUser.name)
+    private readonly businessUserModel: Model<BusinessUser>
   ) {
     const stripeSecretKey = (
       this.configService.get<string>('STRIPE_SECRET_KEY') ??
@@ -114,10 +117,10 @@ export class InvoicePaymentService {
     return this.stripeClient;
   }
 
-  private assertRecipientCanPay(
+  private async assertRecipientCanPay(
     receipt: InvoiceReceipt,
     user: UserPayload
-  ): void {
+  ): Promise<void> {
     const receiptUserId = receipt.recipientUserId?.toString();
     const normalizedReceiptEmail = receipt.recipientEmail?.toLowerCase().trim();
     const normalizedUserEmail = user.email.toLowerCase().trim();
@@ -127,11 +130,24 @@ export class InvoicePaymentService {
       Boolean(normalizedReceiptEmail) &&
       normalizedReceiptEmail === normalizedUserEmail;
 
-    if (!allowedByUserId && !allowedByEmail) {
-      throw new ForbiddenException(
-        'You do not have access to pay this invoice'
-      );
+    if (allowedByUserId || allowedByEmail) {
+      return;
     }
+
+    // Check if the user belongs to the recipient business
+    if (receipt.recipientBusinessId) {
+      const businessUser = await this.businessUserModel
+        .findOne({
+          businessId: receipt.recipientBusinessId.toString(),
+          userId: user.id,
+        })
+        .exec();
+      if (businessUser) {
+        return;
+      }
+    }
+
+    throw new ForbiddenException('You do not have access to pay this invoice');
   }
 
   private isPayableStatus(status: InvoiceStatus): boolean {
@@ -229,7 +245,7 @@ export class InvoicePaymentService {
     }
     this.logger.debug(`Receipt loaded in ${Date.now() - startTime}ms`);
 
-    this.assertRecipientCanPay(receipt, user);
+    await this.assertRecipientCanPay(receipt, user);
 
     const invoice = await this.issuanceService.getInvoiceById(
       receipt.invoiceId.toString(),
@@ -506,7 +522,7 @@ export class InvoicePaymentService {
       throw new NotFoundException('Invoice receipt not found');
     }
 
-    this.assertRecipientCanPay(receipt, user);
+    await this.assertRecipientCanPay(receipt, user);
 
     const invoice = await this.issuanceService.getInvoiceById(
       receipt.invoiceId.toString(),
@@ -717,7 +733,7 @@ export class InvoicePaymentService {
     }
 
     // Enforce that the authenticated user is allowed to pay this receipt
-    this.assertRecipientCanPay(receipt, user);
+    await this.assertRecipientCanPay(receipt, user);
 
     this.logger.log(
       `Confirmed! Updating invoice ${receipt.invoiceId} for business ${receipt.issuerBusinessId}`

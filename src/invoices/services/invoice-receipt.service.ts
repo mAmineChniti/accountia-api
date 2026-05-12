@@ -76,7 +76,7 @@ export class InvoiceReceiptService {
         .find(Object.assign({ recipientBusinessId }, statusFilter))
         .skip(skip)
         .limit(limit)
-        .sort({ issuedDate: -1 })
+        .sort({ createdAt: -1 })
         .lean({ virtuals: false })
         .exec(),
       this.invoiceReceiptModel.countDocuments({
@@ -135,7 +135,7 @@ export class InvoiceReceiptService {
         .find(Object.assign({}, userOrEmailFilter, statusFilter))
         .skip(skip)
         .limit(limit)
-        .sort({ issuedDate: -1 })
+        .sort({ createdAt: -1 })
         .lean({ virtuals: false })
         .exec(),
       this.invoiceReceiptModel.countDocuments(userOrEmailFilter),

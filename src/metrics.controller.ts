@@ -6,13 +6,21 @@ import { ApiTags, ApiOkResponse } from '@nestjs/swagger';
 
 let defaultMetricsRegistered = false;
 
+const promClientTyped = promClient as unknown as {
+  collectDefaultMetrics: () => void;
+  register: {
+    contentType: string;
+    metrics: () => Promise<string>;
+  };
+};
+
 @ApiTags('metrics')
 @Controller('metrics')
 export class MetricsController {
   constructor() {
     // Collect the full default metrics set once for the shared registry.
     if (!defaultMetricsRegistered) {
-      promClient.collectDefaultMetrics();
+      promClientTyped.collectDefaultMetrics();
       defaultMetricsRegistered = true;
     }
   }
@@ -20,8 +28,8 @@ export class MetricsController {
   @Get()
   @ApiOkResponse({ type: String, description: 'Prometheus metrics' })
   async getMetrics(@Res() res: Response) {
-    res.set('Content-Type', promClient.register.contentType);
-    const metrics = await promClient.register.metrics();
+    res.set('Content-Type', promClientTyped.register.contentType);
+    const metrics = await promClientTyped.register.metrics();
     res.end(metrics);
   }
 }

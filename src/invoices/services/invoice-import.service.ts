@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { parse as csvParse } from 'csv-parse/sync';
 import * as XLSX from 'xlsx';
 import { InvoiceIssuanceService } from './invoice-issuance.service';
@@ -610,13 +615,22 @@ export class InvoiceImportService {
 
     // Build line items from extracted data
     const lineItems =
-      extracted.lineItems?.map((item, index) => ({
-        productId: `extracted-${index}`, // Temporary ID, will be resolved by issuance service
-        productName: item.productName ?? 'Unknown Item',
-        quantity: item.quantity ?? 1,
-        unitPrice: item.unitPrice ?? 0,
-        description: item.description,
-      })) ?? [];
+      extracted.lineItems?.map((item, index) => {
+        // Use product name as the ID so the issuance service can resolve it by name
+        const normalizedName = item.productName?.trim();
+        const resolvedName =
+          normalizedName && normalizedName.length > 0
+            ? normalizedName
+            : `Item ${index + 1}`;
+
+        return {
+          productId: resolvedName,
+          productName: resolvedName,
+          quantity: item.quantity ?? 1,
+          unitPrice: item.unitPrice ?? 0,
+          description: item.description,
+        };
+      }) ?? [];
 
     if (lineItems.length === 0) {
       throw new BadRequestException(
@@ -643,12 +657,22 @@ export class InvoiceImportService {
     };
 
     // Create the invoice using the issuance service
-    return this.issuanceService.createDraftInvoice(
-      businessId,
-      databaseName,
-      createInvoiceDto,
-      userId
-    );
+    try {
+      return await this.issuanceService.createDraftInvoice(
+        businessId,
+        databaseName,
+        createInvoiceDto,
+        userId
+      );
+    } catch (error) {
+      const err = error as Record<string, unknown>;
+      if (err?.code === 11_000) {
+        throw new ConflictException(
+          `L'importation a réussi, mais la facture avec le numéro "${createInvoiceDto.invoiceNumber ?? 'Généré automatiquement'}" existe déjà dans votre base de données.`
+        );
+      }
+      throw error;
+    }
   }
 
   /**

@@ -1088,6 +1088,7 @@ export class BusinessController {
   @BusinessRoles(
     BusinessUserRole.OWNER,
     BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER,
     BusinessUserRole.CLIENT
   )
   @ApiBearerAuth()

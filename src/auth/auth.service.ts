@@ -812,8 +812,17 @@ export class AuthService {
     user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
     await user.save();
 
-    await this.emailService.sendPasswordResetEmail(email, resetToken);
-    await this.auditEmitter.emitAction({
+    void this.emailService
+      .sendPasswordResetEmail(email, resetToken)
+      .catch((error) => {
+        this.logger.warn(
+          `Background password reset email failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
+
+    void this.auditEmitter.emitAction({
       action: AuditAction.PASSWORD_RESET_REQUEST,
       userId: user._id.toString(),
       userEmail: user.email,

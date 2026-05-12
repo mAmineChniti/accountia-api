@@ -1,15 +1,15 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { ServiceUnavailableException, NotFoundException } from '@nestjs/common';
 import { type ConfigService } from '@nestjs/config';
+import {
+  Logger,
+  ServiceUnavailableException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto/create-job.dto';
 
 // Shared mocked ky instance used by the service under test
-const mockKyInstance: {
-  post: ReturnType<typeof jest.fn>;
-  get: ReturnType<typeof jest.fn>;
-} = {
-  post: jest.fn(),
-  get: jest.fn(),
+const mockKyInstance = {
+  post: jest.fn<Promise<unknown>, [unknown]>(),
+  get: jest.fn<Promise<unknown>, [unknown]>(),
 };
 
 // Simple HTTPError mock that matches shape used by AccountantService
@@ -48,7 +48,22 @@ describe('AccountantService', () => {
       },
     };
 
+    // Mock logger to keep test output clean
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {
+      /* noop */
+    });
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      /* noop */
+    });
+    jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {
+      /* noop */
+    });
+
     svc = new AccountantService(configService as ConfigService);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('createAccountingJob - returns upstream response on success', async () => {

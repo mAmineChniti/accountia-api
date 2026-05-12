@@ -89,7 +89,11 @@ export class InvoicesController {
 
   @Post()
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: '[TENANT DB] Create a new invoice (draft)',
@@ -125,7 +129,11 @@ export class InvoicesController {
 
   @Get('issued')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] List invoices issued by this business',
     description:
@@ -178,7 +186,11 @@ export class InvoicesController {
 
   @Get('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] Get a specific invoice issued by this business',
     description:
@@ -220,7 +232,11 @@ export class InvoicesController {
 
   @Patch('issued/:id')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] Update a draft invoice',
     description:
@@ -260,7 +276,11 @@ export class InvoicesController {
 
   @Post('issued/:id/transition')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: '[TENANT DB] Transition invoice to a new state',
     description:
@@ -658,7 +678,11 @@ export class InvoicesController {
 
   @Post('import')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
@@ -731,7 +755,11 @@ export class InvoicesController {
 
   @Post('import/document')
   @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-  @BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images

@@ -82,6 +82,7 @@ export class PurchaseOrdersService {
 
     const [total, pos] = await Promise.all([
       model.countDocuments(conditions),
+
       model
         .find(() => conditions)
         .sort({ createdAt: -1 })
