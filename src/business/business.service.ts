@@ -869,7 +869,7 @@ export class BusinessService {
       .toLowerCase()
       .replaceAll(/[^\da-z]/g, '_')
       .replaceAll(/_+/g, '_')
-      .replaceAll(/^_+|_+$/g, '')
+      .replaceAll(/(?:^_+)|(?:_+$)/g, '')
       .slice(0, 40);
 
     return slug || 'tenant';
@@ -2141,12 +2141,16 @@ export class BusinessService {
       // Check if account is fully onboarded (charges_enabled)
       const isFullyConnected = account.charges_enabled ?? false;
 
+      this.logger.debug(
+        `Stripe account ${business.stripeConnectId} status: charges_enabled=${isFullyConnected}, details_submitted=${account.details_submitted}, capabilities=${JSON.stringify(account.capabilities)}`
+      );
+
       return {
         isConnected: isFullyConnected,
         stripeConnectId: business.stripeConnectId,
         message: isFullyConnected
           ? 'Stripe Connect account is fully configured. Ready to receive payments.'
-          : 'Stripe Connect account is connected but not fully set up. Please complete the required information.',
+          : 'Stripe Connect account is connected but not fully set up. Please complete the required information in your Stripe dashboard.',
       };
     } catch (error) {
       // If we can't verify with Stripe, assume not connected
@@ -2162,7 +2166,7 @@ export class BusinessService {
         isConnected: false,
         stripeConnectId: business.stripeConnectId,
         message:
-          'Could not verify Stripe account status. Please try connecting again.',
+          'Could not verify Stripe account status. Please try connecting again or check your internet connection.',
       };
     }
   }

@@ -5,5 +5,10 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@/(.*)$": "<rootDir>/../src/$1",
+    "^ky$": "<rootDir>/mocks/ky.ts",
+    "^otplib$": "<rootDir>/mocks/otplib.ts"
   }
 }

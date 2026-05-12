@@ -123,7 +123,6 @@ export class AccountantService {
     this.ensureEnabled();
 
     // debug logging removed
-
     try {
       const response = await this.httpClient.post('api/accounting/jobs', {
         json: dto,
@@ -216,6 +215,7 @@ export class AccountantService {
       this.handleHttpError(error, 'calculate taxes');
     }
   }
+
   async getTaxResults(
     businessId: string,
     year: number

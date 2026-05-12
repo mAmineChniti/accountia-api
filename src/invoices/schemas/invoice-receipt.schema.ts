@@ -111,6 +111,13 @@ export class InvoiceReceipt extends Document {
   lastSyncedAt!: Date;
 
   /**
+   * Stripe Connect account used when the checkout session was created.
+   * Needed to retrieve the session on the correct account during confirmation.
+   */
+  @Prop({ type: String })
+  stripeConnectedAccountId?: string;
+
+  /**
    * Timestamps
    */
   createdAt!: Date;

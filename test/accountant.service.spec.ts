@@ -7,9 +7,9 @@ import {
 import type { InternalCreateAccountingJobPayload } from '../src/accountant/dto/create-job.dto';
 
 // Shared mocked ky instance used by the service under test
-const mockKyInstance: { post: jest.Mock; get: jest.Mock } = {
-  post: jest.fn(),
-  get: jest.fn(),
+const mockKyInstance = {
+  post: jest.fn<Promise<unknown>, [unknown]>(),
+  get: jest.fn<Promise<unknown>, [unknown]>(),
 };
 
 // Simple HTTPError mock that matches shape used by AccountantService
