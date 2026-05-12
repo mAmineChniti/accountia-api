@@ -53,11 +53,20 @@ import type { TenantContext } from '@/common/tenant/tenant.types';
 @Controller('products')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+@BusinessRoles(
+  BusinessUserRole.OWNER,
+  BusinessUserRole.ADMIN,
+  BusinessUserRole.MEMBER
+)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create a new product',
@@ -89,6 +98,11 @@ export class ProductsController {
   }
 
   @Get()
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @ApiOperation({
     summary: 'Get all products for the business',
     description:

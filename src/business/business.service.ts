@@ -154,7 +154,7 @@ export class BusinessService {
       .findById(userId)
       .catch((_error) => undefined as never);
     if (applicant) {
-      await this.emailService
+      void this.emailService
         .sendBusinessApplicationEmail(
           applicant.email,
           `${applicant.firstName} ${applicant.lastName}`,
@@ -170,7 +170,7 @@ export class BusinessService {
     }
 
     // Send admin notification in background as well.
-    await this.notificationsService
+    void this.notificationsService
       .createNotification({
         type: NotificationType.NEW_BUSINESS_APPLICATION,
         message: `New business application: "${savedApplication.businessName}"`,
@@ -300,7 +300,7 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        await this.emailService
+        void this.emailService
           .sendBusinessApprovalEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
@@ -315,7 +315,7 @@ export class BusinessService {
           });
       }
 
-      await this.auditEmitter
+      void this.auditEmitter
         .emitAction({
           action: AuditAction.APPROVE_BUSINESS,
           userId: reviewer.id,
@@ -339,7 +339,7 @@ export class BusinessService {
         .findById(application.applicantId)
         .catch((_error) => undefined as never);
       if (appUser) {
-        await this.emailService
+        void this.emailService
           .sendBusinessRejectionEmail(
             appUser.email,
             `${appUser.firstName} ${appUser.lastName}`,
@@ -355,7 +355,7 @@ export class BusinessService {
           });
       }
 
-      await this.auditEmitter
+      void this.auditEmitter
         .emitAction({
           action: AuditAction.REJECT_BUSINESS,
           userId: reviewer.id,
@@ -576,8 +576,8 @@ export class BusinessService {
           ],
         },
       })
-      .select('businessId')
-      .lean()) as Array<{ businessId: string }>;
+      .select('businessId role')
+      .lean()) as Array<{ businessId: string; role: string }>;
 
     // Rescue Logic: If user has no business linked but is approved, link it now.
     if (businessUsers.length === 0) {
@@ -604,7 +604,12 @@ export class BusinessService {
             { upsert: true }
           );
 
-          businessUsers = [{ businessId: approvedApplication.businessId }];
+          businessUsers = [
+            {
+              businessId: approvedApplication.businessId,
+              role: BusinessUserRole.OWNER,
+            },
+          ];
         }
       }
     }
@@ -617,7 +622,6 @@ export class BusinessService {
         businesses: [],
       };
     }
-
     const businesses = await this.businessModel
       .find({ _id: { $in: businessIds } })
       .select('name phone status createdAt')
@@ -626,13 +630,19 @@ export class BusinessService {
 
     return {
       message: 'Businesses retrieved successfully',
-      businesses: businesses.map((business) => ({
-        id: business._id.toString(),
-        name: business.name,
-        phone: business.phone,
-        status: business.status,
-        createdAt: business.createdAt,
-      })),
+      businesses: businesses.map((business) => {
+        const bu = businessUsers.find(
+          (b) => b.businessId.toString() === business._id.toString()
+        );
+        return {
+          id: business._id.toString(),
+          name: business.name,
+          phone: business.phone,
+          status: business.status,
+          role: bu?.role,
+          createdAt: business.createdAt,
+        };
+      }),
     };
   }
 

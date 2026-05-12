@@ -42,11 +42,20 @@ import type { TenantContext } from '@/common/tenant/tenant.types';
 @Controller('vendors')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, TenantContextGuard, BusinessRolesGuard)
-@BusinessRoles(BusinessUserRole.OWNER, BusinessUserRole.ADMIN)
+@BusinessRoles(
+  BusinessUserRole.OWNER,
+  BusinessUserRole.ADMIN,
+  BusinessUserRole.MEMBER
+)
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
   @Post()
+  @BusinessRoles(
+    BusinessUserRole.OWNER,
+    BusinessUserRole.ADMIN,
+    BusinessUserRole.MEMBER
+  )
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a vendor' })
   @ApiCreatedResponse({ type: VendorResponseDto })

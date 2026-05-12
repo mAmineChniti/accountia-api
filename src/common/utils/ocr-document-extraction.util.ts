@@ -4,6 +4,8 @@ import { createWorker } from 'tesseract.js';
 import pdf2pic from 'pdf2pic';
 import sharp from 'sharp';
 
+import pdfParse from 'pdf-parse';
+
 const logger = new Logger('OcrDocumentExtraction');
 
 interface ExtractionOptions {
@@ -172,6 +174,70 @@ async function extractTextFromDocument(
   filename: string
 ): Promise<string> {
   const mimeType = detectMimeType(fileBuffer, filename);
+
+  // Stage 1: Try direct text extraction for PDFs (fastest & most accurate)
+  if (mimeType === 'application/pdf') {
+    try {
+      logger.log(
+        'Attempting direct text extraction from PDF using modern PDFParse...'
+      );
+
+      let extractedText = '';
+
+      try {
+        // Handle the modern Mehmet Kozan pdf-parse (v2.4.5+)
+        const pdfParseObj = pdfParse as unknown as Record<string, unknown>;
+        const PDFParseClass =
+          typeof pdfParse === 'function' ? pdfParse : pdfParseObj.PDFParse;
+
+        if (typeof PDFParseClass === 'function') {
+          interface PDFParser {
+            getText(): Promise<{ text: string }>;
+          }
+          const ParserConstructor = PDFParseClass as new (args: {
+            data: Buffer;
+          }) => PDFParser;
+          const parser = new ParserConstructor({ data: fileBuffer });
+          const result = await parser.getText();
+          extractedText = result.text ?? '';
+        } else {
+          // Fallback to legacy/standard pdf-parse if it's the old version
+          const parseFunc =
+            typeof pdfParse === 'function' ? pdfParse : pdfParseObj.default;
+          if (typeof parseFunc === 'function') {
+            const parseFuncTyped = parseFunc as (
+              buffer: Buffer
+            ) => Promise<{ text: string }>;
+            const data = await parseFuncTyped(fileBuffer);
+            extractedText = data.text ?? '';
+          }
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        logger.warn(
+          `Direct PDF extraction failed: ${errorMessage}. Falling back to OCR...`
+        );
+      }
+
+      if (extractedText && extractedText.trim().length > 10) {
+        logger.log(
+          `Successfully extracted ${extractedText.length} characters directly from PDF`
+        );
+        return extractedText;
+      }
+
+      logger.warn(
+        'Direct PDF extraction returned no text, falling back to OCR...'
+      );
+    } catch (error) {
+      logger.warn(
+        `Direct PDF extraction failed: ${(error as Error).message}. Falling back to OCR...`
+      );
+    }
+  }
+
+  // Stage 2: OCR Fallback (Convert to image + Tesseract)
   let imageBuffer: Buffer;
 
   if (mimeType === 'application/pdf') {
@@ -265,13 +331,15 @@ Analyze this text and extract invoice information. Return ONLY a valid JSON obje
 - description: Invoice description or notes (string)
 - paymentTerms: Payment terms text (string)
 - lineItems: Array of items, each with:
-  - productName: Name of product/service (string)
-  - description: Item description (string)
+  - productName: Concise name of product/service ONLY (string, e.g., "Wireless Mouse", not "Wireless Mouse - Electronics")
+  - description: Item description or additional details (string)
   - quantity: Number as integer
   - unitPrice: Price per unit as number
 
 Rules:
 - Extract all line items visible in the invoice
+- Extract the product name as concisely as possible (must match a product catalog name)
+- Use the description field for any additional details found on the line item
 - Convert prices to numbers (remove currency symbols)
 - Parse dates to YYYY-MM-DD format if possible
 - Use null for missing fields
@@ -324,11 +392,16 @@ Example response:
       throw new Error('AI returned empty response');
     }
 
+    logger.log(`AI RAW RESPONSE: ${content}`);
+
     // Parse the JSON response safely
-    const parsedUnknown: unknown = JSON.parse(content);
+    const parsedUnknown = JSON.parse(content) as Record<string, unknown>;
     if (typeof parsedUnknown !== 'object' || parsedUnknown === null) {
       throw new Error('AI returned invalid JSON object');
     }
+
+    // Ensure the type is set correctly based on what we requested
+    parsedUnknown.type = options.documentType;
     const parsed = parsedUnknown as ExtractionResult;
     logger.log(
       `Successfully extracted ${options.documentType} data using text-based AI`
@@ -352,16 +425,31 @@ export async function extractFromDocument(
   filename: string,
   options: ExtractionOptions
 ): Promise<ExtractionResult | null> {
+  logger.log(
+    `Starting extraction for file: ${filename} (Size: ${fileBuffer.length} bytes)`
+  );
   try {
     // Step 1: Extract text using OCR (local processing)
     const extractedText = await extractTextFromDocument(fileBuffer, filename);
+    logger.log(
+      `Text extraction complete. Extracted length: ${extractedText?.length || 0}`
+    );
+
+    if (!extractedText || extractedText.trim().length < 10) {
+      throw new Error('Extracted text is too short or empty.');
+    }
 
     // Step 2: Send extracted text to AI (cheap text model, not vision)
+    logger.log('Sending extracted text to AI for analysis...');
     const result = await extractWithAi(extractedText, options);
+    logger.log('AI analysis successful');
 
     return result;
   } catch (error) {
-    logger.error('Document extraction failed', error as Error);
+    logger.error(
+      `Document extraction failed for ${filename}: ${(error as Error).message}`,
+      (error as Error).stack
+    );
     throw error;
   }
 }

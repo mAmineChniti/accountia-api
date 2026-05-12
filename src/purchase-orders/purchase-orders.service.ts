@@ -82,8 +82,10 @@ export class PurchaseOrdersService {
 
     const [total, pos] = await Promise.all([
       model.countDocuments(conditions),
+
       model
-        .find(() => conditions)
+        // eslint-disable-next-line unicorn/no-array-callback-reference
+        .find(conditions)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)

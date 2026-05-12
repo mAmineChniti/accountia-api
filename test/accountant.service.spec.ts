@@ -26,6 +26,7 @@ jest.mock('ky', () => ({
   HTTPError: MockHTTPError,
 }));
 
+import { Logger } from '@nestjs/common';
 import { AccountantService } from '../src/accountant/accountant.service';
 
 describe('AccountantService', () => {
@@ -43,6 +44,17 @@ describe('AccountantService', () => {
         return defaultValue;
       },
     };
+
+    // Mock logger to keep test output clean
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {
+      /* noop */
+    });
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+      /* noop */
+    });
+    jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => {
+      /* noop */
+    });
 
     svc = new AccountantService(configService as ConfigService);
   });

@@ -395,10 +395,11 @@ export class ChatService {
 
     if (
       businessUser.role !== BusinessUserRole.OWNER &&
-      businessUser.role !== BusinessUserRole.ADMIN
+      businessUser.role !== BusinessUserRole.ADMIN &&
+      businessUser.role !== BusinessUserRole.MEMBER
     ) {
       throw new ForbiddenException(
-        'Only business owners and admins can use the chat for this business'
+        'Only business owners, admins and members can use the chat for this business'
       );
     }
   }

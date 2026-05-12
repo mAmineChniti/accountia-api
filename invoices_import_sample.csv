@@ -1,0 +1,8 @@
+invoiceNumber,recipientType,issuedDate,dueDate,recipientEmail,recipientDisplayName,productIds,productNames,quantities,unitPrices,currency,description
+INV-2026-0505-001,PLATFORM_INDIVIDUAL,2026-05-01,2026-05-15,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Ordinateur Portable","Ordinateur Portable",1,2499.99,USD,"Achat matériel informatique"
+INV-2026-0505-002,PLATFORM_INDIVIDUAL,2026-05-02,2026-05-16,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Ecran 4K","Ecran 4K",2,499.00,USD,"Équipement bureau"
+INV-2026-0505-003,PLATFORM_INDIVIDUAL,2026-05-03,2026-05-17,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Clavier Mécanique","Clavier Mécanique",1,149.50,USD,"Accessoires"
+INV-2026-0505-004,PLATFORM_INDIVIDUAL,2026-05-04,2026-05-18,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Souris Sans Fil","Souris Sans Fil",1,99.00,USD,"Accessoires"
+INV-2026-0505-005,PLATFORM_INDIVIDUAL,2026-05-05,2026-05-19,hibakhadraoui2003@gmail.com,"Hiba Khadraoui","Casque Réduction de Bruit","Casque Réduction de Bruit",1,349.00,USD,"Matériel audio"
+
+

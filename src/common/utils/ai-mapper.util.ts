@@ -24,17 +24,8 @@ export async function mapColumnsUsingAi(
   const actualColumns = Object.keys(records[0]);
 
   // Find actual columns that don't match any expected column
-  const expectedColsLower = new Set(
-    expectedColumns.map((exp) => exp.toLowerCase())
-  );
-  const unknownColumns = actualColumns.filter(
-    (actual) => !expectedColsLower.has(actual.toLowerCase())
-  );
-
-  // If there are no incorrectly named columns, do not trigger AI
-  if (unknownColumns.length === 0) {
-    return records;
-  }
+  // We always trigger AI now because users might swap columns (e.g., put recipientType data in invoiceNumber column)
+  // By providing a sample row, the AI can detect if the column names don't match the actual data.
 
   const client = getGroqClient();
   if (!client) {
@@ -43,14 +34,24 @@ export async function mapColumnsUsingAi(
   }
 
   try {
+    const sampleRow = JSON.stringify(records[0], undefined, 2);
+
     const prompt = `
 You are an expert data mapping assistant.
-I have a list of columns extracted from an uploaded CSV/Excel file.
+I have a list of columns extracted from an uploaded CSV/Excel file, along with a sample row of data.
 Provided actual columns: [${actualColumns.join(', ')}]
 Expected columns: [${expectedColumns.join(', ')}]
 
-Your task is to map the 'actual columns' to the 'expected columns' based on their meaning. They might be in French, Arabic, misspelled, etc. Example: 'prix' maps to 'unitPrice'.
-Respond strictly with ONLY a valid JSON object. Every key should be an actual column, and its value should be the matching expected column. If an actual column does not logically map to any expected column, do not include it in the output. If multiple actual columns map to the same expected column, choose the best one.
+Sample data row:
+${sampleRow}
+
+Your task is to map the 'actual columns' to the 'expected columns' based on their meaning AND the sample data provided. 
+- Sometimes headers might be swapped or incorrectly named (e.g., the column is named 'invoiceNumber' but the data shows 'PLATFORM_INDIVIDUAL', which is clearly 'recipientType'). 
+- They might be in French, Arabic, misspelled, etc. Example: 'prix' maps to 'unitPrice'.
+
+Respond strictly with ONLY a valid JSON object. Every key should be an actual column from the CSV, and its value should be the matching expected column. 
+If an actual column does not logically map to any expected column, do not include it in the output. 
+If multiple actual columns map to the same expected column, choose the best one based on the sample data.
 Return exclusively the JSON map without markdown formatting or other text.
     `;
 
